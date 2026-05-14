@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Building2, LogOut } from "lucide-react";
+import { Building2, LogOut } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,12 +13,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useAppState } from "@/providers/app-state";
+import { NotificationDropdown } from "@/components/features/notification-dropdown";
 
 export function AppHeader() {
   const { user, logout, isAdmin } = useAppState();
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-backdrop-filter:bg-background/80 sm:px-6 lg:px-8 transition-all duration-200">
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
           <Building2 className="h-5 w-5" />
@@ -31,16 +32,7 @@ export function AppHeader() {
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="relative text-muted-foreground hover:text-foreground"
-          aria-label="Notifications"
-        >
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
-        </Button>
+        <NotificationDropdown />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -57,7 +49,7 @@ export function AppHeader() {
                     .slice(0, 2) ?? "?"}
                 </AvatarFallback>
               </Avatar>
-              <span className="hidden max-w-[120px] truncate text-sm font-medium sm:inline">
+              <span className="hidden max-w-30 truncate text-sm font-medium sm:inline">
                 {user?.name}
               </span>
             </Button>

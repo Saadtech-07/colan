@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Users,
   UsersRound,
+  Calendar,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,10 +24,23 @@ function statusBadge(status: Project["status"]) {
   return "warning" as const;
 }
 
+function statusProgress(status: Project["status"]) {
+  if (status === "Completed") return 100;
+  if (status === "In Progress") return 50;
+  return 0;
+}
+
+function statusColor(status: Project["status"]) {
+  if (status === "Completed") return "bg-emerald-500";
+  if (status === "In Progress") return "bg-blue-500";
+  return "bg-amber-500";
+}
+
 export default function DashboardPage() {
   const {
     projects,
     addProject,
+    addNotification,
     isAdmin,
     user,
     employees,
@@ -47,6 +61,18 @@ export default function DashboardPage() {
     },
     {} as Record<TeamName, Project[]>,
   );
+
+  const handleProjectCreate = async (project: Omit<Project, "id">) => {
+    await addNotification({
+      projectId: "temp-id",
+      projectName: project.name,
+      team: project.team,
+      assignedDate: project.assignedDate,
+      status: project.status,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    });
+  };
 
   return (
     <div className="space-y-8">
@@ -72,37 +98,37 @@ export default function DashboardPage() {
               : `Projects for ${user?.team ?? "your team"}.`}
           </p>
         </div>
-        {isAdmin && <AddProjectDialog onCreate={addProject} />}
+        {isAdmin && <AddProjectDialog onCreate={addProject} onNotificationTrigger={handleProjectCreate} />}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Total employees"
-          value={String(employees.length)}
-          hint="Directory size (this session)"
-          icon={Users}
+          title="Total projects"
+          value={String(stats.total)}
+          hint="Across visible teams"
+          icon={Briefcase}
           className="from-slate-50 to-white"
         />
         <StatCard
-          title="Projects in progress"
+          title="In progress"
           value={String(stats.inProgress)}
-          hint="Across visible teams"
+          hint="Currently active"
           icon={Briefcase}
           className="from-blue-50/80 to-white"
         />
         <StatCard
-          title="Completed projects"
+          title="Completed"
           value={String(stats.completed)}
-          hint="Lifetime in this session"
+          hint="Successfully delivered"
           icon={CheckCircle2}
           className="from-emerald-50/80 to-white"
         />
         <StatCard
-          title="Active teams"
-          value={String(teamCount || TEAMS.length)}
-          hint="With at least one visible project"
+          title="Pending"
+          value={String(stats.yetToStart)}
+          hint="Yet to start"
           icon={UsersRound}
-          className="from-violet-50/80 to-white"
+          className="from-amber-50/80 to-white"
         />
       </div>
 
@@ -149,15 +175,33 @@ export default function DashboardPage() {
                     byTeam[team].map((p) => (
                       <li
                         key={p.id}
-                        className="flex flex-wrap items-center justify-between gap-2 px-6 py-3 transition-colors hover:bg-muted/40"
+                        className="flex flex-col gap-3 px-6 py-4 transition-colors hover:bg-muted/40"
                       >
-                        <div>
-                          <p className="font-medium leading-tight">{p.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {p.assignedDate} → {p.lastDate}
-                          </p>
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="flex-1">
+                            <p className="font-medium leading-tight">{p.name}</p>
+                            <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                              <Calendar className="h-3 w-3" />
+                              <span>{p.assignedDate} → {p.lastDate}</span>
+                            </div>
+                          </div>
+                          <Badge variant={statusBadge(p.status)}>{p.status}</Badge>
                         </div>
-                        <Badge variant={statusBadge(p.status)}>{p.status}</Badge>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>Progress</span>
+                            <span>{statusProgress(p.status)}%</span>
+                          </div>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                            <div
+                              className={cn(
+                                "h-full rounded-full transition-all duration-500 ease-out",
+                                statusColor(p.status)
+                              )}
+                              style={{ width: `${statusProgress(p.status)}%` }}
+                            />
+                          </div>
+                        </div>
                       </li>
                     ))
                   )}
@@ -187,7 +231,7 @@ function StatCard({
   return (
     <Card
       className={cn(
-        "relative overflow-hidden border-border/60 bg-gradient-to-br shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
+        "relative overflow-hidden border-border/60 bg-linear-to-br shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
         className,
       )}
     >

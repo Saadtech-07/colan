@@ -25,11 +25,12 @@ import { TEAMS } from "@/lib/constants";
 
 type Props = {
   onCreate: (project: Omit<Project, "id">) => void | Promise<void>;
+  onNotificationTrigger?: (project: Omit<Project, "id">) => void | Promise<void>;
 };
 
 const STATUSES: ProjectStatus[] = ["Yet To Start", "In Progress", "Completed"];
 
-export function AddProjectDialog({ onCreate }: Props) {
+export function AddProjectDialog({ onCreate, onNotificationTrigger }: Props) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [team, setTeam] = React.useState<TeamName>("React Team");
@@ -47,13 +48,17 @@ export function AddProjectDialog({ onCreate }: Props) {
 
   const submit = async () => {
     if (!name.trim() || !assignedDate || !lastDate) return;
-    await onCreate({
+    const projectData = {
       name: name.trim(),
       team,
       assignedDate,
       lastDate,
       status,
-    });
+    };
+    await onCreate(projectData);
+    if (onNotificationTrigger) {
+      await onNotificationTrigger(projectData);
+    }
     reset();
     setOpen(false);
   };

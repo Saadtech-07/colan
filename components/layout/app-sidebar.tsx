@@ -19,6 +19,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/teams", label: "Team Projects", icon: Users },
   { href: "/team-members", label: "Team Members", icon: Users },
   { href: "/gallery", label: "Gallery", icon: ImageIcon },
   { href: "/seating", label: "Seating Arrangement", icon: LayoutGrid },

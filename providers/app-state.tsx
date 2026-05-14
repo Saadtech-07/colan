@@ -3,7 +3,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import type { AuthUser, Employee, GalleryImage, Project } from "@/types";
+import type { AuthUser, Employee, GalleryImage, Notification, Project } from "@/types";
 
 type AppStateContextValue = {
   user: AuthUser | null;
@@ -13,6 +13,7 @@ type AppStateContextValue = {
   employees: Employee[];
   projects: Project[];
   gallery: GalleryImage[];
+  notifications: Notification[];
   dataLoading: boolean;
   dataError: string | null;
   refreshData: () => Promise<void>;
@@ -20,6 +21,9 @@ type AppStateContextValue = {
   addProject: (input: Omit<Project, "id">) => Promise<void>;
   addGalleryItem: (input: Omit<GalleryImage, "id">) => Promise<void>;
   assignEmployeeToBay: (bayId: string, employeeId: string | null) => Promise<void>;
+  addNotification: (notification: Omit<Notification, "id">) => Promise<void>;
+  markNotificationAsRead: (notificationId: string) => Promise<void>;
+  getUnreadCount: () => number;
 };
 
 const AppStateContext = React.createContext<AppStateContextValue | null>(null);
@@ -39,6 +43,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [employees, setEmployees] = React.useState<Employee[]>([]);
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [gallery, setGallery] = React.useState<GalleryImage[]>([]);
+  const [notifications, setNotifications] = React.useState<Notification[]>([]);
   const [dataLoading, setDataLoading] = React.useState(false);
   const [dataError, setDataError] = React.useState<string | null>(null);
 
@@ -150,6 +155,34 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const addNotification = React.useCallback(
+    async (notification: Omit<Notification, "id">) => {
+      const newNotification: Notification = {
+        ...notification,
+        id: `notif-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      };
+      setNotifications((prev) => [newNotification, ...prev]);
+    },
+    [],
+  );
+
+  const markNotificationAsRead = React.useCallback(
+    async (notificationId: string) => {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notificationId ? { ...n, isRead: true } : n)),
+      );
+    },
+    [],
+  );
+
+  const getUnreadCount = React.useCallback(() => {
+    // Admin should not see project assignment notifications they created
+    if (isAdmin) return 0;
+    return notifications
+      .filter((n) => !n.isRead && (user?.team ? n.team === user.team : false))
+      .length;
+  }, [notifications, isAdmin, user?.team]);
+
   const value = React.useMemo(
     () => ({
       user,
@@ -159,6 +192,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       employees,
       projects,
       gallery,
+      notifications,
       dataLoading,
       dataError,
       refreshData,
@@ -166,6 +200,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       addProject,
       addGalleryItem,
       assignEmployeeToBay,
+      addNotification,
+      markNotificationAsRead,
+      getUnreadCount,
     }),
     [
       user,
@@ -175,6 +212,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       employees,
       projects,
       gallery,
+      notifications,
       dataLoading,
       dataError,
       refreshData,
@@ -182,6 +220,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       addProject,
       addGalleryItem,
       assignEmployeeToBay,
+      addNotification,
+      markNotificationAsRead,
+      getUnreadCount,
     ],
   );
 

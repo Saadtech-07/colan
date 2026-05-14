@@ -52,3 +52,14 @@ export interface AuthUser {
   team?: TeamName;
   avatarUrl?: string;
 }
+
+export interface Notification {
+  id: string;
+  projectId: string;
+  projectName: string;
+  team: TeamName;
+  assignedDate: string;
+  status: ProjectStatus;
+  isRead: boolean;
+  createdAt: string;
+}
