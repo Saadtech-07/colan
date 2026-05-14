@@ -36,7 +36,7 @@ export function AddEmployeeDialog({ onCreate }: Props) {
   const [role, setRole] = React.useState<CompanyRole>("Employee");
   const [bayNumber, setBayNumber] = React.useState("E-01");
   const [imageUrl, setImageUrl] = React.useState(
-    "https://api.dicebear.com/7.x/avataaars/svg?seed=new",
+    "https://api.dicebear.com/7.x/avataaars/png?seed=new&size=128",
   );
 
   const submit = async () => {
@@ -49,7 +49,7 @@ export function AddEmployeeDialog({ onCreate }: Props) {
       bayNumber,
       imageUrl:
         imageUrl.trim() ||
-        `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`,
+        `https://api.dicebear.com/7.x/avataaars/png?seed=${encodeURIComponent(name)}&size=128`,
     });
     setOpen(false);
     setName("");
@@ -57,7 +57,7 @@ export function AddEmployeeDialog({ onCreate }: Props) {
     setTeam("React Team");
     setRole("Employee");
     setBayNumber("E-01");
-    setImageUrl("https://api.dicebear.com/7.x/avataaars/svg?seed=new");
+    setImageUrl("https://api.dicebear.com/7.x/avataaars/png?seed=new&size=128");
   };
 
   return (
@@ -77,7 +77,10 @@ export function AddEmployeeDialog({ onCreate }: Props) {
           <div className="flex items-center gap-4">
             <div className="relative h-16 w-16 overflow-hidden rounded-full border bg-muted">
               <Image
-                src={imageUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=placeholder"}
+                src={
+                  imageUrl ||
+                  "https://api.dicebear.com/7.x/avataaars/png?seed=placeholder&size=128"
+                }
                 alt="Preview"
                 fill
                 className="object-cover"

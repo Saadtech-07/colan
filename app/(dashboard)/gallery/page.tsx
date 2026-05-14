@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
 import { ImagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -115,13 +114,16 @@ export default function GalleryPage() {
               className="mb-4 break-inside-avoid overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
             >
               <div className="relative w-full overflow-hidden">
-                <Image
+                {/* eslint-disable-next-line @next/next/no-img-element -- arbitrary user URLs; Next/Image needs every host in config */}
+                <img
                   src={item.url}
                   alt={item.title}
                   width={800}
                   height={600}
                   className="h-auto w-full object-cover"
-                  sizes="(max-width: 768px) 100vw, 33vw"
+                  loading="lazy"
+                  decoding="async"
+                  referrerPolicy="no-referrer"
                 />
               </div>
               <div className="space-y-1 p-4">

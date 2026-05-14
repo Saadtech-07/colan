@@ -1,0 +1,43 @@
+import type { ObjectId } from "mongodb";
+import type { CompanyRole, Employee, TeamName } from "@/types";
+import { COLLECTIONS } from "./collections";
+
+export const EMPLOYEE_COLLECTION = COLLECTIONS.employees;
+
+/** Stored shape in MongoDB (API uses string `id` from `_id`). */
+export type EmployeeDocument = {
+  _id: ObjectId;
+  employeeId: string;
+  name: string;
+  team: TeamName;
+  role: CompanyRole;
+  bayNumber: string;
+  imageUrl: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
+export function employeeDocToDTO(doc: EmployeeDocument): Employee {
+  return {
+    id: doc._id.toHexString(),
+    employeeId: doc.employeeId,
+    name: doc.name,
+    team: doc.team,
+    role: doc.role,
+    bayNumber: doc.bayNumber,
+    imageUrl: doc.imageUrl,
+  };
+}
+
+export function employeeInputToDocFields(
+  input: Omit<Employee, "id">,
+): Omit<EmployeeDocument, "_id"> {
+  return {
+    employeeId: input.employeeId,
+    name: input.name,
+    team: input.team,
+    role: input.role,
+    bayNumber: input.bayNumber,
+    imageUrl: input.imageUrl,
+  };
+}

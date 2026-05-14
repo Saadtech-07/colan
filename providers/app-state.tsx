@@ -4,6 +4,7 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import type { AuthUser, Employee, GalleryImage, Project } from "@/types";
+import type { DataLayerSummary } from "@/types/data-layer";
 
 type AppStateContextValue = {
   user: AuthUser | null;
@@ -15,6 +16,8 @@ type AppStateContextValue = {
   gallery: GalleryImage[];
   dataLoading: boolean;
   dataError: string | null;
+  /** Where workspace data is stored (MongoDB vs in-memory) and Atlas ping result. */
+  dataSummary: DataLayerSummary | null;
   refreshData: () => Promise<void>;
   addEmployee: (input: Omit<Employee, "id">) => Promise<void>;
   addProject: (input: Omit<Project, "id">) => Promise<void>;
@@ -41,6 +44,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [gallery, setGallery] = React.useState<GalleryImage[]>([]);
   const [dataLoading, setDataLoading] = React.useState(false);
   const [dataError, setDataError] = React.useState<string | null>(null);
+  const [dataSummary, setDataSummary] = React.useState<DataLayerSummary | null>(null);
 
   const user = React.useMemo<AuthUser | null>(() => {
     if (!session?.user) return null;
@@ -62,11 +66,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setDataLoading(true);
     setDataError(null);
     try {
-      const [emRes, prRes, gaRes] = await Promise.all([
+      const [emRes, prRes, gaRes, sumRes] = await Promise.all([
         fetch("/api/employees", { credentials: "include" }),
         fetch("/api/projects", { credentials: "include" }),
         fetch("/api/gallery", { credentials: "include" }),
+        fetch("/api/db-status", { credentials: "include" }),
       ]);
+      if (sumRes.ok) {
+        setDataSummary((await sumRes.json()) as DataLayerSummary);
+      } else {
+        setDataSummary(null);
+      }
       if (!emRes.ok) throw new Error(await parseError(emRes));
       if (!prRes.ok) throw new Error(await parseError(prRes));
       if (!gaRes.ok) throw new Error(await parseError(gaRes));
@@ -161,6 +171,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       gallery,
       dataLoading,
       dataError,
+      dataSummary,
       refreshData,
       addEmployee,
       addProject,
@@ -177,6 +188,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       gallery,
       dataLoading,
       dataError,
+      dataSummary,
       refreshData,
       addEmployee,
       addProject,

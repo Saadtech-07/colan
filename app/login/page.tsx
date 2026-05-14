@@ -4,28 +4,17 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
-import { Building2, Shield, User } from "lucide-react";
+import { Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import type { AppRole, TeamName } from "@/types";
-import { TEAMS } from "@/lib/constants";
 
 export default function LoginPage() {
   const router = useRouter();
   const { status } = useSession();
-  const [name, setName] = React.useState("Alex Morgan");
-  const [email, setEmail] = React.useState("alex.morgan@colan.io");
-  const [role, setRole] = React.useState<AppRole>("admin");
-  const [team, setTeam] = React.useState<TeamName>("React Team");
+  const [email, setEmail] = React.useState("admin@colan.io");
+  const [password, setPassword] = React.useState("admin123");
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
 
@@ -43,9 +32,7 @@ export default function LoginPage() {
       const result = await signIn("credentials", {
         redirect: false,
         email,
-        name,
-        appRole: role,
-        team: role === "employee" ? team : "",
+        password,
       });
       if (result?.error) {
         setError("Could not sign in. Check your details and try again.");
@@ -75,9 +62,10 @@ export default function LoginPage() {
           <CardHeader>
             <CardTitle>Welcome back</CardTitle>
             <CardDescription>
-              Auth.js credentials session — MongoDB stores directory, projects, and
-              gallery when <code className="text-xs">MONGODB_URI</code> is set; otherwise
-              an in-memory store is used for this process.
+              Sign in with accounts stored in MongoDB Atlas when{" "}
+              <code className="text-xs">MONGODB_URI</code> is set (seeded on first run:
+              admin@colan.io / admin123, employee@colan.io / employee123). Without Atlas,
+              the same credentials work against an in-memory dev store.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -87,15 +75,6 @@ export default function LoginPage() {
                   {error}
                 </p>
               )}
-              <div className="space-y-2">
-                <Label htmlFor="name">Display name</Label>
-                <Input
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  autoComplete="name"
-                />
-              </div>
               <div className="space-y-2">
                 <Label htmlFor="email">Work email</Label>
                 <Input
@@ -107,51 +86,15 @@ export default function LoginPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Access role</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant={role === "admin" ? "default" : "outline"}
-                    className="h-auto flex-col gap-1 py-3"
-                    onClick={() => setRole("admin")}
-                  >
-                    <Shield className="h-4 w-4" />
-                    <span className="text-xs font-semibold">Admin</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={role === "employee" ? "default" : "outline"}
-                    className="h-auto flex-col gap-1 py-3"
-                    onClick={() => setRole("employee")}
-                  >
-                    <User className="h-4 w-4" />
-                    <span className="text-xs font-semibold">Employee</span>
-                  </Button>
-                </div>
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
               </div>
-              {role === "employee" && (
-                <div className="space-y-2">
-                  <Label>Your team</Label>
-                  <Select
-                    value={team}
-                    onValueChange={(v) => setTeam(v as TeamName)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select team" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TEAMS.map((t) => (
-                        <SelectItem key={t} value={t}>
-                          {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Employees only see projects for this team.
-                  </p>
-                </div>
-              )}
               <Button type="submit" className="w-full" size="lg" disabled={pending}>
                 {pending ? "Signing in…" : "Continue to dashboard"}
               </Button>

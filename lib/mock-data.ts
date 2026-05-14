@@ -1,7 +1,9 @@
 import type { Employee, GalleryImage, Project } from "@/types";
 
-const img = (seed: string) =>
-  `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed)}`;
+/** PNG works reliably in img and avatars; remote SVG often fails to paint. */
+export function dicebearAvatarPng(seed: string) {
+  return `https://api.dicebear.com/7.x/avataaars/png?seed=${encodeURIComponent(seed)}&size=128`;
+}
 
 export const MOCK_EMPLOYEES: Employee[] = [
   {
@@ -11,7 +13,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "React Team",
     role: "Team Lead",
     bayNumber: "E-12",
-    imageUrl: img("priya"),
+    imageUrl: dicebearAvatarPng("priya"),
   },
   {
     id: "2",
@@ -20,7 +22,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "Next.js Team",
     role: "Employee",
     bayNumber: "E-08",
-    imageUrl: img("james"),
+    imageUrl: dicebearAvatarPng("james"),
   },
   {
     id: "3",
@@ -29,7 +31,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "Node Team",
     role: "Manager",
     bayNumber: "E-22",
-    imageUrl: img("maria"),
+    imageUrl: dicebearAvatarPng("maria"),
   },
   {
     id: "4",
@@ -38,7 +40,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "UI/UX Team",
     role: "Team Lead",
     bayNumber: "E-05",
-    imageUrl: img("alex"),
+    imageUrl: dicebearAvatarPng("alex"),
   },
   {
     id: "5",
@@ -47,7 +49,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "Testing Team",
     role: "Employee",
     bayNumber: "E-31",
-    imageUrl: img("sofia"),
+    imageUrl: dicebearAvatarPng("sofia"),
   },
   {
     id: "6",
@@ -56,7 +58,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "DevOps Team",
     role: "Employee",
     bayNumber: "E-44",
-    imageUrl: img("david"),
+    imageUrl: dicebearAvatarPng("david"),
   },
   {
     id: "7",
@@ -65,7 +67,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "React Team",
     role: "Intern",
     bayNumber: "E-14",
-    imageUrl: img("emily"),
+    imageUrl: dicebearAvatarPng("emily"),
   },
   {
     id: "8",
@@ -74,7 +76,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "Next.js Team",
     role: "Team Lead",
     bayNumber: "E-09",
-    imageUrl: img("ryan"),
+    imageUrl: dicebearAvatarPng("ryan"),
   },
 ];
 

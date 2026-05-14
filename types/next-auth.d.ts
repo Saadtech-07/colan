@@ -20,5 +20,6 @@ declare module "next-auth/jwt" {
   interface JWT {
     appRole?: AppRole;
     team?: TeamName;
+    picture?: string | null;
   }
 }

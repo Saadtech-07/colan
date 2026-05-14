@@ -32,6 +32,7 @@ export default function DashboardPage() {
     employees,
     dataLoading,
     dataError,
+    dataSummary,
   } = useAppState();
   const visibleProjects =
     isAdmin || !user?.team
@@ -50,6 +51,29 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {dataSummary?.backend === "mongodb" && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
+          <span className="font-medium">MongoDB</span> — database{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+            {dataSummary.database}
+          </code>
+          . Document counts in Atlas: employees {dataSummary.counts.employees}, projects{" "}
+          {dataSummary.counts.projects}, gallery {dataSummary.counts.gallery}, app users{" "}
+          {dataSummary.counts.appUsers}. Adding employees, projects, or gallery items here
+          writes to these collections.
+        </div>
+      )}
+      {dataSummary?.backend === "memory" && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+          <span className="font-medium">In-memory data</span> — {dataSummary.reason} Lists reset
+          when the server restarts.
+        </div>
+      )}
+      {dataSummary?.backend === "error" && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <span className="font-medium">MongoDB connection failed.</span> {dataSummary.message}
+        </div>
+      )}
       {dataError && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {dataError}{" "}

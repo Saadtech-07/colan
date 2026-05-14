@@ -3,80 +3,50 @@ import { getDb } from "@/lib/mongodb";
 import { memoryStore } from "@/lib/memory-store";
 import type { Employee, GalleryImage, Project } from "@/types";
 import {
+  COLLECTIONS,
+  ensureColanModelIndexes,
+  employeeDocToDTO,
+  employeeInputToDocFields,
+  galleryImageDocToDTO,
+  projectDocToDTO,
+  type EmployeeDocument,
+  type GalleryImageDocument,
+  type ProjectDocument,
+} from "@/models";
+import {
   MOCK_EMPLOYEES,
   MOCK_GALLERY,
   MOCK_PROJECTS,
 } from "@/lib/mock-data";
 
-const C = {
-  employees: "employees",
-  projects: "projects",
-  gallery: "gallery",
-} as const;
-
-type EmployeeDoc = Omit<Employee, "id"> & { _id: ObjectId };
-type ProjectDoc = Omit<Project, "id"> & { _id: ObjectId };
-type GalleryDoc = Omit<GalleryImage, "id"> & { _id: ObjectId };
-
-function empFromDoc(d: EmployeeDoc): Employee {
-  return {
-    id: d._id.toHexString(),
-    employeeId: d.employeeId,
-    name: d.name,
-    team: d.team,
-    role: d.role,
-    bayNumber: d.bayNumber,
-    imageUrl: d.imageUrl,
-  };
-}
-
-function projFromDoc(d: ProjectDoc): Project {
-  return {
-    id: d._id.toHexString(),
-    name: d.name,
-    team: d.team,
-    assignedDate: d.assignedDate,
-    lastDate: d.lastDate,
-    status: d.status,
-  };
-}
-
-function galFromDoc(d: GalleryDoc): GalleryImage {
-  return {
-    id: d._id.toHexString(),
-    url: d.url,
-    title: d.title,
-    caption: d.caption,
-    uploadedAt: d.uploadedAt,
-  };
-}
-
 async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
-  const em = db.collection<EmployeeDoc>(C.employees);
+  await ensureColanModelIndexes(db);
+
+  const em = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   if ((await em.countDocuments()) === 0) {
     await em.insertMany(
       MOCK_EMPLOYEES.map(({ id: _id, ...rest }) => ({
         ...rest,
         _id: new ObjectId(),
-      })) as EmployeeDoc[],
+      })) as EmployeeDocument[],
     );
   }
-  const pr = db.collection<ProjectDoc>(C.projects);
+  const pr = db.collection<ProjectDocument>(COLLECTIONS.projects);
   if ((await pr.countDocuments()) === 0) {
     await pr.insertMany(
       MOCK_PROJECTS.map(({ id: _id, ...rest }) => ({
         ...rest,
         _id: new ObjectId(),
-      })) as ProjectDoc[],
+      })) as ProjectDocument[],
     );
   }
-  const ga = db.collection<GalleryDoc>(C.gallery);
+  const ga = db.collection<GalleryImageDocument>(COLLECTIONS.gallery);
   if ((await ga.countDocuments()) === 0) {
     await ga.insertMany(
       MOCK_GALLERY.map(({ id: _id, ...rest }) => ({
         ...rest,
         _id: new ObjectId(),
-      })) as GalleryDoc[],
+      })) as GalleryImageDocument[],
     );
   }
 }
@@ -86,11 +56,11 @@ export async function listEmployees(): Promise<Employee[]> {
   if (!db) return memoryStore.employees.map((e) => ({ ...e }));
   await ensureMongoSeed(db);
   const rows = await db
-    .collection<EmployeeDoc>(C.employees)
+    .collection<EmployeeDocument>(COLLECTIONS.employees)
     .find({})
     .sort({ name: 1 })
     .toArray();
-  return rows.map((d) => empFromDoc(d));
+  return rows.map((d) => employeeDocToDTO(d));
 }
 
 export async function createEmployee(
@@ -108,12 +78,12 @@ export async function createEmployee(
     return row;
   }
   await ensureMongoSeed(db);
-  const col = db.collection<EmployeeDoc>(C.employees);
+  const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   await col.updateMany({ bayNumber: input.bayNumber }, { $set: { bayNumber: "" } });
   const _id = new ObjectId();
-  const doc: EmployeeDoc = { _id, ...input };
+  const doc: EmployeeDocument = { _id, ...employeeInputToDocFields(input) };
   await col.insertOne(doc);
-  return empFromDoc(doc);
+  return employeeDocToDTO(doc);
 }
 
 export async function assignEmployeeToBay(
@@ -133,7 +103,7 @@ export async function assignEmployeeToBay(
     return list.map((e) => ({ ...e }));
   }
   await ensureMongoSeed(db);
-  const col = db.collection<EmployeeDoc>(C.employees);
+  const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   await col.updateMany({ bayNumber: bayId }, { $set: { bayNumber: "" } });
   if (employeeId) {
     if (!ObjectId.isValid(employeeId)) {
@@ -152,11 +122,11 @@ export async function listProjects(): Promise<Project[]> {
   if (!db) return memoryStore.projects.map((p) => ({ ...p }));
   await ensureMongoSeed(db);
   const rows = await db
-    .collection<ProjectDoc>(C.projects)
+    .collection<ProjectDocument>(COLLECTIONS.projects)
     .find({})
     .sort({ assignedDate: -1 })
     .toArray();
-  return rows.map(projFromDoc);
+  return rows.map((d) => projectDocToDTO(d));
 }
 
 export async function createProject(
@@ -170,9 +140,9 @@ export async function createProject(
   }
   await ensureMongoSeed(db);
   const _id = new ObjectId();
-  const doc: ProjectDoc = { _id, ...input };
-  await db.collection<ProjectDoc>(C.projects).insertOne(doc);
-  return projFromDoc(doc);
+  const doc: ProjectDocument = { _id, ...input };
+  await db.collection<ProjectDocument>(COLLECTIONS.projects).insertOne(doc);
+  return projectDocToDTO(doc);
 }
 
 export async function listGallery(): Promise<GalleryImage[]> {
@@ -180,11 +150,11 @@ export async function listGallery(): Promise<GalleryImage[]> {
   if (!db) return memoryStore.gallery.map((g) => ({ ...g }));
   await ensureMongoSeed(db);
   const rows = await db
-    .collection<GalleryDoc>(C.gallery)
+    .collection<GalleryImageDocument>(COLLECTIONS.gallery)
     .find({})
     .sort({ uploadedAt: -1 })
     .toArray();
-  return rows.map(galFromDoc);
+  return rows.map((d) => galleryImageDocToDTO(d));
 }
 
 export async function createGalleryItem(
@@ -198,7 +168,7 @@ export async function createGalleryItem(
   }
   await ensureMongoSeed(db);
   const _id = new ObjectId();
-  const doc: GalleryDoc = { _id, ...input };
-  await db.collection<GalleryDoc>(C.gallery).insertOne(doc);
-  return galFromDoc(doc);
+  const doc: GalleryImageDocument = { _id, ...input };
+  await db.collection<GalleryImageDocument>(COLLECTIONS.gallery).insertOne(doc);
+  return galleryImageDocToDTO(doc);
 }
