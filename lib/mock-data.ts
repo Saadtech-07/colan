@@ -1,0 +1,191 @@
+import type { Employee, GalleryImage, Project } from "@/types";
+
+const img = (seed: string) =>
+  `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed)}`;
+
+export const MOCK_EMPLOYEES: Employee[] = [
+  {
+    id: "1",
+    employeeId: "COL-1001",
+    name: "Priya Sharma",
+    team: "React Team",
+    role: "Team Lead",
+    bayNumber: "E-12",
+    imageUrl: img("priya"),
+  },
+  {
+    id: "2",
+    employeeId: "COL-1002",
+    name: "James Chen",
+    team: "Next.js Team",
+    role: "Employee",
+    bayNumber: "E-08",
+    imageUrl: img("james"),
+  },
+  {
+    id: "3",
+    employeeId: "COL-1003",
+    name: "Maria Garcia",
+    team: "Node Team",
+    role: "Manager",
+    bayNumber: "E-22",
+    imageUrl: img("maria"),
+  },
+  {
+    id: "4",
+    employeeId: "COL-1004",
+    name: "Alex Thompson",
+    team: "UI/UX Team",
+    role: "Team Lead",
+    bayNumber: "E-05",
+    imageUrl: img("alex"),
+  },
+  {
+    id: "5",
+    employeeId: "COL-1005",
+    name: "Sofia Nielsen",
+    team: "Testing Team",
+    role: "Employee",
+    bayNumber: "E-31",
+    imageUrl: img("sofia"),
+  },
+  {
+    id: "6",
+    employeeId: "COL-1006",
+    name: "David Okonkwo",
+    team: "DevOps Team",
+    role: "Employee",
+    bayNumber: "E-44",
+    imageUrl: img("david"),
+  },
+  {
+    id: "7",
+    employeeId: "COL-1007",
+    name: "Emily Watson",
+    team: "React Team",
+    role: "Intern",
+    bayNumber: "E-14",
+    imageUrl: img("emily"),
+  },
+  {
+    id: "8",
+    employeeId: "COL-1008",
+    name: "Ryan Park",
+    team: "Next.js Team",
+    role: "Team Lead",
+    bayNumber: "E-09",
+    imageUrl: img("ryan"),
+  },
+];
+
+export const MOCK_PROJECTS: Project[] = [
+  {
+    id: "p1",
+    name: "Customer Portal Revamp",
+    team: "React Team",
+    assignedDate: "2026-04-01",
+    lastDate: "2026-06-30",
+    status: "In Progress",
+  },
+  {
+    id: "p2",
+    name: "Design System 2.0",
+    team: "UI/UX Team",
+    assignedDate: "2026-03-15",
+    lastDate: "2026-05-20",
+    status: "In Progress",
+  },
+  {
+    id: "p3",
+    name: "API Gateway Migration",
+    team: "Node Team",
+    assignedDate: "2026-01-10",
+    lastDate: "2026-04-28",
+    status: "Completed",
+  },
+  {
+    id: "p4",
+    name: "Observability Stack",
+    team: "DevOps Team",
+    assignedDate: "2026-02-01",
+    lastDate: "2026-07-15",
+    status: "Yet To Start",
+  },
+  {
+    id: "p5",
+    name: "E2E Automation Suite",
+    team: "Testing Team",
+    assignedDate: "2026-04-20",
+    lastDate: "2026-08-01",
+    status: "In Progress",
+  },
+  {
+    id: "p6",
+    name: "App Router Migration",
+    team: "Next.js Team",
+    assignedDate: "2025-11-01",
+    lastDate: "2026-03-01",
+    status: "Completed",
+  },
+];
+
+const gallery = (id: number, title: string) =>
+  `https://picsum.photos/seed/colan${id}/800/${500 + (id % 3) * 100}`;
+
+export const MOCK_GALLERY: GalleryImage[] = [
+  {
+    id: "g1",
+    url: gallery(1, "Town hall"),
+    title: "Q1 Town Hall",
+    caption: "Leadership keynote",
+    uploadedAt: "2026-04-02",
+  },
+  {
+    id: "g2",
+    url: gallery(2, "Hackathon"),
+    title: "Internal Hackathon",
+    uploadedAt: "2026-03-18",
+  },
+  {
+    id: "g3",
+    url: gallery(3, "Team lunch"),
+    title: "Engineering Lunch",
+    caption: "Next.js Team",
+    uploadedAt: "2026-03-05",
+  },
+  {
+    id: "g4",
+    url: gallery(4, "Workshop"),
+    title: "Design Workshop",
+    uploadedAt: "2026-02-22",
+  },
+  {
+    id: "g5",
+    url: gallery(5, "Offsite"),
+    title: "Leadership Offsite",
+    uploadedAt: "2026-01-12",
+  },
+  {
+    id: "g6",
+    url: gallery(6, "Celebration"),
+    title: "Ship Week Celebration",
+    uploadedAt: "2025-12-20",
+  },
+];
+
+export function projectStats(projects: Project[]) {
+  const inProgress = projects.filter((p) => p.status === "In Progress").length;
+  const completed = projects.filter((p) => p.status === "Completed").length;
+  const yetToStart = projects.filter((p) => p.status === "Yet To Start").length;
+  return { inProgress, completed, yetToStart, total: projects.length };
+}
+
+export function monthlyProjectTrend() {
+  return [
+    { month: "Jan", started: 2, completed: 1 },
+    { month: "Feb", started: 3, completed: 2 },
+    { month: "Mar", started: 4, completed: 3 },
+    { month: "Apr", started: 5, completed: 2 },
+    { month: "May", started: 3, completed: 4 },
+  ];
+}
