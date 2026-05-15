@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   ImageIcon,
@@ -38,17 +39,18 @@ export function AppSidebar() {
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
-        <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-sm font-bold shadow-inner">
-            C
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-sidebar-foreground/70">
-              Workspace
-            </p>
-            <p className="font-semibold leading-tight">Colan</p>
-          </div>
-        </div>
+       
+
+  <div className="flex h-20 items-center border-b border-sidebar-border px-4">
+  <Image
+    src="/colan-logo1.png"
+    alt="Colan Infotech"
+    width={180}
+    height={60}
+    className="object-contain"
+    priority
+  />
+  </div>
         <ScrollArea className="flex-1 px-3 py-4">
           <nav className="flex flex-col gap-1">
             {nav.map((item) => {
