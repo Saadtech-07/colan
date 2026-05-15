@@ -45,16 +45,6 @@ export function ProjectDetailEditor({
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
-    setName(project.name);
-    setTeam(project.team);
-    setAssignedDate(project.assignedDate);
-    setLastDate(project.lastDate);
-    setStatus(project.status);
-    setDescription(project.description ?? "");
-    setMemberIds(project.memberIds);
-  }, [project]);
-
   const rosterForTeam = teamRoster.filter((e) => e.team === (lockedTeam ?? team));
 
   const toggleMember = (id: string) => {

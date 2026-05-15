@@ -10,7 +10,7 @@ export function slugifyProjectName(name: string): string {
 
 export function uniqueProjectSlug(base: string, existing: string[]): string {
   const taken = new Set(existing);
-  let slug = slugifyProjectName(base);
+  const slug = slugifyProjectName(base);
   if (!taken.has(slug)) return slug;
   let n = 2;
   while (taken.has(`${slug}-${n}`)) n += 1;

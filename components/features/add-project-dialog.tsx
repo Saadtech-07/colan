@@ -38,10 +38,6 @@ export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
   const [lastDate, setLastDate] = React.useState("");
   const [status, setStatus] = React.useState<ProjectStatus>("Yet To Start");
 
-  React.useEffect(() => {
-    if (lockedTeam) setTeam(lockedTeam);
-  }, [lockedTeam]);
-
   const reset = () => {
     setName("");
     setTeam(lockedTeam ?? "React Team");

@@ -103,8 +103,47 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   }, [sessionStatus]);
 
   React.useEffect(() => {
-    void refreshData();
-  }, [refreshData]);
+    if (sessionStatus !== "authenticated") return;
+    let cancelled = false;
+    void (async () => {
+      setDataLoading(true);
+      setDataError(null);
+      try {
+        const [emRes, prRes, gaRes, sumRes] = await Promise.all([
+          fetch("/api/employees", { credentials: "include" }),
+          fetch("/api/projects", { credentials: "include" }),
+          fetch("/api/gallery", { credentials: "include" }),
+          fetch("/api/db-status", { credentials: "include" }),
+        ]);
+        if (cancelled) return;
+        if (sumRes.ok) {
+          setDataSummary((await sumRes.json()) as DataLayerSummary);
+        } else {
+          setDataSummary(null);
+        }
+        if (!emRes.ok) throw new Error(await parseError(emRes));
+        if (!prRes.ok) throw new Error(await parseError(prRes));
+        if (!gaRes.ok) throw new Error(await parseError(gaRes));
+        const [em, pr, ga] = await Promise.all([
+          emRes.json() as Promise<Employee[]>,
+          prRes.json() as Promise<Project[]>,
+          gaRes.json() as Promise<GalleryImage[]>,
+        ]);
+        if (cancelled) return;
+        setEmployees(em);
+        setProjects(pr);
+        setGallery(ga);
+      } catch (e) {
+        if (cancelled) return;
+        setDataError(e instanceof Error ? e.message : "Failed to load data");
+      } finally {
+        if (!cancelled) setDataLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionStatus]);
 
   const logout = React.useCallback(async () => {
     await signOut({ callbackUrl: "/login" });

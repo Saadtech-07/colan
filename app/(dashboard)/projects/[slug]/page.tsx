@@ -19,28 +19,32 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
-  const load = React.useCallback(async () => {
-    if (!slug) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/projects/${slug}`, { credentials: "include" });
-      if (!res.ok) {
-        const j = (await res.json()) as { error?: string };
-        throw new Error(j.error ?? res.statusText);
-      }
-      setProject((await res.json()) as ProjectDetail);
-    } catch (e) {
-      setProject(null);
-      setError(e instanceof Error ? e.message : "Failed to load project");
-    } finally {
-      setLoading(false);
-    }
-  }, [slug]);
-
   React.useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    void (async () => {
+      if (!slug) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/projects/${slug}`, { credentials: "include" });
+        if (cancelled) return;
+        if (!res.ok) {
+          const j = (await res.json()) as { error?: string };
+          throw new Error(j.error ?? res.statusText);
+        }
+        setProject((await res.json()) as ProjectDetail);
+      } catch (e) {
+        if (cancelled) return;
+        setProject(null);
+        setError(e instanceof Error ? e.message : "Failed to load project");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
 
   const canEdit =
     !!access &&
@@ -91,6 +95,7 @@ export default function ProjectDetailPage() {
           </header>
 
           <ProjectDetailEditor
+            key={project.slug}
             project={project}
             teamRoster={employees}
             canEdit={canEdit}
