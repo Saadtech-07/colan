@@ -21,11 +21,13 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-backdrop-filter:bg-background/80 sm:px-6 lg:px-8 transition-all duration-200">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-          <Building2 className="h-5 w-5" />
-        </div>
+        <img
+          src="/colan-logo.png"
+          alt="COLAN"
+          className="h-10 w-10 rounded-xl object-contain"
+        />
         <div>
-          <p className="text-sm font-semibold tracking-tight">Colan</p>
+          <p className="text-sm font-semibold tracking-tight">COLAN INFOTECH</p>
           <p className="text-xs text-muted-foreground">
             Employee &amp; project hub
           </p>

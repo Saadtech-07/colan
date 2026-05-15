@@ -27,6 +27,7 @@ import { useAppState } from "@/providers/app-state";
 import { ALL_BAY_IDS, TEAMS } from "@/lib/constants";
 import type { Employee } from "@/types";
 import { cn } from "@/lib/utils";
+import { ReassignEmployeeDialog } from "@/components/features/reassign-employee-dialog";
 
 const ALL_TAB = "All";
 
@@ -34,6 +35,16 @@ export default function SeatingPage() {
   const { employees, assignEmployeeToBay, isAdmin } = useAppState();
   const [teamTab, setTeamTab] = React.useState<string>(ALL_TAB);
   const [bayDialog, setBayDialog] = React.useState<string | null>(null);
+
+  const handleReassignEmployee = async (employeeId: string, newBayId: string) => {
+    // Clear the old bay assignment
+    const employee = employees.find((e) => e.id === employeeId);
+    if (employee) {
+      await assignEmployeeToBay(employee.bayNumber, null);
+    }
+    // Assign to the new bay
+    await assignEmployeeToBay(newBayId, employeeId);
+  };
 
   const occupant = (bayId: string) =>
     employees.find((e) => e.bayNumber === bayId) ?? null;
@@ -167,6 +178,17 @@ export default function SeatingPage() {
                 </SelectContent>
               </Select>
             </div>
+            {current && (
+              <div className="flex items-center justify-between pt-2 border-t">
+                <span className="text-sm text-muted-foreground">
+                  Current: {current.name} ({current.bayNumber})
+                </span>
+                <ReassignEmployeeDialog
+                  employee={current}
+                  onReassign={handleReassignEmployee}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setBayDialog(null)}>

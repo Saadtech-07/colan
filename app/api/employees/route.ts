@@ -64,11 +64,6 @@ export async function PATCH(req: Request) {
     );
   }
   const { bayId, employeeId } = parsed.data;
-  if (employeeId) {
-    if (!ObjectId.isValid(employeeId)) {
-      return NextResponse.json({ error: "Invalid employee id" }, { status: 400 });
-    }
-  }
   try {
     await assignEmployeeToBay(bayId, employeeId);
   } catch (e) {

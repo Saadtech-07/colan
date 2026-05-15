@@ -139,6 +139,9 @@ export function NotificationDropdown() {
                           <span className="h-2 w-2 rounded-full bg-primary" />
                         )}
                       </div>
+                      <p className="text-xs text-muted-foreground line-clamp-2">
+                        {notification.message}
+                      </p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Clock className="h-3 w-3" />
                         <span>{notification.assignedDate}</span>
@@ -147,9 +150,14 @@ export function NotificationDropdown() {
                           {notification.status}
                         </span>
                       </div>
-                      <Badge variant="outline" className="text-xs w-fit">
-                        {notification.team}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-xs w-fit">
+                          {notification.team}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          by {notification.assignedBy}
+                        </span>
+                      </div>
                     </div>
                     {!notification.isRead && (
                       <Button

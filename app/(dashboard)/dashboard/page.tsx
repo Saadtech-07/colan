@@ -71,6 +71,8 @@ export default function DashboardPage() {
       status: project.status,
       isRead: false,
       createdAt: new Date().toISOString(),
+      assignedBy: user?.name ?? "Admin",
+      message: `Admin assigned a new project: ${project.name} for ${project.team}`,
     });
   };
 
