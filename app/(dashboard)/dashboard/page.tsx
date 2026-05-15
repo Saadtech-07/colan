@@ -15,6 +15,7 @@ import { TEAMS } from "@/lib/constants";
 import type { Project, TeamName } from "@/types";
 import { AddProjectDialog } from "@/components/features/add-project-dialog";
 import { ProjectAnalyticsChart } from "@/components/features/project-analytics-chart";
+import { RoleAccessPanel } from "@/components/features/role-access-panel";
 import { cn } from "@/lib/utils";
 
 function statusBadge(status: Project["status"]) {
@@ -27,21 +28,20 @@ export default function DashboardPage() {
   const {
     projects,
     addProject,
-    isAdmin,
+    access,
     user,
     employees,
     dataLoading,
     dataError,
     dataSummary,
   } = useAppState();
-  const visibleProjects =
-    isAdmin || !user?.team
-      ? projects
-      : projects.filter((p) => p.team === user.team);
+  const visibleProjects = projects;
   const stats = projectStats(visibleProjects);
   const teamCount = new Set(visibleProjects.map((p) => p.team)).size;
+  const teamsToShow =
+    access?.seesAllTeams || !user?.team ? TEAMS : [user.team];
 
-  const byTeam = TEAMS.reduce(
+  const byTeam = teamsToShow.reduce(
     (acc, team) => {
       acc[team] = visibleProjects.filter((p) => p.team === team);
       return acc;
@@ -91,13 +91,22 @@ export default function DashboardPage() {
             Dashboard
           </h1>
           <p className="mt-1 text-muted-foreground">
-            {isAdmin
+            {access?.seesAllTeams
               ? "Company-wide project pulse and team workload."
-              : `Projects for ${user?.team ?? "your team"}.`}
+              : access?.canManageProjects
+                ? `Manage delivery for ${user?.team ?? "your squad"}.`
+                : `View projects for ${user?.team ?? "your team"}.`}
           </p>
         </div>
-        {isAdmin && <AddProjectDialog onCreate={addProject} />}
+        {access?.canManageProjects && (
+          <AddProjectDialog
+            onCreate={addProject}
+            lockedTeam={access.role === "lead" ? user?.team : undefined}
+          />
+        )}
       </div>
+
+      {access && <RoleAccessPanel access={access} />}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -151,7 +160,7 @@ export default function DashboardPage() {
           </h2>
         </div>
         <div className="grid gap-6 lg:grid-cols-2">
-          {TEAMS.map((team) => (
+          {teamsToShow.map((team) => (
             <Card
               key={team}
               className="overflow-hidden transition-shadow hover:shadow-md"

@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAppState } from "@/providers/app-state";
 
 export function AppHeader() {
-  const { user, logout, isAdmin } = useAppState();
+  const { user, logout, access } = useAppState();
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
@@ -69,10 +69,10 @@ export function AppHeader() {
                 <span className="text-xs font-normal text-muted-foreground">
                   {user?.email}
                 </span>
-                <Badge variant="secondary" className="w-fit capitalize">
-                  {user?.appRole}
+                <Badge variant="secondary" className="w-fit">
+                  {access?.definition.label ?? user?.appRole}
                 </Badge>
-                {!isAdmin && user?.team && (
+                {user?.team && (
                   <span className="text-xs text-muted-foreground">
                     {user.team}
                   </span>

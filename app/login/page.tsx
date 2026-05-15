@@ -61,11 +61,15 @@ export default function LoginPage() {
         <Card className="border-white/10 bg-white/95 shadow-2xl backdrop-blur">
           <CardHeader>
             <CardTitle>Welcome back</CardTitle>
-            <CardDescription>
-              Sign in with accounts stored in MongoDB Atlas when{" "}
-              <code className="text-xs">MONGODB_URI</code> is set (seeded on first run:
-              admin@colan.io / admin123, employee@colan.io / employee123). Without Atlas,
-              the same credentials work against an in-memory dev store.
+            <CardDescription className="space-y-2">
+              <span className="block">
+                Demo accounts (password shown after /). Stored in MongoDB when{" "}
+                <code className="text-xs">MONGODB_URI</code> is set.
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                admin@colan.io / admin123 · manager@colan.io / manager123 ·
+                lead@colan.io / lead123 · employee@colan.io / employee123
+              </span>
             </CardDescription>
           </CardHeader>
           <CardContent>

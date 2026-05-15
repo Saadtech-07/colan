@@ -15,7 +15,8 @@ export type CompanyRole =
   | "Employee"
   | "Intern";
 
-export type AppRole = "admin" | "employee";
+/** Workspace access role (Auth.js / app_users), not directory CompanyRole. */
+export type AppRole = "admin" | "manager" | "lead" | "employee";
 
 export interface Employee {
   id: string;
@@ -29,12 +30,20 @@ export interface Employee {
 
 export interface Project {
   id: string;
+  slug: string;
   name: string;
   team: TeamName;
   assignedDate: string;
   lastDate: string;
   status: ProjectStatus;
+  description?: string;
+  /** Employee document ids assigned to this project. */
+  memberIds: string[];
 }
+
+export type ProjectDetail = Project & {
+  members: Employee[];
+};
 
 export interface GalleryImage {
   id: string;

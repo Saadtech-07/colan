@@ -26,6 +26,18 @@ export const projectCreateSchema = z.object({
   assignedDate: z.string().min(1),
   lastDate: z.string().min(1),
   status: z.enum(projectStatuses),
+  description: z.string().optional(),
+  memberIds: z.array(z.string()).optional(),
+});
+
+export const projectUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  team: z.enum(teamEnum).optional(),
+  assignedDate: z.string().min(1).optional(),
+  lastDate: z.string().min(1).optional(),
+  status: z.enum(projectStatuses).optional(),
+  description: z.string().optional(),
+  memberIds: z.array(z.string()).optional(),
 });
 
 export const galleryCreateSchema = z.object({

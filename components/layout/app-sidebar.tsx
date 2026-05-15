@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Briefcase,
   ImageIcon,
   LayoutDashboard,
   LayoutGrid,
@@ -12,6 +13,8 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { canAccessNav } from "@/lib/permissions";
+import { useAppState } from "@/providers/app-state";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -19,6 +22,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/projects", label: "Team Projects", icon: Briefcase },
   { href: "/team-members", label: "Team Members", icon: Users },
   { href: "/gallery", label: "Gallery", icon: ImageIcon },
   { href: "/seating", label: "Seating Arrangement", icon: LayoutGrid },
@@ -28,6 +32,11 @@ const nav = [
 export function AppSidebar() {
   const pathname = usePathname();
   const [open, setOpen] = React.useState(false);
+  const { access } = useAppState();
+
+  const visibleNav = nav.filter(
+    (item) => access && canAccessNav(access.role, item.href),
+  );
 
   return (
     <>
@@ -50,7 +59,7 @@ export function AppSidebar() {
         </div>
         <ScrollArea className="flex-1 px-3 py-4">
           <nav className="flex flex-col gap-1">
-            {nav.map((item) => {
+            {visibleNav.map((item) => {
               const active =
                 pathname === item.href ||
                 (item.href !== "/dashboard" &&

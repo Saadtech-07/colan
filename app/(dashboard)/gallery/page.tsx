@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAppState } from "@/providers/app-state";
 
 export default function GalleryPage() {
-  const { gallery, addGalleryItem, isAdmin } = useAppState();
+  const { gallery, addGalleryItem, access } = useAppState();
   const [open, setOpen] = React.useState(false);
   const [title, setTitle] = React.useState("");
   const [url, setUrl] = React.useState("https://picsum.photos/seed/upload/800/600");
@@ -47,7 +47,7 @@ export default function GalleryPage() {
             Company moments — Cloudinary upload will plug in here later.
           </p>
         </div>
-        {isAdmin && (
+        {access?.canWriteGallery && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2 shadow-sm transition-transform hover:-translate-y-0.5">

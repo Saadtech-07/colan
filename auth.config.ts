@@ -1,5 +1,6 @@
+import { normalizeAppRole } from "@/lib/permissions";
 import type { NextAuthConfig } from "next-auth";
-import type { AppRole, TeamName } from "@/types";
+import type { TeamName } from "@/types";
 
 /**
  * Edge-safe auth config (no MongoDB, bcrypt, or other Node-only imports).
@@ -36,7 +37,7 @@ export const authConfig = {
     session({ session, token }) {
       if (session.user) {
         session.user.id = (token.sub ?? session.user.email ?? "") as string;
-        session.user.appRole = (token.appRole ?? "employee") as AppRole;
+        session.user.appRole = normalizeAppRole(token.appRole);
         session.user.team = token.team as TeamName | undefined;
         const pic = token.picture as string | undefined;
         if (pic) session.user.image = pic;

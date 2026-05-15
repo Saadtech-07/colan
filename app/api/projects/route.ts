@@ -1,24 +1,30 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createProject, listProjects } from "@/lib/data-service";
+import {
+  assertCanCreateProject,
+  filterProjectsForUser,
+  sessionAccess,
+} from "@/lib/session-access";
 import { projectCreateSchema } from "@/lib/validations";
 
 export async function GET() {
   const session = await auth();
-  if (!session?.user) {
+  const access = sessionAccess(session);
+  if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const projects = await listProjects();
-  return NextResponse.json(projects);
+  return NextResponse.json(
+    filterProjectsForUser(projects, access.role, access.team),
+  );
 }
 
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user) {
+  const access = sessionAccess(session);
+  if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  if (session.user.appRole !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   let body: unknown;
   try {
@@ -33,6 +39,13 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const created = await createProject(parsed.data);
+  const denied = assertCanCreateProject(access, parsed.data.team);
+  if (denied) {
+    return NextResponse.json({ error: denied }, { status: 403 });
+  }
+  const created = await createProject({
+    ...parsed.data,
+    memberIds: parsed.data.memberIds ?? [],
+  });
   return NextResponse.json(created, { status: 201 });
 }

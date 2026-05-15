@@ -24,22 +24,27 @@ import type { Project, ProjectStatus, TeamName } from "@/types";
 import { TEAMS } from "@/lib/constants";
 
 type Props = {
-  onCreate: (project: Omit<Project, "id">) => void | Promise<void>;
+  onCreate: (project: Omit<Project, "id" | "slug">) => void | Promise<void>;
+  lockedTeam?: TeamName;
 };
 
 const STATUSES: ProjectStatus[] = ["Yet To Start", "In Progress", "Completed"];
 
-export function AddProjectDialog({ onCreate }: Props) {
+export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
-  const [team, setTeam] = React.useState<TeamName>("React Team");
+  const [team, setTeam] = React.useState<TeamName>(lockedTeam ?? "React Team");
   const [assignedDate, setAssignedDate] = React.useState("");
   const [lastDate, setLastDate] = React.useState("");
   const [status, setStatus] = React.useState<ProjectStatus>("Yet To Start");
 
+  React.useEffect(() => {
+    if (lockedTeam) setTeam(lockedTeam);
+  }, [lockedTeam]);
+
   const reset = () => {
     setName("");
-    setTeam("React Team");
+    setTeam(lockedTeam ?? "React Team");
     setAssignedDate("");
     setLastDate("");
     setStatus("Yet To Start");
@@ -49,10 +54,11 @@ export function AddProjectDialog({ onCreate }: Props) {
     if (!name.trim() || !assignedDate || !lastDate) return;
     await onCreate({
       name: name.trim(),
-      team,
+      team: lockedTeam ?? team,
       assignedDate,
       lastDate,
       status,
+      memberIds: [],
     });
     reset();
     setOpen(false);
@@ -69,7 +75,9 @@ export function AddProjectDialog({ onCreate }: Props) {
         <DialogHeader>
           <DialogTitle>New project</DialogTitle>
           <DialogDescription>
-            Assign a project to a team. Data is stored in memory for this demo.
+            {lockedTeam
+              ? `Create a project for ${lockedTeam}. Saved to MongoDB when configured.`
+              : "Assign a project to a team. Saved to MongoDB when configured."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -84,18 +92,22 @@ export function AddProjectDialog({ onCreate }: Props) {
           </div>
           <div className="space-y-2">
             <Label>Team</Label>
-            <Select value={team} onValueChange={(v) => setTeam(v as TeamName)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TEAMS.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {lockedTeam ? (
+              <Input value={lockedTeam} readOnly className="bg-muted" />
+            ) : (
+              <Select value={team} onValueChange={(v) => setTeam(v as TeamName)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TEAMS.map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">

@@ -3,11 +3,13 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
+import { buildAccessContext, normalizeAppRole, type AccessContext } from "@/lib/permissions";
 import type { AuthUser, Employee, GalleryImage, Project } from "@/types";
 import type { DataLayerSummary } from "@/types/data-layer";
 
 type AppStateContextValue = {
   user: AuthUser | null;
+  access: AccessContext | null;
   sessionStatus: "loading" | "authenticated" | "unauthenticated";
   logout: () => Promise<void>;
   isAdmin: boolean;
@@ -20,7 +22,7 @@ type AppStateContextValue = {
   dataSummary: DataLayerSummary | null;
   refreshData: () => Promise<void>;
   addEmployee: (input: Omit<Employee, "id">) => Promise<void>;
-  addProject: (input: Omit<Project, "id">) => Promise<void>;
+  addProject: (input: Omit<Project, "id" | "slug">) => Promise<void>;
   addGalleryItem: (input: Omit<GalleryImage, "id">) => Promise<void>;
   assignEmployeeToBay: (bayId: string, employeeId: string | null) => Promise<void>;
 };
@@ -53,13 +55,18 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       id: u.id ?? u.email ?? "",
       name: u.name ?? "",
       email: u.email ?? "",
-      appRole: u.appRole,
+      appRole: normalizeAppRole(u.appRole),
       team: u.team,
       avatarUrl: u.image ?? undefined,
     };
   }, [session?.user]);
 
-  const isAdmin = user?.appRole === "admin";
+  const access = React.useMemo(
+    () => (user ? buildAccessContext(user.appRole, user.team) : null),
+    [user],
+  );
+
+  const isAdmin = access?.role === "admin";
 
   const refreshData = React.useCallback(async () => {
     if (sessionStatus !== "authenticated") return;
@@ -118,7 +125,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const addProject = React.useCallback(async (input: Omit<Project, "id">) => {
+  const addProject = React.useCallback(async (input: Omit<Project, "id" | "slug">) => {
     const res = await fetch("/api/projects", {
       method: "POST",
       credentials: "include",
@@ -163,6 +170,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const value = React.useMemo(
     () => ({
       user,
+      access,
       sessionStatus,
       logout,
       isAdmin,
@@ -180,6 +188,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       user,
+      access,
       sessionStatus,
       logout,
       isAdmin,

@@ -31,7 +31,8 @@ import { cn } from "@/lib/utils";
 const ALL_TAB = "All";
 
 export default function SeatingPage() {
-  const { employees, assignEmployeeToBay, isAdmin } = useAppState();
+  const { employees, assignEmployeeToBay, access } = useAppState();
+  const canAssign = access?.canAssignSeating ?? false;
   const [teamTab, setTeamTab] = React.useState<string>(ALL_TAB);
   const [bayDialog, setBayDialog] = React.useState<string | null>(null);
 
@@ -80,8 +81,8 @@ export default function SeatingPage() {
               <button
                 key={bayId}
                 type="button"
-                onClick={() => isAdmin && setBayDialog(bayId)}
-                disabled={!isAdmin}
+                onClick={() => canAssign && setBayDialog(bayId)}
+                disabled={!canAssign}
                 className={cn(
                   "flex flex-col gap-1 rounded-lg border p-2 text-left text-xs shadow-sm transition-all duration-200",
                   "hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md",
@@ -89,7 +90,7 @@ export default function SeatingPage() {
                   showDetail && "border-primary/30 bg-primary/5",
                   muted && "border-dashed bg-muted/40 opacity-80",
                   !emp && "bg-background",
-                  !isAdmin && "cursor-default hover:translate-y-0",
+                  !canAssign && "cursor-default hover:translate-y-0",
                 )}
               >
                 <span className="font-mono text-[10px] font-semibold text-muted-foreground">
@@ -126,9 +127,9 @@ export default function SeatingPage() {
         </div>
       </ScrollArea>
 
-      {!isAdmin && (
+      {!canAssign && (
         <p className="text-sm text-muted-foreground">
-          View-only: admins assign bays from this grid.
+          View-only: admins and project leads can assign bays from this grid.
         </p>
       )}
 

@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "@/auth.config";
 import { verifyAppUserCredentials } from "@/lib/app-users";
+import { roleNeedsTeam } from "@/lib/permissions";
 import type { AppRole, TeamName } from "@/types";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -21,9 +22,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!row) return null;
         const appRole: AppRole = row.appRole;
         const team =
-          appRole === "employee" && row.team
-            ? (row.team as TeamName)
-            : undefined;
+          roleNeedsTeam(appRole) && row.team ? (row.team as TeamName) : undefined;
         return {
           id: row.email,
           email: row.email,

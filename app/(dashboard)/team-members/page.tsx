@@ -12,7 +12,7 @@ import { TEAMS } from "@/lib/constants";
 const ALL_TAB = "All";
 
 export default function TeamMembersPage() {
-  const { employees, addEmployee, isAdmin } = useAppState();
+  const { employees, addEmployee, access } = useAppState();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
 
   const filtered =
@@ -31,7 +31,7 @@ export default function TeamMembersPage() {
             Directory with teams, roles, and bay assignments.
           </p>
         </div>
-        {isAdmin && <AddEmployeeDialog onCreate={addEmployee} />}
+        {access?.canWriteEmployees && <AddEmployeeDialog onCreate={addEmployee} />}
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="w-full">
