@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useAppState } from "@/providers/app-state";
+import colanlogo2 from "@/app/image/colanlogo2.png";
 
 export function AppHeader() {
   const { user, logout, access } = useAppState();
@@ -20,18 +21,22 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-          <Building2 className="h-5 w-5" />
+        <div className="flex h-10 w-10 items-center justify-center text-primary-foreground shadow-sm">
+          <img
+        src={colanlogo2.src}
+  alt="Colan Infotech"
+  className="h-8 w-auto object-contain"
+/>
         </div>
         <div>
-          <p className="text-sm font-semibold tracking-tight">Colan</p>
+          <p className="text-sm font-semibold tracking-tight">COLAN INFOTECH</p>
           <p className="text-xs text-muted-foreground">
             Employee &amp; project hub
           </p>
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">
-        <Button
+        {/* <Button
           type="button"
           variant="ghost"
           size="icon"
@@ -39,8 +44,8 @@ export function AppHeader() {
           aria-label="Notifications"
         >
           <Bell className="h-5 w-5" />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" />
-        </Button>
+          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" /> */}
+        {/* </Button> */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

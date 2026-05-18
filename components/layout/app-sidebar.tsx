@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import colanlogo from "@/app/image/colanlogo.png";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -49,15 +50,13 @@ export function AppSidebar() {
         )}
       >
         <div className="flex h-16 items-center gap-2 border-b border-sidebar-border px-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground text-sm font-bold shadow-inner">
-            C
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-sidebar-foreground/70">
-              Workspace
-            </p>
-            <p className="font-semibold leading-tight">Colan</p>
-          </div>
+<div className="flex items-center">
+  <img
+    src={colanlogo.src}
+    alt="Colan Infotech"
+    className="h-9 w-auto object-contain"
+  />
+</div>
         </div>
         <ScrollArea className="flex-1 px-3 py-4">
           <nav className="flex flex-col gap-1">

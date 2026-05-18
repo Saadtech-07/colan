@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 
 // badge/team types not needed for simple login
 import colanlogo from '../image/colanlogo.png'
+import colanlogo2 from "../image/colanlogo2.png";
 export default function LoginPage() {
   const router = useRouter();
 
@@ -91,7 +92,7 @@ export default function LoginPage() {
         {/* Left Side */}
         <div className="hidden flex-col justify-between bg-gradient-to-br from-primary/20 via-blue-500/10 to-fuchsia-500/10 p-10 text-white lg:flex">
           <div>
-            <div className="mb-6 flex h-20 w-50 items-center justify-center ">
+            <div className="-mt-6 mb-4 flex h-25 w-50 items-center justify-center">
               <img src="https://colaninfotech.com/wp-content/uploads/2020/09/colan-logo.png" alt="" />
             </div>
 
@@ -139,7 +140,7 @@ export default function LoginPage() {
               <div className="mb-8 text-center">
                 <div className="mx-auto mb-4 flex h-16 w-50 items-center justify-center ">
                   <img
-                    src={colanlogo.src}
+                    src={colanlogo2.src}
                     alt="Colan Logo"
                     className="h-16 w-16 object-contain"
                   />
