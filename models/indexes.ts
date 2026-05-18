@@ -41,7 +41,10 @@ async function removeInvalidCompanyRoleKeys(db: Db): Promise<void> {
   const collection = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
 
   await collection.deleteMany({
-    $or: [{ key: { $exists: false } }, { key: null }],
+    $or: [
+      { key: { $exists: false } },
+      { key: { $type: 10 } }, // BSON null — invalid legacy rows before unique index
+    ],
   });
 
   const duplicates = await collection
