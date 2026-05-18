@@ -23,19 +23,25 @@ export default function GalleryPage() {
   const [title, setTitle] = React.useState("");
   const [url, setUrl] = React.useState("https://picsum.photos/seed/upload/800/600");
   const [caption, setCaption] = React.useState("");
+  const [isSaving, setIsSaving] = React.useState(false);
 
   const submit = async () => {
-    if (!title.trim() || !url.trim()) return;
-    await addGalleryItem({
-      title: title.trim(),
-      url: url.trim(),
-      caption: caption.trim() || undefined,
-      uploadedAt: new Date().toISOString().slice(0, 10),
-    });
-    setTitle("");
-    setCaption("");
-    setUrl("https://picsum.photos/seed/upload/800/600");
-    setOpen(false);
+    if (!title.trim() || !url.trim() || isSaving) return;
+    setIsSaving(true);
+    try {
+      await addGalleryItem({
+        title: title.trim(),
+        url: url.trim(),
+        caption: caption.trim() || undefined,
+        uploadedAt: new Date().toISOString().slice(0, 10),
+      });
+      setTitle("");
+      setCaption("");
+      setUrl("https://picsum.photos/seed/upload/800/600");
+      setOpen(false);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -91,11 +97,11 @@ export default function GalleryPage() {
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" type="button" onClick={() => setOpen(false)}>
+                <Button variant="outline" type="button" onClick={() => setOpen(false)} disabled={isSaving}>
                   Cancel
                 </Button>
-                <Button type="button" onClick={submit}>
-                  Add to gallery
+                <Button type="button" onClick={submit} disabled={isSaving}>
+                  {isSaving ? "Adding..." : "Add to gallery"}
                 </Button>
               </DialogFooter>
             </DialogContent>
