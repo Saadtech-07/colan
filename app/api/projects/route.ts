@@ -43,9 +43,14 @@ export async function POST(req: Request) {
   if (denied) {
     return NextResponse.json({ error: denied }, { status: 403 });
   }
-  const created = await createProject({
-    ...parsed.data,
-    memberIds: parsed.data.memberIds ?? [],
-  });
-  return NextResponse.json(created, { status: 201 });
+  try {
+    const created = await createProject({
+      ...parsed.data,
+      memberIds: parsed.data.memberIds ?? [],
+    });
+    return NextResponse.json(created, { status: 201 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Failed to create project";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }

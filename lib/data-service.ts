@@ -1,15 +1,28 @@
-import { ObjectId, type Db } from "mongodb";
+import {
+  MongoBulkWriteError,
+  MongoServerError,
+  ObjectId,
+  type Db,
+} from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { memoryStore } from "@/lib/memory-store";
 import { uniqueProjectSlug } from "@/lib/project-slug";
-import type { Employee, GalleryImage, Project, ProjectDetail } from "@/types";
+import type {
+  Employee,
+  EmployeeDirectoryInfo,
+  GalleryImage,
+  Project,
+  ProjectDetail,
+} from "@/types";
 import {
   COLLECTIONS,
   ensureColanModelIndexes,
+  employeeDetailsDocToDTO,
   employeeDocToDTO,
   employeeInputToDocFields,
   galleryImageDocToDTO,
   projectDocToDTO,
+  type EmployeeDetailsDocument,
   type EmployeeDocument,
   type GalleryImageDocument,
   type ProjectDocument,
@@ -19,13 +32,17 @@ import {
   MOCK_GALLERY,
   MOCK_PROJECTS,
 } from "@/lib/mock-data";
+import { ensureAppUsersSeed } from "@/lib/app-users";
 
 function resolveMembers(memberIds: string[], all: Employee[]): Employee[] {
-  if (memberIds.length === 0) {
-    return [];
+  if (memberIds.length === 0) return [];
+  const byId = new Map(all.map((e) => [e.id, e]));
+  const out: Employee[] = [];
+  for (const id of memberIds) {
+    const row = byId.get(id);
+    if (row) out.push(row);
   }
-  const set = new Set(memberIds);
-  return all.filter((e) => set.has(e.id));
+  return out;
 }
 
 function toDetail(project: Project, allEmployees: Employee[]): ProjectDetail {
@@ -70,18 +87,66 @@ async function backfillProjectSlugs(db: Db) {
   }
 }
 
-async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+function isDuplicateKeyError(e: unknown): boolean {
+  if (e instanceof MongoBulkWriteError) {
+    if (e.code === 11000 || e.code === 11001) return true;
+    const we = e.writeErrors;
+    if (Array.isArray(we)) {
+      return we.some((w) => w.code === 11000 || w.code === 11001);
+    }
+    if (we && typeof we === "object" && "code" in we) {
+      const code = (we as { code?: number }).code;
+      return code === 11000 || code === 11001;
+    }
+    return false;
+  }
+  if (e instanceof MongoServerError)
+    return e.code === 11000 || e.code === 11001;
+  return false;
+}
+
+async function safeSeedInsert(run: () => Promise<unknown>): Promise<void> {
+  try {
+    await run();
+  } catch (e) {
+    if (!isDuplicateKeyError(e)) throw e;
+  }
+}
+
+async function repairProjectMemberIds(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+) {
   const em = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const pr = db.collection<ProjectDocument>(COLLECTIONS.projects);
+  const ids = await em.find({}, { projection: { _id: 1 } }).toArray();
+  const valid = new Set(ids.map((d) => d._id.toHexString()));
+  const projects = await pr.find({ memberIds: { $exists: true } }).toArray();
+  for (const p of projects) {
+    const raw = Array.isArray(p.memberIds) ? p.memberIds : [];
+    const next = raw.filter((id) => typeof id === "string" && valid.has(id));
+    if (next.length !== raw.length) {
+      await pr.updateOne({ _id: p._id }, { $set: { memberIds: next, updatedAt: new Date() } });
+    }
+  }
+}
+
+async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  const pr = db.collection<ProjectDocument>(COLLECTIONS.projects);
+  const em = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+
+  await ensureAppUsersSeed(db);
+
   if ((await em.countDocuments()) === 0) {
-    await em.insertMany(
-      MOCK_EMPLOYEES.map(({ id: _id, ...rest }) => ({
-        ...rest,
-        _id: new ObjectId(),
-      })) as EmployeeDocument[],
+    await safeSeedInsert(() =>
+      em.insertMany(
+        MOCK_EMPLOYEES.map(({ id: _id, ...rest }) => ({
+          ...rest,
+          _id: new ObjectId(),
+        })) as EmployeeDocument[],
+      ),
     );
   }
 
-  const pr = db.collection<ProjectDocument>(COLLECTIONS.projects);
   if ((await pr.countDocuments()) === 0) {
     const employees = await em.find({}).toArray();
     const docs: ProjectDocument[] = MOCK_PROJECTS.map(
@@ -94,40 +159,79 @@ async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>
         };
       },
     );
-    await pr.insertMany(docs);
+    await safeSeedInsert(() => pr.insertMany(docs));
   }
-
-  await backfillProjectSlugs(db);
-
-  try {
-    await pr.dropIndex("slug_1");
-  } catch {
-    /* index may not exist yet */
-  }
-
-  await ensureColanModelIndexes(db);
 
   const ga = db.collection<GalleryImageDocument>(COLLECTIONS.gallery);
   if ((await ga.countDocuments()) === 0) {
-    await ga.insertMany(
-      MOCK_GALLERY.map(({ id: _id, ...rest }) => ({
-        ...rest,
-        _id: new ObjectId(),
-      })) as GalleryImageDocument[],
+    await safeSeedInsert(() =>
+      ga.insertMany(
+        MOCK_GALLERY.map(({ id: _id, ...rest }) => ({
+          ...rest,
+          _id: new ObjectId(),
+        })) as GalleryImageDocument[],
+      ),
     );
   }
+
+  await backfillProjectSlugs(db);
+  await repairProjectMemberIds(db);
+
+  const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
+  if ((await det.countDocuments()) === 0 && (await em.countDocuments()) > 0) {
+    const everyone = await em.find({}).toArray();
+    await safeSeedInsert(() =>
+      det.insertMany(
+        everyone.map((emp, i) => ({
+          _id: new ObjectId(),
+          employeeRef: emp._id,
+          workEmail: `${emp.employeeId.toLowerCase().replace(/[^a-z0-9]+/g, ".")}@colan.io`,
+          phone: `+1-555-${String(1000 + (i % 9000)).padStart(4, "0")}`,
+          location: ["Chennai HQ", "Remote", "Singapore"][i % 3],
+          joinedDate: `202${3 + (i % 3)}-${String(((i * 3) % 9) + 1).padStart(2, "0")}-15`,
+          notes: "Seeded employee_details row for Atlas demo.",
+          updatedAt: new Date(),
+        })),
+      ),
+    );
+  }
+
+  await ensureColanModelIndexes(db);
+}
+
+function detailsToDirectory(
+  dto: ReturnType<typeof employeeDetailsDocToDTO>,
+): EmployeeDirectoryInfo {
+  return {
+    workEmail: dto.workEmail,
+    phone: dto.phone,
+    location: dto.location,
+    joinedDate: dto.joinedDate,
+    notes: dto.notes,
+  };
 }
 
 export async function listEmployees(): Promise<Employee[]> {
   const db = await getDb();
   if (!db) return memoryStore.employees.map((e) => ({ ...e }));
   await ensureMongoSeed(db);
-  const rows = await db
-    .collection<EmployeeDocument>(COLLECTIONS.employees)
-    .find({})
-    .sort({ name: 1 })
-    .toArray();
-  return rows.map((d) => employeeDocToDTO(d));
+  const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const rows = await col.find({}).sort({ name: 1 }).toArray();
+  const detCol = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
+  const refs = rows.map((r) => r._id);
+  const detailRows =
+    refs.length === 0
+      ? []
+      : await detCol.find({ employeeRef: { $in: refs } }).toArray();
+  const byRef = new Map(
+    detailRows.map((d) => [d.employeeRef.toHexString(), d]),
+  );
+  return rows.map((d) => {
+    const base = employeeDocToDTO(d);
+    const doc = byRef.get(base.id);
+    if (!doc) return base;
+    return { ...base, directory: detailsToDirectory(employeeDetailsDocToDTO(doc)) };
+  });
 }
 
 export async function createEmployee(
@@ -150,7 +254,19 @@ export async function createEmployee(
   const _id = new ObjectId();
   const doc: EmployeeDocument = { _id, ...employeeInputToDocFields(input) };
   await col.insertOne(doc);
-  return employeeDocToDTO(doc);
+  const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
+  const detailDoc: EmployeeDetailsDocument = {
+    _id: new ObjectId(),
+    employeeRef: _id,
+    workEmail: `${input.employeeId.toLowerCase().replace(/[^a-z0-9]+/g, ".")}@colan.io`,
+    notes: "Created with this employee record.",
+    updatedAt: new Date(),
+  };
+  await safeSeedInsert(() => det.insertOne(detailDoc));
+  return {
+    ...employeeDocToDTO(doc),
+    directory: detailsToDirectory(employeeDetailsDocToDTO(detailDoc)),
+  };
 }
 
 export async function assignEmployeeToBay(

@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { COMPANY_ROLES, TEAMS } from "@/lib/constants";
-import type { CompanyRole, ProjectStatus, TeamName } from "@/types";
+import type { AppRole, CompanyRole, ProjectStatus, TeamName } from "@/types";
 
 const teamEnum = TEAMS as unknown as [TeamName, ...TeamName[]];
 const roleEnum = COMPANY_ROLES as unknown as [CompanyRole, ...CompanyRole[]];
+const appRoleEnum = ["admin", "manager", "lead", "employee"] as const;
 
 const projectStatuses: [ProjectStatus, ...ProjectStatus[]] = [
   "Yet To Start",
@@ -18,6 +19,23 @@ export const employeeCreateSchema = z.object({
   role: z.enum(roleEnum),
   bayNumber: z.string().min(1),
   imageUrl: z.string().min(1),
+});
+
+export const appUserCreateSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  name: z.string().min(1),
+  appRole: z.enum(appRoleEnum),
+  team: z.enum(teamEnum).optional(),
+  imageUrl: z.string().url().optional(),
+});
+
+export const appUserUpdateSchema = z.object({
+  password: z.string().min(6).optional(),
+  name: z.string().min(1).optional(),
+  appRole: z.enum(appRoleEnum).optional(),
+  team: z.enum(teamEnum).optional(),
+  imageUrl: z.string().url().optional(),
 });
 
 export const projectCreateSchema = z.object({

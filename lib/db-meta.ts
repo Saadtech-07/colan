@@ -1,10 +1,26 @@
 import { getDb, isMongoConfigured } from "@/lib/mongodb";
-import { COLLECTIONS } from "@/models";
+import { ensureAppUsersSeed } from "@/lib/app-users";
+import { COLLECTIONS, ensureColanModelIndexes, type CollectionName } from "@/models";
 import type { DataLayerSummary } from "@/types/data-layer";
+
+const COLLECTION_LABELS = {
+  [COLLECTIONS.appUsers]: "App users (login)",
+  [COLLECTIONS.employees]: "Employees",
+  [COLLECTIONS.employeeDetails]: "Employee details",
+  [COLLECTIONS.teams]: "Teams",
+  [COLLECTIONS.companyRoles]: "Company roles",
+  [COLLECTIONS.seatingBays]: "Seating bays",
+  [COLLECTIONS.seatingAssignments]: "Seating assignments",
+  [COLLECTIONS.teamMembers]: "Team members",
+  [COLLECTIONS.projects]: "Projects",
+  [COLLECTIONS.gallery]: "Gallery",
+} satisfies Record<CollectionName, string>;
 
 /**
  * Lightweight read of where data lives and whether Atlas is reachable.
- * Does not run seeding (counts reflect what is already in the database).
+ * Ensures Colan indexes (and therefore empty collections) plus demo login
+ * users exist; it does not insert directory / project / gallery demo rows
+ * (those run from the data API layer on first use).
  */
 export async function getDataLayerSummary(): Promise<DataLayerSummary> {
   if (!isMongoConfigured()) {
@@ -24,16 +40,28 @@ export async function getDataLayerSummary(): Promise<DataLayerSummary> {
       };
     }
     await db.command({ ping: 1 });
-    const [employees, projects, gallery, appUsers] = await Promise.all([
-      db.collection(COLLECTIONS.employees).countDocuments(),
-      db.collection(COLLECTIONS.projects).countDocuments(),
-      db.collection(COLLECTIONS.gallery).countDocuments(),
-      db.collection(COLLECTIONS.appUsers).countDocuments(),
-    ]);
+    await ensureColanModelIndexes(db);
+    await ensureAppUsersSeed(db);
+    const names = Object.values(COLLECTIONS) as CollectionName[];
+    const allCollections = await Promise.all(
+      names.map(async (name) => ({
+        name,
+        label: COLLECTION_LABELS[name],
+        count: await db.collection(name).countDocuments(),
+      })),
+    );
+    const countOf = (n: CollectionName) =>
+      allCollections.find((c) => c.name === n)?.count ?? 0;
     return {
       backend: "mongodb",
       database: db.databaseName,
-      counts: { employees, projects, gallery, appUsers },
+      counts: {
+        employees: countOf(COLLECTIONS.employees),
+        projects: countOf(COLLECTIONS.projects),
+        gallery: countOf(COLLECTIONS.gallery),
+        appUsers: countOf(COLLECTIONS.appUsers),
+      },
+      allCollections,
     };
   } catch (e) {
     const message =

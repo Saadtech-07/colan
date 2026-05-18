@@ -10,6 +10,7 @@ import {
   LayoutGrid,
   Menu,
   Shield,
+  UserCog,
   Users,
   X,
 } from "lucide-react";
@@ -27,6 +28,7 @@ const nav = [
   { href: "/gallery", label: "Gallery", icon: ImageIcon },
   { href: "/seating", label: "Seating Arrangement", icon: LayoutGrid },
   { href: "/roles", label: "Roles", icon: Shield },
+  { href: "/app-users", label: "App Users", icon: UserCog },
 ];
 
 export function AppSidebar() {

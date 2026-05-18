@@ -37,6 +37,8 @@ export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
   const [assignedDate, setAssignedDate] = React.useState("");
   const [lastDate, setLastDate] = React.useState("");
   const [status, setStatus] = React.useState<ProjectStatus>("Yet To Start");
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
 
   const reset = () => {
     setName("");
@@ -44,24 +46,42 @@ export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
     setAssignedDate("");
     setLastDate("");
     setStatus("Yet To Start");
+    setSubmitError(null);
+    setIsSaving(false);
   };
 
   const submit = async () => {
     if (!name.trim() || !assignedDate || !lastDate) return;
-    await onCreate({
-      name: name.trim(),
-      team: lockedTeam ?? team,
-      assignedDate,
-      lastDate,
-      status,
-      memberIds: [],
-    });
-    reset();
-    setOpen(false);
+    setSubmitError(null);
+    setIsSaving(true);
+    try {
+      await onCreate({
+        name: name.trim(),
+        team: lockedTeam ?? team,
+        assignedDate,
+        lastDate,
+        status,
+        memberIds: [],
+      });
+      reset();
+      setOpen(false);
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Could not create project");
+      setIsSaving(false);
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) {
+          setSubmitError(null);
+          setIsSaving(false);
+        }
+      }}
+    >
       <DialogTrigger asChild>
         <Button className="shadow-sm transition-transform hover:-translate-y-0.5">
           Add Project
@@ -77,6 +97,11 @@ export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
+          {submitError && (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {submitError}
+            </p>
+          )}
           <div className="space-y-2">
             <Label htmlFor="project-name">Project name</Label>
             <Input
@@ -145,11 +170,11 @@ export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
           </div>
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button type="button" onClick={submit}>
-            Create project
+          <Button type="button" onClick={submit} disabled={isSaving}>
+            {isSaving ? "Creating..." : "Create project"}
           </Button>
         </DialogFooter>
       </DialogContent>

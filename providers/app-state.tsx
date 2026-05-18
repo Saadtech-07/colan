@@ -31,8 +31,21 @@ const AppStateContext = React.createContext<AppStateContextValue | null>(null);
 
 async function parseError(res: Response): Promise<string> {
   try {
-    const j = (await res.json()) as { error?: string };
-    return j.error ?? res.statusText;
+    const j = (await res.json()) as {
+      error?: string;
+      issues?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] };
+    };
+    if (j.error) return j.error;
+    const fe = j.issues?.fieldErrors;
+    if (fe && typeof fe === "object") {
+      const parts = Object.entries(fe).flatMap(([k, arr]) =>
+        (Array.isArray(arr) ? arr : []).map((msg) => `${k}: ${msg}`),
+      );
+      if (parts.length) return parts.join("; ");
+    }
+    const form = j.issues?.formErrors;
+    if (Array.isArray(form) && form.length) return form.join("; ");
+    return res.statusText;
   } catch {
     return res.statusText;
   }

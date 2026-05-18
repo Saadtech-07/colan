@@ -18,6 +18,15 @@ export type CompanyRole =
 /** Workspace access role (Auth.js / app_users), not directory CompanyRole. */
 export type AppRole = "admin" | "manager" | "lead" | "employee";
 
+/** Extra directory fields from `employee_details` (Atlas collection). */
+export type EmployeeDirectoryInfo = {
+  workEmail?: string;
+  phone?: string;
+  location?: string;
+  joinedDate?: string;
+  notes?: string;
+};
+
 export interface Employee {
   id: string;
   employeeId: string;
@@ -26,6 +35,7 @@ export interface Employee {
   role: CompanyRole;
   bayNumber: string;
   imageUrl: string;
+  directory?: EmployeeDirectoryInfo;
 }
 
 export interface Project {

@@ -162,6 +162,8 @@ export function canAccessNav(role: AppRole, href: string): boolean {
       return hasPermission(role, "roles:read");
     case "/projects":
       return hasPermission(role, "projects:read");
+    case "/app-users":
+      return role === "admin";
     default:
       return href.startsWith("/projects/")
         ? hasPermission(role, "projects:read")

@@ -52,15 +52,37 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       {dataSummary?.backend === "mongodb" && (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
-          <span className="font-medium">MongoDB</span> — database{" "}
-          <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-            {dataSummary.database}
-          </code>
-          . Document counts in Atlas: employees {dataSummary.counts.employees}, projects{" "}
-          {dataSummary.counts.projects}, gallery {dataSummary.counts.gallery}, app users{" "}
-          {dataSummary.counts.appUsers}. Adding employees, projects, or gallery items here
-          writes to these collections.
+        <div className="space-y-4">
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
+            <span className="font-medium">MongoDB Atlas</span> — database{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              {dataSummary.database}
+            </code>
+            . Core counts: employees {dataSummary.counts.employees}, projects{" "}
+            {dataSummary.counts.projects}, gallery {dataSummary.counts.gallery}, app users{" "}
+            {dataSummary.counts.appUsers}. CRUD in this app writes to the collections below
+            (empty collections still appear after indexes are created).
+          </div>
+          <div className="rounded-lg border border-border/80 bg-card px-4 py-4 shadow-sm">
+            <p className="text-sm font-semibold tracking-tight">
+              Collections in this cluster database
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Names match Atlas; counts refresh when you load the dashboard.
+            </p>
+            <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {dataSummary.allCollections.map((c) => (
+                <li
+                  key={c.name}
+                  className="rounded-md border border-border/60 bg-muted/30 px-3 py-2.5"
+                >
+                  <p className="text-xs font-medium leading-snug">{c.label}</p>
+                  <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">{c.name}</p>
+                  <p className="mt-2 text-lg font-semibold tabular-nums">{c.count}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
       {dataSummary?.backend === "memory" && (

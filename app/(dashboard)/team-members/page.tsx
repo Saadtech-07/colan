@@ -15,6 +15,11 @@ export default function TeamMembersPage() {
   const { employees, addEmployee, access } = useAppState();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
 
+  const handleCreateEmployee = async (employee: Omit<Employee, "id">) => {
+    await addEmployee(employee);
+    setTab(ALL_TAB);
+  };
+
   const filtered =
     tab === ALL_TAB
       ? employees
@@ -31,7 +36,9 @@ export default function TeamMembersPage() {
             Directory with teams, roles, and bay assignments.
           </p>
         </div>
-        {access?.canWriteEmployees && <AddEmployeeDialog onCreate={addEmployee} />}
+        {access?.canWriteEmployees && (
+          <AddEmployeeDialog onCreate={handleCreateEmployee} />
+        )}
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="w-full">
@@ -79,6 +86,47 @@ export default function TeamMembersPage() {
                           {emp.bayNumber || "Unassigned"}
                         </span>
                       </p>
+                      {emp.directory &&
+                        (emp.directory.workEmail ||
+                          emp.directory.phone ||
+                          emp.directory.location ||
+                          emp.directory.joinedDate ||
+                          emp.directory.notes) && (
+                          <dl className="mt-3 space-y-1 border-t border-border/60 pt-3 text-xs">
+                            <dt className="font-semibold uppercase tracking-wide text-muted-foreground">
+                              Directory (Atlas)
+                            </dt>
+                            {emp.directory.workEmail && (
+                              <div className="flex gap-2">
+                                <dt className="shrink-0 text-muted-foreground">Email</dt>
+                                <dd className="min-w-0 truncate">{emp.directory.workEmail}</dd>
+                              </div>
+                            )}
+                            {emp.directory.phone && (
+                              <div className="flex gap-2">
+                                <dt className="shrink-0 text-muted-foreground">Phone</dt>
+                                <dd>{emp.directory.phone}</dd>
+                              </div>
+                            )}
+                            {emp.directory.location && (
+                              <div className="flex gap-2">
+                                <dt className="shrink-0 text-muted-foreground">Location</dt>
+                                <dd>{emp.directory.location}</dd>
+                              </div>
+                            )}
+                            {emp.directory.joinedDate && (
+                              <div className="flex gap-2">
+                                <dt className="shrink-0 text-muted-foreground">Joined</dt>
+                                <dd>{emp.directory.joinedDate}</dd>
+                              </div>
+                            )}
+                            {emp.directory.notes && (
+                              <div className="pt-1 text-muted-foreground">
+                                {emp.directory.notes}
+                              </div>
+                            )}
+                          </dl>
+                        )}
                     </div>
                   </div>
                 </CardContent>

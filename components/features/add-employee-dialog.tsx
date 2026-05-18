@@ -38,26 +38,45 @@ export function AddEmployeeDialog({ onCreate }: Props) {
   const [imageUrl, setImageUrl] = React.useState(
     "https://api.dicebear.com/7.x/avataaars/png?seed=new&size=128",
   );
+  const [error, setError] = React.useState<string | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
 
-  const submit = async () => {
-    if (!name.trim() || !employeeId.trim()) return;
-    await onCreate({
-      name: name.trim(),
-      employeeId: employeeId.trim(),
-      team,
-      role,
-      bayNumber,
-      imageUrl:
-        imageUrl.trim() ||
-        `https://api.dicebear.com/7.x/avataaars/png?seed=${encodeURIComponent(name)}&size=128`,
-    });
-    setOpen(false);
+  const resetForm = () => {
     setName("");
     setEmployeeId("");
     setTeam("React Team");
     setRole("Employee");
     setBayNumber("E-01");
     setImageUrl("https://api.dicebear.com/7.x/avataaars/png?seed=new&size=128");
+    setError(null);
+  };
+
+  const submit = async () => {
+    if (!name.trim() || !employeeId.trim()) {
+      setError("Employee name and ID are required.");
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+    try {
+      await onCreate({
+        name: name.trim(),
+        employeeId: employeeId.trim(),
+        team,
+        role,
+        bayNumber,
+        imageUrl:
+          imageUrl.trim() ||
+          `https://api.dicebear.com/7.x/avataaars/png?seed=${encodeURIComponent(name)}&size=128`,
+      });
+      resetForm();
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to add employee.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -158,12 +177,17 @@ export function AddEmployeeDialog({ onCreate }: Props) {
             </div>
           </div>
         </div>
+        {error ? (
+          <div className="rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {error}
+          </div>
+        ) : null}
         <DialogFooter>
           <Button variant="outline" type="button" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button type="button" onClick={submit}>
-            Save employee
+          <Button type="button" onClick={submit} disabled={isSaving}>
+            {isSaving ? "Saving..." : "Save employee"}
           </Button>
         </DialogFooter>
       </DialogContent>

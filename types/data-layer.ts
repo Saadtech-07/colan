@@ -1,3 +1,10 @@
+/** One row for the Atlas collections panel (see `/api/db-status`). */
+export type AtlasCollectionRow = {
+  name: string;
+  label: string;
+  count: number;
+};
+
 export type DataLayerSummary =
   | {
       backend: "memory";
@@ -12,6 +19,8 @@ export type DataLayerSummary =
         gallery: number;
         appUsers: number;
       };
+      /** Every Colan collection name with live document counts. */
+      allCollections: AtlasCollectionRow[];
     }
   | {
       backend: "error";

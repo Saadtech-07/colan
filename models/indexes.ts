@@ -1,4 +1,4 @@
-import type { Db } from "mongodb";
+import type { Db, ObjectId } from "mongodb";
 import { COLLECTIONS } from "./collections";
 import type { AppUserDocument } from "./app-user.model";
 import type { EmployeeDocument } from "./employee.model";
@@ -11,6 +11,63 @@ import type { TeamMemberDocument } from "./team-member.model";
 import type { ProjectDocument } from "./project.model";
 import type { GalleryImageDocument } from "./gallery-image.model";
 
+async function removeDuplicateEmployeeIds(db: Db): Promise<void> {
+  const collection = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const duplicates = await collection
+    .aggregate<{ _id: string; ids: ObjectId[] }>([
+      { $match: { employeeId: { $type: "string" } } },
+      {
+        $group: {
+          _id: "$employeeId",
+          ids: { $push: "$_id" },
+          count: { $sum: 1 },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+    ])
+    .toArray();
+
+  for (const dup of duplicates) {
+    const sortedIds = dup.ids.slice().sort((a, b) =>
+      a.toHexString().localeCompare(b.toHexString()),
+    );
+    const [, ...remove] = sortedIds;
+    if (remove.length === 0) continue;
+    await collection.deleteMany({ _id: { $in: remove } });
+  }
+}
+
+async function removeInvalidCompanyRoleKeys(db: Db): Promise<void> {
+  const collection = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
+
+  await collection.deleteMany({
+    $or: [{ key: { $exists: false } }, { key: null }],
+  });
+
+  const duplicates = await collection
+    .aggregate<{ _id: string; ids: ObjectId[] }>([
+      { $match: { key: { $type: "string" } } },
+      {
+        $group: {
+          _id: "$key",
+          ids: { $push: "$_id" },
+          count: { $sum: 1 },
+        },
+      },
+      { $match: { count: { $gt: 1 } } },
+    ])
+    .toArray();
+
+  for (const dup of duplicates) {
+    const sortedIds = dup.ids.slice().sort((a, b) =>
+      a.toHexString().localeCompare(b.toHexString()),
+    );
+    const [, ...remove] = sortedIds;
+    if (remove.length === 0) continue;
+    await collection.deleteMany({ _id: { $in: remove } });
+  }
+}
+
 /**
  * Idempotent index setup for Colan collections. Safe to call on each request
  * (MongoDB no-ops if index already exists with same options).
@@ -20,6 +77,7 @@ export async function ensureColanModelIndexes(db: Db): Promise<void> {
     .collection<AppUserDocument>(COLLECTIONS.appUsers)
     .createIndex({ email: 1 }, { unique: true });
 
+  await removeDuplicateEmployeeIds(db);
   await db
     .collection<EmployeeDocument>(COLLECTIONS.employees)
     .createIndex({ employeeId: 1 }, { unique: true });
@@ -35,6 +93,7 @@ export async function ensureColanModelIndexes(db: Db): Promise<void> {
     .createIndex({ name: 1 }, { unique: true });
   await db.collection<TeamDocument>(COLLECTIONS.teams).createIndex({ slug: 1 }, { unique: true });
 
+  await removeInvalidCompanyRoleKeys(db);
   await db
     .collection<CompanyRoleDocument>(COLLECTIONS.companyRoles)
     .createIndex({ key: 1 }, { unique: true });
