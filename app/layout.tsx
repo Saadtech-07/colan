@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Colan — Employee & Project Hub",
+  title: "Colan Infotech — Employee & Project Hub",
   description:
     "Internal dashboard for teams, projects, seating, and gallery at Colan.",
 };
