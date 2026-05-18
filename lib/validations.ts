@@ -35,7 +35,7 @@ export const appUserUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   appRole: z.enum(appRoleEnum).optional(),
   team: z.enum(teamEnum).optional(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: z.union([z.string().url(), z.literal("")]).optional(),
 });
 
 export const projectCreateSchema = z.object({
@@ -68,4 +68,14 @@ export const galleryCreateSchema = z.object({
 export const bayAssignSchema = z.object({
   bayId: z.string().min(1),
   employeeId: z.string().min(1).nullable(),
+});
+
+export const employeeUpdateSchema = z.object({
+  employeeId: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  team: z.enum(teamEnum).optional(),
+  role: z.enum(roleEnum).optional(),
+  // Empty string means unassigned (see seating / team-members UI).
+  bayNumber: z.string().optional(),
+  imageUrl: z.string().optional(),
 });

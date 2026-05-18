@@ -4,10 +4,10 @@ import { auth } from "@/auth";
 import { deleteAppUser, updateAppUser } from "@/lib/app-users";
 import { appUserUpdateSchema } from "@/lib/validations";
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: { id: string } },
-) {
+type RouteParams = { params: Promise<{ id: string }> };
+
+export async function PATCH(req: Request, { params }: RouteParams) {
+  const { id } = await params;
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -16,7 +16,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (!ObjectId.isValid(params.id)) {
+  if (!ObjectId.isValid(id)) {
     return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
   }
 
@@ -36,7 +36,7 @@ export async function PATCH(
   }
 
   try {
-    const updated = await updateAppUser(params.id, parsed.data);
+    const updated = await updateAppUser(id, parsed.data);
     return NextResponse.json(updated);
   } catch (e) {
     return NextResponse.json(
@@ -46,10 +46,8 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  _: Request,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(_: Request, { params }: RouteParams) {
+  const { id } = await params;
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -58,12 +56,12 @@ export async function DELETE(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (!ObjectId.isValid(params.id)) {
+  if (!ObjectId.isValid(id)) {
     return NextResponse.json({ error: "Invalid user id" }, { status: 400 });
   }
 
   try {
-    await deleteAppUser(params.id);
+    await deleteAppUser(id);
     return NextResponse.json({ success: true });
   } catch (e) {
     return NextResponse.json(

@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAppState } from "@/providers/app-state";
+import { parseApiError, useAppState } from "@/providers/app-state";
 import { ROLE_DEFINITIONS, APP_ROLES, roleNeedsTeam } from "@/lib/permissions";
 import { TEAMS } from "@/lib/constants";
 import type { AppRole, TeamName } from "@/types";
@@ -48,7 +48,7 @@ export default function AppUsersPage() {
         credentials: "include",
       });
       if (!res.ok) {
-        throw new Error(await res.text());
+        throw new Error(await parseApiError(res));
       }
       setUsers((await res.json()) as AppUserPublicDTO[]);
     } catch (e) {
@@ -108,8 +108,7 @@ export default function AppUsersPage() {
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        throw new Error(json?.error || res.statusText);
+        throw new Error(await parseApiError(res));
       }
       await fetchUsers();
       setSuccess(editingId ? "Account updated successfully." : "Account created successfully.");
@@ -129,8 +128,7 @@ export default function AppUsersPage() {
         credentials: "include",
       });
       if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        throw new Error(json?.error || res.statusText);
+        throw new Error(await parseApiError(res));
       }
       await fetchUsers();
       setSuccess("Account removed.");

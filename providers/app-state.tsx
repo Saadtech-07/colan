@@ -29,7 +29,7 @@ type AppStateContextValue = {
 
 const AppStateContext = React.createContext<AppStateContextValue | null>(null);
 
-async function parseError(res: Response): Promise<string> {
+export async function parseApiError(res: Response): Promise<string> {
   try {
     const j = (await res.json()) as {
       error?: string;
@@ -97,9 +97,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       } else {
         setDataSummary(null);
       }
-      if (!emRes.ok) throw new Error(await parseError(emRes));
-      if (!prRes.ok) throw new Error(await parseError(prRes));
-      if (!gaRes.ok) throw new Error(await parseError(gaRes));
+      if (!emRes.ok) throw new Error(await parseApiError(emRes));
+      if (!prRes.ok) throw new Error(await parseApiError(prRes));
+      if (!gaRes.ok) throw new Error(await parseApiError(gaRes));
       const [em, pr, ga] = await Promise.all([
         emRes.json() as Promise<Employee[]>,
         prRes.json() as Promise<Project[]>,
@@ -134,9 +134,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         } else {
           setDataSummary(null);
         }
-        if (!emRes.ok) throw new Error(await parseError(emRes));
-        if (!prRes.ok) throw new Error(await parseError(prRes));
-        if (!gaRes.ok) throw new Error(await parseError(gaRes));
+        if (!emRes.ok) throw new Error(await parseApiError(emRes));
+        if (!prRes.ok) throw new Error(await parseApiError(prRes));
+        if (!gaRes.ok) throw new Error(await parseApiError(gaRes));
         const [em, pr, ga] = await Promise.all([
           emRes.json() as Promise<Employee[]>,
           prRes.json() as Promise<Project[]>,
@@ -170,7 +170,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      if (!res.ok) throw new Error(await parseError(res));
+      if (!res.ok) throw new Error(await parseApiError(res));
       const created = (await res.json()) as Employee;
       setEmployees((prev) => [...prev, created]);
     },
@@ -184,7 +184,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     });
-    if (!res.ok) throw new Error(await parseError(res));
+    if (!res.ok) throw new Error(await parseApiError(res));
     const created = (await res.json()) as Project;
     setProjects((prev) => [...prev, created]);
   }, []);
@@ -197,7 +197,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      if (!res.ok) throw new Error(await parseError(res));
+      if (!res.ok) throw new Error(await parseApiError(res));
       const created = (await res.json()) as GalleryImage;
       setGallery((prev) => [created, ...prev]);
     },
@@ -212,7 +212,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bayId, employeeId }),
       });
-      if (!res.ok) throw new Error(await parseError(res));
+      if (!res.ok) throw new Error(await parseApiError(res));
       const next = (await res.json()) as Employee[];
       setEmployees(next);
     },

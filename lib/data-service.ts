@@ -269,6 +269,98 @@ export async function createEmployee(
   };
 }
 
+export async function updateEmployee(
+  id: string,
+  patch: Partial<Omit<Employee, "id">>,
+): Promise<Employee> {
+  const db = await getDb();
+  const normalizedId = String(id).trim();
+  if (!normalizedId || normalizedId === "undefined") {
+    throw new Error("Invalid employee id");
+  }
+  if (!db) {
+    const list = memoryStore.employees;
+    const idx = list.findIndex((e) => e.id === normalizedId);
+    if (idx < 0) throw new Error("Employee not found");
+    const current = list[idx];
+    const next: Employee = {
+      ...current,
+      ...(patch.employeeId !== undefined ? { employeeId: patch.employeeId } : {}),
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.team !== undefined ? { team: patch.team } : {}),
+      ...(patch.role !== undefined ? { role: patch.role } : {}),
+      ...(patch.bayNumber !== undefined ? { bayNumber: patch.bayNumber } : {}),
+      ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl } : {}),
+    };
+    list[idx] = next;
+    return { ...next };
+  }
+  // If an id isn't a valid ObjectId but we still have a DB (e.g. dev UI sent a memory id),
+  // fall back to the in-memory store so the UI can edit items created in-memory.
+  if (!ObjectId.isValid(normalizedId)) {
+    const list = memoryStore.employees;
+    const idx = list.findIndex((e) => e.id === normalizedId);
+    if (idx < 0) throw new Error("Invalid employee id");
+    const current = list[idx];
+    const next: Employee = {
+      ...current,
+      ...(patch.employeeId !== undefined ? { employeeId: patch.employeeId } : {}),
+      ...(patch.name !== undefined ? { name: patch.name } : {}),
+      ...(patch.team !== undefined ? { team: patch.team } : {}),
+      ...(patch.role !== undefined ? { role: patch.role } : {}),
+      ...(patch.bayNumber !== undefined ? { bayNumber: patch.bayNumber } : {}),
+      ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl } : {}),
+    };
+    list[idx] = next;
+    return { ...next };
+  }
+  await ensureMongoSeed(db);
+  const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const updates: Partial<EmployeeDocument> = { updatedAt: new Date() };
+  if (patch.employeeId !== undefined) updates.employeeId = patch.employeeId;
+  if (patch.name !== undefined) updates.name = patch.name;
+  if (patch.team !== undefined) updates.team = patch.team;
+  if (patch.role !== undefined) updates.role = patch.role;
+  if (patch.bayNumber !== undefined) updates.bayNumber = patch.bayNumber;
+  if (patch.imageUrl !== undefined) updates.imageUrl = patch.imageUrl;
+
+  const result = await col.findOneAndUpdate(
+    { _id: new ObjectId(normalizedId) },
+    { $set: updates },
+    { returnDocument: "after" },
+  );
+  if (!result) throw new Error("Employee not found");
+  return employeeDocToDTO(result);
+}
+
+export async function deleteEmployee(id: string): Promise<void> {
+  const db = await getDb();
+  const normalizedId = String(id).trim();
+  if (!normalizedId || normalizedId === "undefined") {
+    throw new Error("Invalid employee id");
+  }
+  if (!db) {
+    const list = memoryStore.employees;
+    const idx = list.findIndex((e) => e.id === normalizedId);
+    if (idx >= 0) list.splice(idx, 1);
+    return;
+  }
+
+  // If id is not a valid ObjectId, try the in-memory store as a fallback.
+  if (!ObjectId.isValid(normalizedId)) {
+    const list = memoryStore.employees;
+    const idx = list.findIndex((e) => e.id === normalizedId);
+    if (idx >= 0) {
+      list.splice(idx, 1);
+      return;
+    }
+    throw new Error("Invalid employee id");
+  }
+
+  const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  await col.deleteOne({ _id: new ObjectId(normalizedId) });
+}
+
 export async function assignEmployeeToBay(
   bayId: string,
   employeeId: string | null,

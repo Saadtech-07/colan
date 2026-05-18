@@ -2,17 +2,19 @@
 
 import * as React from "react";
 import { AddEmployeeDialog } from "@/components/features/add-employee-dialog";
+import { EditEmployeeDialog } from "@/components/features/edit-employee-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAppState } from "@/providers/app-state";
+import { parseApiError, useAppState } from "@/providers/app-state";
 import { TEAMS } from "@/lib/constants";
+import type { Employee } from "@/types";
 
 const ALL_TAB = "All";
 
 export default function TeamMembersPage() {
-  const { employees, addEmployee, access } = useAppState();
+  const { employees, addEmployee, access, refreshData } = useAppState();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
 
   const handleCreateEmployee = async (employee: Omit<Employee, "id">) => {
@@ -67,7 +69,7 @@ export default function TeamMembersPage() {
                         {emp.name.slice(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="min-w-0 flex-1 space-y-1">
                       <p className="truncate font-semibold leading-tight">
                         {emp.name}
                       </p>
@@ -80,6 +82,33 @@ export default function TeamMembersPage() {
                         </Badge>
                         <Badge variant="outline">{emp.role}</Badge>
                       </div>
+                      {access?.canWriteEmployees && (
+                        <div className="mt-3 flex items-center gap-2">
+                          <EditEmployeeDialog
+                            employee={emp}
+                            onSave={async (id, patch) => {
+                              const res = await fetch(`/api/employees/${id}`, {
+                                method: "PATCH",
+                                credentials: "include",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify(patch),
+                              });
+                              if (!res.ok) throw new Error(await parseApiError(res));
+                              await res.json();
+                              await refreshData();
+                            }}
+                            onDelete={async (id) => {
+                              const res = await fetch(`/api/employees/${id}`, {
+                                method: "DELETE",
+                                credentials: "include",
+                              });
+                              if (!res.ok) throw new Error(await parseApiError(res));
+                              await res.json();
+                              await refreshData();
+                            }}
+                          />
+                        </div>
+                      )}
                       <p className="pt-2 text-sm">
                         <span className="text-muted-foreground">Bay: </span>
                         <span className="font-medium tabular-nums">

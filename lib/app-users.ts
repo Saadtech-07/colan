@@ -79,30 +79,6 @@ async function upsertSeedUser(
   });
 }
 
-/** Keeps known demo accounts aligned with `SEED_USERS` (team, role, display name). */
-async function syncSeedUserProfiles(
-  col: import("mongodb").Collection<AppUserDocument>,
-) {
-  for (const u of SEED_USERS) {
-    const exists = await col.findOne({ email: u.email }, { projection: { _id: 1 } });
-    if (!exists) continue;
-    if (u.team !== undefined) {
-      await col.updateOne(
-        { email: u.email },
-        { $set: { name: u.name, appRole: u.appRole, imageUrl: u.imageUrl, team: u.team } },
-      );
-    } else {
-      await col.updateOne(
-        { email: u.email },
-        {
-          $set: { name: u.name, appRole: u.appRole, imageUrl: u.imageUrl },
-          $unset: { team: "" },
-        },
-      );
-    }
-  }
-}
-
 /** Seeds demo login accounts into Atlas (idempotent). Safe to call from workspace init. */
 export async function ensureAppUsersSeed(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
@@ -113,7 +89,6 @@ export async function ensureAppUsersSeed(
   for (const u of SEED_USERS) {
     await upsertSeedUser(col, u, rounds);
   }
-  await syncSeedUserProfiles(col);
 }
 
 export type AppUserCreateInput = {
@@ -179,26 +154,41 @@ export async function updateAppUser(
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   if (!ObjectId.isValid(id)) throw new Error("Invalid user id.");
 
+  const current = await col.findOne({ _id: new ObjectId(id) });
+  if (!current) throw new Error("User not found.");
+
+  const nextRole = input.appRole ?? current.appRole;
   const updates: Partial<AppUserDocument> = {
     updatedAt: new Date(),
   };
+  const unset: Record<string, ""> = {};
 
-  if (input.name) updates.name = input.name.trim();
-  if (input.appRole) updates.appRole = input.appRole;
-  if (input.team !== undefined) updates.team = input.team;
+  if (input.name !== undefined) updates.name = input.name.trim();
+  if (input.appRole !== undefined) updates.appRole = input.appRole;
   if (input.imageUrl !== undefined) updates.imageUrl = input.imageUrl;
   if (input.password) {
     updates.passwordHash = await bcrypt.hash(input.password, 10);
   }
 
+  if (roleNeedsTeam(nextRole)) {
+    if (input.team !== undefined) updates.team = input.team;
+  } else {
+    unset.team = "";
+  }
+
+  const updateDoc: { $set: Partial<AppUserDocument>; $unset?: Record<string, ""> } = {
+    $set: updates,
+  };
+  if (Object.keys(unset).length > 0) updateDoc.$unset = unset;
+
   const result = await col.findOneAndUpdate(
     { _id: new ObjectId(id) },
-    { $set: updates },
+    updateDoc,
     { returnDocument: "after" },
   );
 
-  if (!result.value) throw new Error("User not found.");
-  return appUserDocToPublic(result.value);
+  if (!result) throw new Error("User not found.");
+  return appUserDocToPublic(result);
 }
 
 export async function deleteAppUser(id: string): Promise<void> {
