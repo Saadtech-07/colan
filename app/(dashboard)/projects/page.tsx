@@ -45,8 +45,8 @@ export default function ProjectsPage() {
             Team-based projects
           </h1>
           <p className="mt-1 max-w-2xl text-muted-foreground">
-            Browse delivery work by squad. Open a project to see members and update
-            details when you have edit access.
+            Browse delivery work by squad. Open a project to view details when you have
+            edit access.
           </p>
         </div>
         {access?.canManageProjects && (
@@ -110,25 +110,29 @@ function ProjectLinkList({ items }: { items: Project[] }) {
   }
   return (
     <ul className="divide-y">
-      {items.map((p) => (
-        <li key={p.id}>
-          <Link
-            href={`/projects/${p.slug}`}
-            className="flex items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-muted/50"
-          >
-            <div className="min-w-0">
-              <p className="font-medium leading-tight">{p.name}</p>
-              <p className="text-xs text-muted-foreground">
-                {p.assignedDate} → {p.lastDate}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Badge variant={statusVariant(p.status)}>{p.status}</Badge>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
-            </div>
-          </Link>
-        </li>
-      ))}
+      {items.map((p) => {
+        return (
+          <li key={p.id}>
+            <Link
+              href={`/projects/${p.slug}`}
+              className="block px-6 py-4 transition-colors hover:bg-muted/50"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="font-medium leading-tight">{p.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {p.assignedDate} → {p.lastDate}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 pt-0.5">
+                  <Badge variant={statusVariant(p.status)}>{p.status}</Badge>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </div>
+            </Link>
+          </li>
+        );
+      })}
     </ul>
   );
 }
