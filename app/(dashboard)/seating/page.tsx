@@ -47,6 +47,9 @@ export default function SeatingPage() {
 
   const selectedBay = bayDialog;
   const current = selectedBay ? occupant(selectedBay) : null;
+  const vacantBays = ALL_BAY_IDS.filter(
+  (bay) => !employees.some((e) => e.bayNumber === bay)
+);
 
   return (
     <div className="space-y-6">
@@ -133,49 +136,175 @@ export default function SeatingPage() {
         </p>
       )}
 
-      <Dialog open={!!selectedBay} onOpenChange={() => setBayDialog(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Assign {selectedBay}</DialogTitle>
-            <DialogDescription>
-              Choose a team member for this bay. Previous occupant is cleared
-              automatically.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3 py-2">
-            <div className="space-y-2">
-              <Label>Employee</Label>
-              <Select
-                value={current?.id ?? "__vacant__"}
-                onValueChange={(v) => {
-                  if (!selectedBay) return;
-                  const id = v === "__vacant__" ? null : v;
-                  void assignEmployeeToBay(selectedBay, id).catch(() => {
-                    /* surface toast later */
-                  });
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select employee" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__vacant__">Vacant</SelectItem>
-                  {employees.map((e) => (
-                    <SelectItem key={e.id} value={e.id}>
-                      {e.name} — {e.team}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setBayDialog(null)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+    <Dialog open={!!selectedBay} onOpenChange={() => setBayDialog(null)}>
+  <DialogContent className="sm:max-w-lg">
+    <DialogHeader>
+      <DialogTitle>Manage {selectedBay}</DialogTitle>
+
+      <DialogDescription>
+        Employees can only be reassigned to vacant bays.
+      </DialogDescription>
+    </DialogHeader>
+
+    <div className="space-y-5 py-2">
+      {/* Current Occupant */}
+      {current ? (
+  <div className="space-y-4">
+    <div className="rounded-xl border bg-muted/30 p-4">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Current Employee
+      </p>
+
+      <div className="flex items-center gap-3">
+        <Avatar className="h-12 w-12">
+          <AvatarImage src={current.imageUrl} />
+
+          <AvatarFallback>
+            {current.name.slice(0, 2)}
+          </AvatarFallback>
+        </Avatar>
+
+        <div>
+          <h3 className="font-semibold">
+            {current.name}
+          </h3>
+
+          <p className="text-sm text-muted-foreground">
+            {current.team}
+          </p>
+
+          <Badge className="mt-1">
+            {selectedBay}
+          </Badge>
+        </div>
+      </div>
+    </div>
+
+    {/* Reassign Employee */}
+    <div className="space-y-3">
+      <Label className="text-sm font-medium">
+        Reassign Employee
+      </Label>
+
+      <Select
+        onValueChange={(bay) => {
+          if (!current) return;
+
+          void assignEmployeeToBay(
+            bay,
+            current.id
+          ).catch(() => {
+            alert("Failed to move employee");
+          });
+
+          setBayDialog(null);
+        }}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue placeholder="Select empty bay" />
+        </SelectTrigger>
+
+        <SelectContent className="max-h-72">
+          {vacantBays.map((bay) => (
+            <SelectItem
+              key={bay}
+              value={bay}
+            >
+              {bay}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <p className="text-xs text-muted-foreground">
+        Only vacant bays are shown for reassignment.
+      </p>
+    </div>
+  </div>
+) : (
+  <div className="space-y-4">
+    <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+      This bay is currently vacant.
+    </div>
+
+    {/* Assign Employee */}
+    <div className="space-y-2">
+      <Label>Assign Employee</Label>
+
+      <Select
+        onValueChange={(employeeId) => {
+          if (!selectedBay) return;
+
+          void assignEmployeeToBay(
+            selectedBay,
+            employeeId
+          ).catch(() => {
+            alert("Assignment failed");
+          });
+
+          setBayDialog(null);
+        }}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Choose employee" />
+        </SelectTrigger>
+
+        <SelectContent>
+          {employees.map((employee) => (
+            <SelectItem
+              key={employee.id}
+              value={employee.id}
+            >
+              {employee.name} — {employee.team}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  </div>
+)}
+
+      {/* Empty Bay Assignment */}
+      {/* {!current && (
+        <div className="space-y-2">
+          <Label>Assign Employee</Label>
+
+          <Select
+            onValueChange={(employeeId) => {
+              if (!selectedBay) return;
+
+              void assignEmployeeToBay(
+                selectedBay,
+                employeeId
+              ).catch(() => {
+                alert("Assignment failed");
+              });
+
+              setBayDialog(null);
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Choose employee" />
+            </SelectTrigger>
+
+            <SelectContent>
+              {employees
+                .filter((e) => !e.bayNumber)
+                .map((employee) => (
+                  <SelectItem
+                    key={employee.id}
+                    value={employee.id}
+                  >
+                    {employee.name} — {employee.team}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )} */}
+    </div>
+  </DialogContent>
+</Dialog>
     </div>
   );
 }
