@@ -507,6 +507,37 @@ export async function updateProjectBySlug(
   return result ? projectDocToDTO(result) : null;
 }
 
+/**
+ * Set which projects an employee works on by syncing `memberIds` on each project.
+ * Only projects where `canModify(project)` is true are updated.
+ */
+export async function setEmployeeProjects(
+  employeeId: string,
+  projectIds: string[],
+  canModify: (project: Project) => boolean,
+): Promise<Project[]> {
+  const normalizedId = String(employeeId).trim();
+  if (!normalizedId) throw new Error("Invalid employee id");
+
+  const projects = await listProjects();
+  const targetIds = new Set(projectIds);
+
+  for (const project of projects) {
+    if (!canModify(project)) continue;
+    const hasMember = project.memberIds.includes(normalizedId);
+    const shouldHave = targetIds.has(project.id);
+    if (hasMember === shouldHave) continue;
+
+    const memberIds = shouldHave
+      ? [...project.memberIds, normalizedId]
+      : project.memberIds.filter((id) => id !== normalizedId);
+
+    await updateProjectBySlug(project.slug, { memberIds });
+  }
+
+  return listProjects();
+}
+
 export async function listGallery(): Promise<GalleryImage[]> {
   const db = await getDb();
   if (!db) return memoryStore.gallery.map((g) => ({ ...g }));

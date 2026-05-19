@@ -3,19 +3,40 @@
 import * as React from "react";
 import { AddEmployeeDialog } from "@/components/features/add-employee-dialog";
 import { EditEmployeeDialog } from "@/components/features/edit-employee-dialog";
+import { EmployeeProjectsSection } from "@/components/features/employee-projects-section";
+import { ManageEmployeeProjectsDialog } from "@/components/features/manage-employee-projects-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { TEAMS } from "@/lib/constants";
+import {
+  canManageProjectForTeam,
+  canManageProjects,
+  filterProjectsForUser,
+} from "@/lib/permissions";
 import type { Employee } from "@/types";
 
 const ALL_TAB = "All";
 
 export default function TeamMembersPage() {
-  const { employees, addEmployee, access, refreshData } = useAppState();
+  const { employees, projects, addEmployee, access, refreshData } = useAppState();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
+
+  const visibleProjects = React.useMemo(
+    () =>
+      access
+        ? filterProjectsForUser(projects, access.role, access.team)
+        : [],
+    [projects, access],
+  );
+
+  const canManageProject = React.useCallback(
+    (team: Employee["team"]) =>
+      !!access && canManageProjectForTeam(access.role, team, access.team),
+    [access],
+  );
 
   const handleCreateEmployee = async (employee: Omit<Employee, "id">) => {
     await addEmployee(employee);
@@ -35,7 +56,7 @@ export default function TeamMembersPage() {
             Team members
           </h1>
           <p className="mt-1 text-muted-foreground">
-            Directory with teams, roles, and bay assignments.
+            Directory with teams, roles, bay assignments, and project membership.
           </p>
         </div>
         {access?.canWriteEmployees && (
@@ -82,31 +103,46 @@ export default function TeamMembersPage() {
                         </Badge>
                         <Badge variant="outline">{emp.role}</Badge>
                       </div>
-                      {access?.canWriteEmployees && (
-                        <div className="mt-3 flex items-center gap-2">
-                          <EditEmployeeDialog
-                            employee={emp}
-                            onSave={async (id, patch) => {
-                              const res = await fetch(`/api/employees/${id}`, {
-                                method: "PATCH",
-                                credentials: "include",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify(patch),
-                              });
-                              if (!res.ok) throw new Error(await parseApiError(res));
-                              await res.json();
-                              await refreshData();
-                            }}
-                            onDelete={async (id) => {
-                              const res = await fetch(`/api/employees/${id}`, {
-                                method: "DELETE",
-                                credentials: "include",
-                              });
-                              if (!res.ok) throw new Error(await parseApiError(res));
-                              await res.json();
-                              await refreshData();
-                            }}
-                          />
+                      <EmployeeProjectsSection
+                        employee={emp}
+                        projects={visibleProjects}
+                      />
+                      {(access?.canWriteEmployees || access?.canManageProjects) && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          {access?.canManageProjects && (
+                            <ManageEmployeeProjectsDialog
+                              employee={emp}
+                              projects={visibleProjects}
+                              canManage={canManageProjects(access.role)}
+                              canManageProject={canManageProject}
+                              onUpdated={refreshData}
+                            />
+                          )}
+                          {access?.canWriteEmployees && (
+                            <EditEmployeeDialog
+                              employee={emp}
+                              onSave={async (id, patch) => {
+                                const res = await fetch(`/api/employees/${id}`, {
+                                  method: "PATCH",
+                                  credentials: "include",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify(patch),
+                                });
+                                if (!res.ok) throw new Error(await parseApiError(res));
+                                await res.json();
+                                await refreshData();
+                              }}
+                              onDelete={async (id) => {
+                                const res = await fetch(`/api/employees/${id}`, {
+                                  method: "DELETE",
+                                  credentials: "include",
+                                });
+                                if (!res.ok) throw new Error(await parseApiError(res));
+                                await res.json();
+                                await refreshData();
+                              }}
+                            />
+                          )}
                         </div>
                       )}
                       <p className="pt-2 text-sm">

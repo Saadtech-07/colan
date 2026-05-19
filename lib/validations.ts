@@ -79,3 +79,7 @@ export const employeeUpdateSchema = z.object({
   bayNumber: z.string().optional(),
   imageUrl: z.string().optional(),
 });
+
+export const employeeProjectsUpdateSchema = z.object({
+  projectIds: z.array(z.string().min(1)),
+});
