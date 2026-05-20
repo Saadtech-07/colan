@@ -206,7 +206,7 @@ export default function LoginPage() {
                 >
                   {pending
                     ? "Signing In..."
-                    : "Continue To Dashboard"}
+                    : "Login in"}
 
                   {!pending && (
                     <ArrowRight className="ml-2 h-4 w-4" />
