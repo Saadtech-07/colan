@@ -15,6 +15,7 @@ export type AppUserDocument = {
   name: string;
   appRole: AppRole;
   team?: TeamName;
+  employeeId: string;
   imageUrl: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -26,6 +27,7 @@ export type AppUserPublicDTO = {
   name: string;
   appRole: AppRole;
   team?: TeamName;
+  employeeId: string;
   imageUrl: string;
 };
 
@@ -36,6 +38,7 @@ export function appUserDocToPublic(doc: AppUserDocument): AppUserPublicDTO {
     name: doc.name,
     appRole: doc.appRole,
     team: doc.team,
+    employeeId: doc.employeeId,
     imageUrl: doc.imageUrl,
   };
 }

@@ -27,9 +27,13 @@ type Props = {
 export function EditEmployeeDialog({ employee, onSave, onDelete }: Props) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState(employee.name);
-  const [employeeId, setEmployeeId] = React.useState(employee.employeeId);
-  const [team, setTeam] = React.useState<TeamName>(employee.team);
-  const [role, setRole] = React.useState<CompanyRole>(employee.role);
+  const [employeeId, setEmployeeId] = React.useState(employee.employeeId || "");
+  const [team, setTeam] = React.useState<TeamName>(
+    employee.team || "React Team"
+  );
+  const [role, setRole] = React.useState<CompanyRole>(
+    employee.role || "Employee"
+  );
   const [bayNumber, setBayNumber] = React.useState(employee.bayNumber || "");
   const [imageUrl, setImageUrl] = React.useState(employee.imageUrl || "");
   const [isSaving, setIsSaving] = React.useState(false);
@@ -38,9 +42,9 @@ export function EditEmployeeDialog({ employee, onSave, onDelete }: Props) {
   React.useEffect(() => {
     if (!open) {
       setName(employee.name);
-      setEmployeeId(employee.employeeId);
-      setTeam(employee.team);
-      setRole(employee.role);
+      setEmployeeId(employee.employeeId || " ");
+      setTeam(employee.team || "React Team");
+      setRole(employee.role || "Employee");
       setBayNumber(employee.bayNumber || "");
       setImageUrl(employee.imageUrl || "");
       setError(null);

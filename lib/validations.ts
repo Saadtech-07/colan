@@ -27,6 +27,7 @@ export const appUserCreateSchema = z.object({
   name: z.string().min(1),
   appRole: z.enum(appRoleEnum),
   team: z.enum(teamEnum).optional(),
+  employeeId: z.string().min(1),
   imageUrl: z.string().url().optional(),
 });
 

@@ -75,6 +75,7 @@ async function upsertSeedUser(
     name: u.name,
     appRole: u.appRole,
     team: u.team,
+    employeeId: `COL-${Math.floor(Math.random() * 9000) + 1000}`,
     imageUrl: u.imageUrl,
   });
 }
@@ -96,6 +97,7 @@ export type AppUserCreateInput = {
   password: string;
   name: string;
   appRole: AppRole;
+  employeeId: string;
   team?: TeamName;
   imageUrl?: string;
 };
@@ -105,6 +107,7 @@ export type AppUserUpdateInput = {
   name?: string;
   appRole?: AppRole;
   team?: TeamName;
+  employeeId?: string;
   imageUrl?: string;
 };
 
@@ -136,16 +139,51 @@ export async function createAppUser(
     name: input.name.trim(),
     appRole: input.appRole,
     team: input.team,
+    employeeId: input.employeeId,
     imageUrl: input.imageUrl ?? dicebearAvatarPng(email),
     createdAt: new Date(),
     updatedAt: new Date(),
   };
 
   await col.insertOne(doc);
-  return appUserDocToPublic(doc);
+
+/* CREATE TEAM MEMBER RECORD */
+
+await db.collection("employees").insertOne({
+  employeeId: input.employeeId,
+
+  name: input.name.trim(),
+
+  role:
+    input.appRole === "admin"
+      ? "Admin"
+      : input.appRole === "manager"
+      ? "Manager"
+      : input.appRole === "lead"
+      ? "Team Lead"
+      : "Employee",
+
+  team: input.team || "Unassigned",
+
+  imageUrl: input.imageUrl ?? dicebearAvatarPng(email),
+
+  bayNumber: "",
+
+  projectIds: [],
+
+  directory: {
+    workEmail: email,
+    phone: "",
+    location: "Unassigned",
+    joinedDate: new Date().toISOString().split("T")[0],
+    notes: "",
+  },
+});
+
+return appUserDocToPublic(doc);
 }
 
-export async function updateAppUser(
+export async function updateAppUser(  
   id: string,
   input: AppUserUpdateInput,
 ): Promise<ReturnType<typeof appUserDocToPublic>> {
@@ -188,8 +226,40 @@ export async function updateAppUser(
   );
 
   if (!result) throw new Error("User not found.");
+
+  await db.collection("employees").updateOne(
+    {
+      "directory.workEmail": current.email,
+    },
+    {
+      $set: {
+        employeeId: input.employeeId ?? current.employeeId,
+  
+        name: input.name?.trim() ?? current.name,
+  
+        role:
+          (input.appRole ?? current.appRole) === "admin"
+            ? "Admin"
+            : (input.appRole ?? current.appRole) === "manager"
+            ? "Manager"
+            : (input.appRole ?? current.appRole) === "lead"
+            ? "Team Lead"
+            : "Employee",
+  
+        team: input.team ?? current.team ?? "Unassigned",
+  
+        imageUrl:
+          input.imageUrl ??
+          current.imageUrl ??
+          dicebearAvatarPng(current.email),
+  
+        "directory.workEmail": current.email,
+      },
+    }
+  );
   return appUserDocToPublic(result);
 }
+
 
 export async function deleteAppUser(id: string): Promise<void> {
   const db = await getDb();

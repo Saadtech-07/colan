@@ -23,6 +23,7 @@ const initialFormState = {
   email: "",
   name: "",
   password: "",
+  employeeId: "",
   appRole: "employee" as AppRole,
   team: "React Team" as TeamName,
   imageUrl: "",
@@ -95,11 +96,19 @@ export default function AppUsersPage() {
       const method = editingId ? "PATCH" : "POST";
       const body = {
         name: form.name,
+        employeeId: form.employeeId,
         appRole: form.appRole,
         team: showTeamField ? form.team : undefined,
         imageUrl: form.imageUrl || undefined,
-        ...(editingId ? {} : { email: form.email.toLowerCase(), password: form.password }),
-        ...(editingId && form.password ? { password: form.password } : {}),
+        ...(editingId
+          ? {}
+          : {
+              email: form.email.toLowerCase(),
+              password: form.password,
+            }),
+        ...(editingId && form.password
+          ? { password: form.password }
+          : {}),
       };
       const res = await fetch(endpoint, {
         method,
@@ -140,13 +149,14 @@ export default function AppUsersPage() {
   const startEdit = (userRecord: AppUserPublicDTO) => {
     setEditingId(userRecord.id);
     setForm({
-      email: userRecord.email,
-      name: userRecord.name,
-      password: "",
-      appRole: userRecord.appRole,
-      team: userRecord.team ?? "React Team",
-      imageUrl: userRecord.imageUrl ?? "",
-    });
+  email: userRecord.email,
+  name: userRecord.name,
+  password: "",
+  employeeId: userRecord.employeeId ?? "",
+  appRole: userRecord.appRole,
+  team: userRecord.team ?? "React Team",
+  imageUrl: userRecord.imageUrl ?? "",
+});
     setSuccess(null);
     setError(null);
   };
@@ -343,7 +353,20 @@ export default function AppUsersPage() {
                   </div>
                 )}
               </div>
+              <div className="space-y-2">
+  <Label>Employee ID</Label>
 
+  <Input
+    value={form.employeeId || ""}
+    onChange={(e) =>
+      setForm((prev) => ({
+        ...prev,
+        employeeId: e.target.value,
+      }))
+    }
+    placeholder="COL-1001"
+  />
+</div>
               <div className="space-y-3">
                 <Label htmlFor="imageUrl">Avatar URL</Label>
                 <Input
