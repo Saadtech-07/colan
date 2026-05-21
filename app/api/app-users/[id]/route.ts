@@ -2,6 +2,7 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { deleteAppUser, updateAppUser } from "@/lib/app-users";
+import { getDb } from "@/lib/mongodb";
 import { appUserUpdateSchema } from "@/lib/validations";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -61,12 +62,33 @@ export async function DELETE(_: Request, { params }: RouteParams) {
   }
 
   try {
-    await deleteAppUser(id);
-    return NextResponse.json({ success: true });
+    // Delete app user
+    const deletedUser = await deleteAppUser(id);
+
+    // Delete employee/team member too
+    if (deletedUser?.employeeId) {
+      const db = await getDb();
+
+      await db
+        ?.collection("employees")
+        .deleteOne({
+          employeeId: deletedUser.employeeId,
+        });
+    }
+
+    return NextResponse.json({
+      success: true,
+    });
+
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Unable to delete user" },
-      { status: 400 },
+      {
+        error:
+          e instanceof Error
+            ? e.message
+            : "Unable to delete user",
+      },
+      { status: 400 }
     );
   }
 }

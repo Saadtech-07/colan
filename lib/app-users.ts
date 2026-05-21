@@ -151,8 +151,9 @@ export async function createAppUser(
 
 await db.collection("employees").insertOne({
   employeeId: input.employeeId,
-
+  email: email,
   name: input.name.trim(),
+  
 
   role:
     input.appRole === "admin"
@@ -261,12 +262,41 @@ export async function updateAppUser(
 }
 
 
-export async function deleteAppUser(id: string): Promise<void> {
+export async function deleteAppUser(id: string) {
   const db = await getDb();
-  if (!db) throw new Error("MongoDB is not configured.");
-  if (!ObjectId.isValid(id)) throw new Error("Invalid user id.");
-  const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
-  await col.deleteOne({ _id: new ObjectId(id) });
+
+  if (!db) {
+    throw new Error("MongoDB is not configured.");
+  }
+
+  if (!ObjectId.isValid(id)) {
+    throw new Error("Invalid user id.");
+  }
+
+  const col = db.collection<AppUserDocument>(
+    COLLECTIONS.appUsers
+  );
+
+  // Find user before deleting
+  const user = await col.findOne({
+    _id: new ObjectId(id),
+  });
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  // Delete from app-users
+  await col.deleteOne({
+    _id: new ObjectId(id),
+  });
+
+  // Delete from employees collection
+  await db.collection("employees").deleteOne({
+    email: user.email,
+  });
+
+  return user;
 }
 
 export async function verifyAppUserCredentials(
