@@ -263,45 +263,6 @@ export default function SeatingPage() {
     </div>
   </div>
 )}
-
-      {/* Empty Bay Assignment */}
-      {/* {!current && (
-        <div className="space-y-2">
-          <Label>Assign Employee</Label>
-
-          <Select
-            onValueChange={(employeeId) => {
-              if (!selectedBay) return;
-
-              void assignEmployeeToBay(
-                selectedBay,
-                employeeId
-              ).catch(() => {
-                alert("Assignment failed");
-              });
-
-              setBayDialog(null);
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Choose employee" />
-            </SelectTrigger>
-
-            <SelectContent>
-              {employees
-                .filter((e) => !e.bayNumber)
-                .map((employee) => (
-                  <SelectItem
-                    key={employee.id}
-                    value={employee.id}
-                  >
-                    {employee.name} — {employee.team}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )} */}
     </div>
   </DialogContent>
 </Dialog>

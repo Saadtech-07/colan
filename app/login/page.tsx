@@ -205,7 +205,7 @@ export default function LoginPage() {
                   className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg transition-transform hover:scale-[1.01]"
                 >
                   {pending
-                    ? "Signing In..."
+                    ? "Login in..."
                     : "Login in"}
 
                   {!pending && (
