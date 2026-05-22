@@ -181,6 +181,23 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     autoComplete="email"
+                    required
+                    className="h-12 rounded-xl border-slate-200 bg-white/80"
+                  />
+                </div>
+
+                {/* Password */}
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    required
+                    placeholder="Enter your password"
                     className="h-12 rounded-xl border-slate-200 bg-white/80"
                   />
                 </div>
@@ -192,9 +209,7 @@ export default function LoginPage() {
                   disabled={pending}
                   className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg transition-transform hover:scale-[1.01]"
                 >
-                  {pending
-                    ? "Signing In..."
-                    : "Continue To Dashboard"}
+                  {pending ? "Signing in…" : "Sign in"}
 
                   {!pending && (
                     <ArrowRight className="ml-2 h-4 w-4" />
