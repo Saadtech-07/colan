@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createProject, listProjects } from "@/lib/data-service";
+import { assertTeamsExist } from "@/lib/teams-data";
 import {
   assertCanCreateProject,
   filterProjectsForUser,
-  sessionAccess,
+  sessionAccessAsync,
 } from "@/lib/session-access";
 import { projectCreateSchema } from "@/lib/validations";
 
 export async function GET() {
   const session = await auth();
-  const access = sessionAccess(session);
+  const access = await sessionAccessAsync(session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -22,7 +23,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const session = await auth();
-  const access = sessionAccess(session);
+  const access = await sessionAccessAsync(session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -39,9 +40,13 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const denied = assertCanCreateProject(access, parsed.data.team);
+  const denied = assertCanCreateProject(access, parsed.data.teams);
   if (denied) {
     return NextResponse.json({ error: denied }, { status: 403 });
+  }
+  const teamsMissing = await assertTeamsExist(parsed.data.teams);
+  if (teamsMissing) {
+    return NextResponse.json({ error: teamsMissing }, { status: 400 });
   }
   try {
     const created = await createProject({

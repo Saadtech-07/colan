@@ -3,25 +3,10 @@
 import { CheckCircle2, Lock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { MODULE_LABELS, RBAC_MODULES } from "@/lib/rbac-modules";
 import type { AccessContext } from "@/lib/permissions";
-import { ROLE_DEFINITIONS } from "@/lib/permissions";
+import { useAppState } from "@/providers/app-state";
 import { cn } from "@/lib/utils";
-
-const PERMISSION_LABELS: Record<string, string> = {
-  "employees:read": "View team directory",
-  "employees:read_all": "View all employees",
-  "employees:write": "Add & edit employees",
-  "projects:read": "View team projects",
-  "projects:read_all": "View all team projects",
-  "projects:manage": "Manage projects (all teams)",
-  "projects:manage_team": "Manage squad projects",
-  "gallery:read": "Browse gallery",
-  "gallery:write": "Publish gallery items",
-  "seating:read": "View seating plan",
-  "seating:assign": "Assign any bay",
-  "seating:assign_team": "Assign team bays",
-  "roles:read": "View role definitions",
-};
 
 type Props = {
   access: AccessContext;
@@ -29,10 +14,14 @@ type Props = {
 };
 
 export function RoleAccessPanel({ access, className }: Props) {
+  const { workspaceRoles } = useAppState();
   const def = access.definition;
-  const otherRoles = Object.values(ROLE_DEFINITIONS).filter(
-    (r) => r.role !== access.role,
-  );
+  const otherRoles = workspaceRoles.filter((r) => r.key !== access.role);
+
+  const enabledModules = RBAC_MODULES.filter((m) => access.canView(m)).map((m) => {
+    const label = MODULE_LABELS[m].title;
+    return access.canManage(m) ? `${label} (Manage)` : `${label} (View)`;
+  });
 
   return (
     <Card
@@ -43,7 +32,7 @@ export function RoleAccessPanel({ access, className }: Props) {
     >
       <CardHeader className="pb-3">
         <section className="mb-2 flex flex-wrap items-center gap-2">
-          <Badge>{def.label}</Badge>
+          <Badge style={{ backgroundColor: def.color, color: "#fff" }}>{def.label}</Badge>
           {access.team && <Badge variant="outline">{access.team}</Badge>}
         </section>
         <CardTitle className="text-lg">Your access</CardTitle>
@@ -68,10 +57,10 @@ export function RoleAccessPanel({ access, className }: Props) {
             What you can do now
           </p>
           <ul className="flex flex-wrap gap-2">
-            {def.permissions.map((p) => (
-              <li key={p}>
+            {enabledModules.map((label) => (
+              <li key={label}>
                 <Badge variant="secondary" className="font-normal">
-                  {PERMISSION_LABELS[p] ?? p}
+                  {label}
                 </Badge>
               </li>
             ))}
@@ -84,8 +73,8 @@ export function RoleAccessPanel({ access, className }: Props) {
           </p>
           <ul className="grid gap-2 sm:grid-cols-2">
             {otherRoles.map((r) => (
-              <li key={r.role} className="text-xs text-muted-foreground">
-                <span className="font-medium text-foreground">{r.label}</span>
+              <li key={r.id} className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">{r.name}</span>
                 {" — "}
                 {r.description}
               </li>

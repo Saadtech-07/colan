@@ -6,6 +6,7 @@ import {
   getProjectsForEmployee,
   projectStatusVariant,
 } from "@/lib/project-assignments";
+import { filterProjectsByEmployeeTeam } from "@/lib/projects";
 import type { Employee, Project } from "@/types";
 
 type Props = {
@@ -14,7 +15,10 @@ type Props = {
 };
 
 export function EmployeeProjectsSection({ employee, projects }: Props) {
-  const assigned = getProjectsForEmployee(employee.id, projects);
+  const assigned = filterProjectsByEmployeeTeam(
+    employee,
+    getProjectsForEmployee(employee.id, projects),
+  );
 
   return (
     <div className="mt-3 border-t border-border/60 pt-3">

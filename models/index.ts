@@ -5,6 +5,7 @@ export * from "./employee.model";
 export * from "./employee-details.model";
 export * from "./team.model";
 export * from "./company-role.model";
+export type { WorkspaceRole } from "./company-role.model";
 export * from "./seating-bay.model";
 export * from "./seating-assignment.model";
 export * from "./team-member.model";

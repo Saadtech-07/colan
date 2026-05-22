@@ -1,3 +1,4 @@
+import { filterProjectsByEmployeeTeam } from "@/lib/projects";
 import type { Employee, Project, ProjectStatus } from "@/types";
 
 /** Projects where the employee id appears in `memberIds`. */
@@ -16,11 +17,15 @@ export function projectStatusVariant(
   return "outline";
 }
 
-/** Projects the user may assign this employee to (by team / role). */
+/**
+ * Projects an admin/lead may assign to this employee: same squad only, plus role scope.
+ */
 export function assignableProjectsForEmployee(
   employee: Employee,
   projects: Project[],
-  canManageProject: (projectTeam: Project["team"]) => boolean,
+  canManageProject: (project: Project) => boolean,
 ): Project[] {
-  return projects.filter((p) => canManageProject(p.team));
+  return filterProjectsByEmployeeTeam(employee, projects).filter((p) =>
+    canManageProject(p),
+  );
 }

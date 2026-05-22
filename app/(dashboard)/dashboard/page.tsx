@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAppState } from "@/providers/app-state";
 import { projectStats } from "@/lib/mock-data";
-import { TEAMS } from "@/lib/constants";
+import { teamTabLabel } from "@/lib/team-utils";
 import type { Project, TeamName } from "@/types";
 import { AddProjectDialog } from "@/components/features/add-project-dialog";
 import { ProjectAnalyticsChart } from "@/components/features/project-analytics-chart";
@@ -33,16 +33,17 @@ export default function DashboardPage() {
     employees,
     dataError,
     dataSummary,
+    teamNames,
   } = useAppState();
   const visibleProjects = projects;
   const stats = projectStats(visibleProjects);
-  const teamCount = new Set(visibleProjects.map((p) => p.team)).size;
+  const teamCount = new Set(visibleProjects.flatMap((p) => p.teams)).size;
   const teamsToShow =
-    access?.seesAllTeams || !user?.team ? TEAMS : [user.team];
+    access?.seesAllTeams || !user?.team ? teamNames : [user.team];
 
   const byTeam = teamsToShow.reduce(
     (acc, team) => {
-      acc[team] = visibleProjects.filter((p) => p.team === team);
+      acc[team] = visibleProjects.filter((p) => p.teams.includes(team));
       return acc;
     },
     {} as Record<TeamName, Project[]>,
@@ -118,6 +119,7 @@ export default function DashboardPage() {
         </div>
         {access?.canManageProjects && (
           <AddProjectDialog
+            teamOptions={teamNames}
             onCreate={addProject}
             lockedTeam={access.role === "lead" ? user?.team : undefined}
           />
@@ -150,7 +152,7 @@ export default function DashboardPage() {
         />
         <StatCard
           title="Active teams"
-          value={String(teamCount || TEAMS.length)}
+          value={String(teamCount || teamNames.length)}
           hint="With at least one visible project"
           icon={UsersRound}
           className="from-violet-50/80 to-white"

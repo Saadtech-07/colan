@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { TEAMS } from "@/lib/constants";
+import { TeamMultiSelect } from "@/components/features/team-multi-select";
+import { useAppState } from "@/providers/app-state";
 import type { Employee, ProjectDetail, ProjectStatus, TeamName } from "@/types";
 
 const STATUSES: ProjectStatus[] = ["Yet To Start", "In Progress", "Completed"];
@@ -35,8 +36,9 @@ export function ProjectDetailEditor({
   lockedTeam,
   onSaved,
 }: Props) {
+  const { teamNames } = useAppState();
   const [name, setName] = React.useState(project.name);
-  const [team, setTeam] = React.useState<TeamName>(project.team);
+  const [teams, setTeams] = React.useState<TeamName[]>(project.teams);
   const [assignedDate, setAssignedDate] = React.useState(project.assignedDate);
   const [lastDate, setLastDate] = React.useState(project.lastDate);
   const [status, setStatus] = React.useState<ProjectStatus>(project.status);
@@ -45,7 +47,10 @@ export function ProjectDetailEditor({
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const rosterForTeam = teamRoster.filter((e) => e.team === (lockedTeam ?? team));
+  const assignedTeams = lockedTeam ? [lockedTeam] : teams;
+  const rosterForTeam = teamRoster.filter((e) =>
+    assignedTeams.includes(e.team),
+  );
 
   const toggleMember = (id: string) => {
     setMemberIds((prev) =>
@@ -54,6 +59,10 @@ export function ProjectDetailEditor({
   };
 
   const save = async () => {
+    if (assignedTeams.length === 0) {
+      setError("Select at least one team.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -63,7 +72,7 @@ export function ProjectDetailEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: name.trim(),
-          team: lockedTeam ?? team,
+          teams: assignedTeams,
           assignedDate,
           lastDate,
           status,
@@ -129,24 +138,14 @@ export function ProjectDetailEditor({
           <Label htmlFor="p-name">Project name</Label>
           <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
-        <div className="space-y-2">
-          <Label>Team</Label>
-          {lockedTeam ? (
-            <Input value={lockedTeam} readOnly className="bg-muted" />
-          ) : (
-            <Select value={team} onValueChange={(v) => setTeam(v as TeamName)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TEAMS.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+        <div className="space-y-2 md:col-span-2">
+          <Label>Teams</Label>
+          <TeamMultiSelect
+            value={teams}
+            onChange={setTeams}
+            options={teamNames}
+            lockedTeam={lockedTeam}
+          />
         </div>
         <div className="space-y-2">
           <Label>Status</Label>
@@ -198,7 +197,9 @@ export function ProjectDetailEditor({
           Assign team members
         </h3>
         <p className="mb-3 text-xs text-muted-foreground">
-          Select people from {lockedTeam ?? team} working on this project.
+          Select people from{" "}
+          {lockedTeam ?? teams.map((t) => t.replace(" Team", "")).join(", ")} working
+          on this project.
         </p>
         <ul className="flex flex-wrap gap-2">
           {rosterForTeam.map((e) => {

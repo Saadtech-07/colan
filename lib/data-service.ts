@@ -6,9 +6,16 @@ import {
 } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { memoryStore } from "@/lib/memory-store";
+import {
+  employeeSlugFromId,
+  findEmployeeBySlugOrId,
+} from "@/lib/employee-slug";
+import { getProjectsForEmployee } from "@/lib/project-assignments";
+import { assertProjectsMatchEmployeeTeam, filterProjectsByEmployeeTeam } from "@/lib/projects";
 import { uniqueProjectSlug } from "@/lib/project-slug";
 import type {
   Employee,
+  EmployeeDetail,
   EmployeeDirectoryInfo,
   GalleryImage,
   Project,
@@ -134,7 +141,11 @@ async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>
   const pr = db.collection<ProjectDocument>(COLLECTIONS.projects);
   const em = db.collection<EmployeeDocument>(COLLECTIONS.employees);
 
+  const { ensureTeamsSeed } = await import("@/lib/teams-data");
+  const { ensureRolesSeed } = await import("@/lib/roles-data");
   await ensureAppUsersSeed(db);
+  await ensureTeamsSeed(db);
+  await ensureRolesSeed(db);
 
   if ((await em.countDocuments()) === 0) {
     await safeSeedInsert(() =>
@@ -150,10 +161,11 @@ async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>
   if ((await pr.countDocuments()) === 0) {
     const employees = await em.find({}).toArray();
     const docs: ProjectDocument[] = MOCK_PROJECTS.map(
-      ({ id: _id, memberIds: _m, ...rest }) => {
-        const teamEmps = employees.filter((e) => e.team === rest.team);
+      ({ id: _id, memberIds: _m, teams, ...rest }) => {
+        const teamEmps = employees.filter((e) => teams.includes(e.team));
         return {
           ...rest,
+          teams,
           memberIds: teamEmps.slice(0, 2).map((e) => e._id.toHexString()),
           _id: new ObjectId(),
         };
@@ -234,14 +246,37 @@ export async function listEmployees(): Promise<Employee[]> {
   });
 }
 
+export async function getEmployeeDetailBySlugOrId(
+  slugOrId: string,
+): Promise<EmployeeDetail | null> {
+  const [employees, projects] = await Promise.all([
+    listEmployees(),
+    listProjects(),
+  ]);
+  const employee = findEmployeeBySlugOrId(employees, slugOrId);
+  if (!employee) return null;
+  const assignedProjects = filterProjectsByEmployeeTeam(
+    employee,
+    getProjectsForEmployee(employee.id, projects),
+  );
+  return {
+    ...employee,
+    slug: employeeSlugFromId(employee.employeeId),
+    assignedProjects,
+  };
+}
+
 export async function createEmployee(
   input: Omit<Employee, "id">,
 ): Promise<Employee> {
   const db = await getDb();
   if (!db) {
     const list = memoryStore.employees;
-    for (const e of list) {
-      if (e.bayNumber === input.bayNumber) e.bayNumber = "";
+    const { isValidSeatId } = await import("@/lib/seating-layout");
+    if (input.bayNumber && isValidSeatId(input.bayNumber)) {
+      for (const e of list) {
+        if (e.bayNumber === input.bayNumber) e.bayNumber = "";
+      }
     }
     const id = `e-${Date.now()}`;
     const row: Employee = { ...input, id };
@@ -250,7 +285,10 @@ export async function createEmployee(
   }
   await ensureMongoSeed(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
-  await col.updateMany({ bayNumber: input.bayNumber }, { $set: { bayNumber: "" } });
+  const { isValidSeatId } = await import("@/lib/seating-layout");
+  if (input.bayNumber && isValidSeatId(input.bayNumber)) {
+    await col.updateMany({ bayNumber: input.bayNumber }, { $set: { bayNumber: "" } });
+  }
   const _id = new ObjectId();
   const doc: EmployeeDocument = { _id, ...employeeInputToDocFields(input) };
   await col.insertOne(doc);
@@ -269,68 +307,167 @@ export async function createEmployee(
   };
 }
 
+async function upsertEmployeeDirectory(
+  db: Db,
+  employeeRef: ObjectId,
+  directory: Partial<EmployeeDirectoryInfo>,
+): Promise<EmployeeDirectoryInfo | undefined> {
+  const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
+  const existing = await det.findOne({ employeeRef });
+  const merged: EmployeeDetailsDocument = {
+    _id: existing?._id ?? new ObjectId(),
+    employeeRef,
+    workEmail:
+      directory.workEmail !== undefined
+        ? directory.workEmail || undefined
+        : existing?.workEmail,
+    phone:
+      directory.phone !== undefined ? directory.phone || undefined : existing?.phone,
+    location:
+      directory.location !== undefined
+        ? directory.location || undefined
+        : existing?.location,
+    joinedDate:
+      directory.joinedDate !== undefined
+        ? directory.joinedDate || undefined
+        : existing?.joinedDate,
+    notes:
+      directory.notes !== undefined ? directory.notes || undefined : existing?.notes,
+    updatedAt: new Date(),
+    createdAt: existing?.createdAt ?? new Date(),
+  };
+  await det.updateOne(
+    { employeeRef },
+    { $set: merged },
+    { upsert: true },
+  );
+  return detailsToDirectory(employeeDetailsDocToDTO(merged));
+}
+
 export async function updateEmployee(
   id: string,
-  patch: Partial<Omit<Employee, "id">>,
+  patch: Partial<Omit<Employee, "id">> & { directory?: Partial<EmployeeDirectoryInfo> },
 ): Promise<Employee> {
   const db = await getDb();
   const normalizedId = String(id).trim();
   if (!normalizedId || normalizedId === "undefined") {
     throw new Error("Invalid employee id");
   }
+  const { isValidSeatId } = await import("@/lib/seating-layout");
+  const directoryPatch = patch.directory;
+  const employeePatch = { ...patch };
+  delete (employeePatch as { directory?: unknown }).directory;
+
+  if (patch.bayNumber !== undefined) {
+    const bay = patch.bayNumber.trim();
+    if (bay && !isValidSeatId(bay)) {
+      throw new Error(
+        `Invalid seat "${bay}". Choose a seat from the floor plan (e.g. A1, D3).`,
+      );
+    }
+    if (db) {
+      if (bay) {
+        await assignEmployeeToBay(bay, normalizedId);
+      } else {
+        await ensureMongoSeed(db);
+        await db
+          .collection<EmployeeDocument>(COLLECTIONS.employees)
+          .updateOne({ _id: new ObjectId(normalizedId) }, { $set: { bayNumber: "" } });
+      }
+    }
+    employeePatch.bayNumber = bay;
+  }
+
   if (!db) {
     const list = memoryStore.employees;
     const idx = list.findIndex((e) => e.id === normalizedId);
     if (idx < 0) throw new Error("Employee not found");
     const current = list[idx];
+    if (employeePatch.bayNumber !== undefined && employeePatch.bayNumber) {
+      for (const e of list) {
+        if (e.bayNumber === employeePatch.bayNumber) e.bayNumber = "";
+      }
+    }
+    const nextDirectory = directoryPatch
+      ? { ...current.directory, ...directoryPatch }
+      : current.directory;
     const next: Employee = {
       ...current,
-      ...(patch.employeeId !== undefined ? { employeeId: patch.employeeId } : {}),
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.team !== undefined ? { team: patch.team } : {}),
-      ...(patch.role !== undefined ? { role: patch.role } : {}),
-      ...(patch.bayNumber !== undefined ? { bayNumber: patch.bayNumber } : {}),
-      ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl } : {}),
+      ...(employeePatch.employeeId !== undefined
+        ? { employeeId: employeePatch.employeeId }
+        : {}),
+      ...(employeePatch.name !== undefined ? { name: employeePatch.name } : {}),
+      ...(employeePatch.team !== undefined ? { team: employeePatch.team } : {}),
+      ...(employeePatch.role !== undefined ? { role: employeePatch.role } : {}),
+      ...(employeePatch.bayNumber !== undefined
+        ? { bayNumber: employeePatch.bayNumber }
+        : {}),
+      ...(employeePatch.imageUrl !== undefined
+        ? { imageUrl: employeePatch.imageUrl }
+        : {}),
+      ...(directoryPatch ? { directory: nextDirectory } : {}),
     };
     list[idx] = next;
     return { ...next };
   }
-  // If an id isn't a valid ObjectId but we still have a DB (e.g. dev UI sent a memory id),
-  // fall back to the in-memory store so the UI can edit items created in-memory.
+
   if (!ObjectId.isValid(normalizedId)) {
     const list = memoryStore.employees;
     const idx = list.findIndex((e) => e.id === normalizedId);
     if (idx < 0) throw new Error("Invalid employee id");
     const current = list[idx];
+    const nextDirectory = directoryPatch
+      ? { ...current.directory, ...directoryPatch }
+      : current.directory;
     const next: Employee = {
       ...current,
-      ...(patch.employeeId !== undefined ? { employeeId: patch.employeeId } : {}),
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.team !== undefined ? { team: patch.team } : {}),
-      ...(patch.role !== undefined ? { role: patch.role } : {}),
-      ...(patch.bayNumber !== undefined ? { bayNumber: patch.bayNumber } : {}),
-      ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl } : {}),
+      ...(employeePatch.employeeId !== undefined
+        ? { employeeId: employeePatch.employeeId }
+        : {}),
+      ...(employeePatch.name !== undefined ? { name: employeePatch.name } : {}),
+      ...(employeePatch.team !== undefined ? { team: employeePatch.team } : {}),
+      ...(employeePatch.role !== undefined ? { role: employeePatch.role } : {}),
+      ...(employeePatch.bayNumber !== undefined
+        ? { bayNumber: employeePatch.bayNumber }
+        : {}),
+      ...(employeePatch.imageUrl !== undefined
+        ? { imageUrl: employeePatch.imageUrl }
+        : {}),
+      ...(directoryPatch ? { directory: nextDirectory } : {}),
     };
     list[idx] = next;
     return { ...next };
   }
+
   await ensureMongoSeed(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const oid = new ObjectId(normalizedId);
   const updates: Partial<EmployeeDocument> = { updatedAt: new Date() };
-  if (patch.employeeId !== undefined) updates.employeeId = patch.employeeId;
-  if (patch.name !== undefined) updates.name = patch.name;
-  if (patch.team !== undefined) updates.team = patch.team;
-  if (patch.role !== undefined) updates.role = patch.role;
-  if (patch.bayNumber !== undefined) updates.bayNumber = patch.bayNumber;
-  if (patch.imageUrl !== undefined) updates.imageUrl = patch.imageUrl;
+  if (employeePatch.employeeId !== undefined) updates.employeeId = employeePatch.employeeId;
+  if (employeePatch.name !== undefined) updates.name = employeePatch.name;
+  if (employeePatch.team !== undefined) updates.team = employeePatch.team;
+  if (employeePatch.role !== undefined) updates.role = employeePatch.role;
+  if (employeePatch.imageUrl !== undefined) updates.imageUrl = employeePatch.imageUrl;
+  if (patch.bayNumber !== undefined && !patch.bayNumber.trim()) {
+    updates.bayNumber = "";
+  }
 
-  const result = await col.findOneAndUpdate(
-    { _id: new ObjectId(normalizedId) },
-    { $set: updates },
-    { returnDocument: "after" },
-  );
-  if (!result) throw new Error("Employee not found");
-  return employeeDocToDTO(result);
+  if (Object.keys(updates).length > 1) {
+    await col.updateOne({ _id: oid }, { $set: updates });
+  }
+
+  if (directoryPatch) {
+    await upsertEmployeeDirectory(db, oid, directoryPatch);
+  }
+
+  const row = await col.findOne({ _id: oid });
+  if (!row) throw new Error("Employee not found");
+  const base = employeeDocToDTO(row);
+  const detCol = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
+  const detailDoc = await detCol.findOne({ employeeRef: oid });
+  return detailDoc
+    ? { ...base, directory: detailsToDirectory(employeeDetailsDocToDTO(detailDoc)) }
+    : base;
 }
 
 export async function deleteEmployee(id: string): Promise<void> {
@@ -365,6 +502,10 @@ export async function assignEmployeeToBay(
   bayId: string,
   employeeId: string | null,
 ): Promise<Employee[]> {
+  const { isValidSeatId } = await import("@/lib/seating-layout");
+  if (!isValidSeatId(bayId)) {
+    throw new Error(`Invalid seat "${bayId}". Use a seat from the office floor plan (e.g. A1, B14).`);
+  }
   const db = await getDb();
   if (!db) {
     const list = memoryStore.employees;
@@ -373,7 +514,12 @@ export async function assignEmployeeToBay(
     }
     if (employeeId) {
       const emp = list.find((e) => e.id === employeeId);
-      if (emp) emp.bayNumber = bayId;
+      if (emp) {
+        emp.bayNumber = bayId;
+      }
+      for (const e of list) {
+        if (e.id !== employeeId && e.bayNumber === bayId) e.bayNumber = "";
+      }
     }
     return list.map((e) => ({ ...e }));
   }
@@ -384,9 +530,13 @@ export async function assignEmployeeToBay(
     if (!ObjectId.isValid(employeeId)) {
       throw new Error("Invalid employee id");
     }
-    await col.updateOne(
+    await col.updateMany(
       { _id: new ObjectId(employeeId) },
       { $set: { bayNumber: bayId } },
+    );
+    await col.updateMany(
+      { bayNumber: bayId, _id: { $ne: new ObjectId(employeeId) } },
+      { $set: { bayNumber: "" } },
     );
   }
   return listEmployees();
@@ -457,7 +607,7 @@ export async function createProject(
     _id,
     slug,
     name: input.name,
-    team: input.team,
+    teams: input.teams,
     assignedDate: input.assignedDate,
     lastDate: input.lastDate,
     status: input.status,
@@ -475,7 +625,7 @@ export async function updateProjectBySlug(
     Pick<
       Project,
       | "name"
-      | "team"
+      | "teams"
       | "assignedDate"
       | "lastDate"
       | "status"
@@ -508,21 +658,35 @@ export async function updateProjectBySlug(
 }
 
 /**
- * Set which projects an employee works on by syncing `memberIds` on each project.
- * Only projects where `canModify(project)` is true are updated.
+ * Set which projects an employee works on by syncing `memberIds` on squad projects.
+ * Cross-team assignment is rejected. Only projects where `canModify(project)` is updated.
  */
 export async function setEmployeeProjects(
   employeeId: string,
   projectIds: string[],
   canModify: (project: Project) => boolean,
+  employeeTeam: Employee["team"],
 ): Promise<Project[]> {
   const normalizedId = String(employeeId).trim();
   if (!normalizedId) throw new Error("Invalid employee id");
 
   const projects = await listProjects();
-  const targetIds = new Set(projectIds);
+  assertProjectsMatchEmployeeTeam(employeeTeam, projectIds, projects);
 
-  for (const project of projects) {
+  for (const projectId of projectIds) {
+    const project = projects.find((p) => p.id === projectId);
+    if (project && !canModify(project)) {
+      throw new Error(`You do not have permission to assign "${project.name}".`);
+    }
+  }
+
+  const targetIds = new Set(projectIds);
+  const teamProjects = filterProjectsByEmployeeTeam(
+    { team: employeeTeam },
+    projects,
+  );
+
+  for (const project of teamProjects) {
     if (!canModify(project)) continue;
     const hasMember = project.memberIds.includes(normalizedId);
     const shouldHave = targetIds.has(project.id);

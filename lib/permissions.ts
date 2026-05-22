@@ -1,4 +1,13 @@
-import type { AppRole, Employee, Project, TeamName } from "@/types";
+import {
+  NAV_PATH_MODULES,
+  normalizeModulePermissions,
+  resolveLegacyAccess,
+  type ModulePermissionsMap,
+  type RbacModule,
+} from "@/lib/rbac-modules";
+import { getRoleFromRegistry } from "@/lib/role-registry";
+import type { Employee, Project, TeamName } from "@/types";
+import type { WorkspaceRole } from "@/models";
 
 export type Permission =
   | "employees:read"
@@ -13,175 +22,128 @@ export type Permission =
   | "seating:read"
   | "seating:assign"
   | "seating:assign_team"
-  | "roles:read";
+  | "roles:read"
+  | "roles:manage"
+  | "appUsers:read"
+  | "appUsers:manage";
 
 export type RoleDefinition = {
-  role: AppRole;
+  role: string;
   label: string;
   description: string;
   responsibilities: string[];
   scopes: string[];
   permissions: Permission[];
+  color: string;
+  modules: ModulePermissionsMap;
 };
 
-const ALL_PERMISSIONS: Permission[] = [
-  "employees:read",
-  "employees:read_all",
-  "employees:write",
-  "projects:read",
-  "projects:read_all",
-  "projects:manage",
-  "projects:manage_team",
-  "gallery:read",
-  "gallery:write",
-  "seating:read",
-  "seating:assign",
-  "seating:assign_team",
-  "roles:read",
-];
+import type { AppRole } from "@/types";
 
-export const ROLE_DEFINITIONS: Record<AppRole, RoleDefinition> = {
-  admin: {
-    role: "admin",
-    label: "Admin",
-    description:
-      "Full workspace control — employees, projects, seating, gallery, and future permission policies.",
-    responsibilities: [
-      "Manage the employee directory and org-wide settings",
-      "Create and oversee all team projects and gallery content",
-      "Assign seating across the full floor plan",
-      "Define access policies for managers, leads, and contributors",
-    ],
-    scopes: [
-      "All modules",
-      "User administration",
-      "Org settings",
-      "Full project portfolio",
-    ],
-    permissions: ALL_PERMISSIONS,
-  },
-  manager: {
-    role: "manager",
-    label: "Manager",
-    description:
-      "Operational oversight across teams with approval workflows and reporting.",
-    responsibilities: [
-      "Review and approve project timelines across teams",
-      "Create and update projects for any squad",
-      "Monitor delivery health and team workload",
-      "Publish gallery updates for company-wide visibility",
-    ],
-    scopes: ["All team projects", "Cross-team reporting", "Gallery publishing"],
-    permissions: [
-      "employees:read",
-      "employees:read_all",
-      "projects:read",
-      "projects:read_all",
-      "projects:manage",
-      "gallery:read",
-      "gallery:write",
-      "seating:read",
-      "roles:read",
-    ],
-  },
-  lead: {
-    role: "lead",
-    label: "Project Lead",
-    description:
-      "Leads delivery for a squad — prioritization, standups, and unblockers.",
-    responsibilities: [
-      "Own the squad backlog and sprint priorities",
-      "Create and update projects for your assigned team",
-      "Assign seating for members on your team",
-      "Keep the team directory accurate for your squad",
-    ],
-    scopes: ["Team backlog", "Squad assignments", "Team seating"],
-    permissions: [
-      "employees:read",
-      "projects:read",
-      "projects:manage_team",
-      "gallery:read",
-      "seating:read",
-      "seating:assign_team",
-      "roles:read",
-    ],
-  },
-  employee: {
-    role: "employee",
-    label: "Employee",
-    description:
-      "Contributing member with read access to assigned team projects and workspace updates.",
-    responsibilities: [
-      "Execute work on assigned team projects",
-      "Stay current on team announcements and gallery posts",
-      "View squad roster and seating for your team",
-    ],
-    scopes: ["Assigned team projects", "Team directory (read-only)", "Gallery"],
-    permissions: [
-      "employees:read",
-      "projects:read",
-      "gallery:read",
-      "seating:read",
-      "roles:read",
-    ],
-  },
-};
-
-export const APP_ROLES = Object.keys(ROLE_DEFINITIONS) as AppRole[];
+const FALLBACK_ROLE_KEY = "employee";
 
 export function normalizeAppRole(value: unknown): AppRole {
-  if (value === "admin" || value === "manager" || value === "lead" || value === "employee") {
-    return value;
+  if (typeof value === "string" && value.trim()) return value.trim();
+  return FALLBACK_ROLE_KEY;
+}
+
+function fallbackRoleDefinition(): RoleDefinition {
+  return {
+    role: FALLBACK_ROLE_KEY,
+    label: "Employee",
+    description: "Default contributor access.",
+    responsibilities: [],
+    scopes: [],
+    permissions: ["projects:read", "employees:read", "gallery:read", "seating:read", "roles:read"],
+    color: "#64748b",
+    modules: normalizeModulePermissions({
+      dashboard: { view: true, manage: false },
+      projects: { view: true, manage: false },
+      teamMembers: { view: true, manage: false },
+      seating: { view: true, manage: false },
+      gallery: { view: true, manage: false },
+      roles: { view: true, manage: false },
+      appUsers: { view: false, manage: false },
+    }),
+  };
+}
+
+export function workspaceRoleToDefinition(role: WorkspaceRole): RoleDefinition {
+  return {
+    role: role.key,
+    label: role.name,
+    description: role.description,
+    responsibilities: role.responsibilities,
+    scopes: role.scopes,
+    permissions: role.resolvedPermissions as Permission[],
+    color: role.color,
+    modules: role.permissions,
+  };
+}
+
+export function getRoleDefinition(roleKey: AppRole): RoleDefinition {
+  const role = getRoleFromRegistry(roleKey);
+  if (!role) return fallbackRoleDefinition();
+  return workspaceRoleToDefinition(role);
+}
+
+export function roleNeedsTeam(roleKey: AppRole): boolean {
+  const role = getRoleFromRegistry(roleKey);
+  if (!role) return roleKey === "lead" || roleKey === "employee";
+  return role.teamScopedProjects || roleKey === "lead" || roleKey === "employee";
+}
+
+export function hasPermission(roleKey: AppRole, permission: Permission): boolean {
+  const role = getRoleFromRegistry(roleKey);
+  if (!role) return fallbackRoleDefinition().permissions.includes(permission);
+  return role.resolvedPermissions.includes(permission);
+}
+
+export function canViewModule(roleKey: AppRole, module: RbacModule): boolean {
+  const role = getRoleFromRegistry(roleKey);
+  if (!role) return module === "dashboard";
+  return role.permissions[module]?.view ?? false;
+}
+
+export function canManageModule(roleKey: AppRole, module: RbacModule): boolean {
+  const role = getRoleFromRegistry(roleKey);
+  if (!role) return false;
+  return role.permissions[module]?.manage ?? false;
+}
+
+export function canAccessNav(roleKey: AppRole, href: string): boolean {
+  const module = NAV_PATH_MODULES[href];
+  if (!module) {
+    if (href.startsWith("/projects/")) {
+      return canViewModule(roleKey, "projects");
+    }
+    if (href.startsWith("/team-members/")) {
+      return canViewModule(roleKey, "teamMembers");
+    }
+    return true;
   }
-  return "employee";
+  return canViewModule(roleKey, module);
 }
 
-export function getRoleDefinition(role: AppRole): RoleDefinition {
-  return ROLE_DEFINITIONS[role];
+export function canManageProjects(roleKey: AppRole): boolean {
+  return (
+    hasPermission(roleKey, "projects:manage") ||
+    hasPermission(roleKey, "projects:manage_team")
+  );
 }
 
-export function roleNeedsTeam(role: AppRole): boolean {
-  return role === "lead" || role === "employee";
-}
-
-export function hasPermission(role: AppRole, permission: Permission): boolean {
-  return ROLE_DEFINITIONS[role].permissions.includes(permission);
-}
-
-export function canAccessNav(role: AppRole, href: string): boolean {
-  switch (href) {
-    case "/dashboard":
-      return true;
-    case "/team-members":
-      return hasPermission(role, "employees:read");
-    case "/gallery":
-      return hasPermission(role, "gallery:read");
-    case "/seating":
-      return hasPermission(role, "seating:read");
-    case "/roles":
-      return hasPermission(role, "roles:read");
-    case "/projects":
-      return hasPermission(role, "projects:read");
-    case "/app-users":
-      return role === "admin";
-    default:
-      return href.startsWith("/projects/")
-        ? hasPermission(role, "projects:read")
-        : true;
-  }
-}
-
-export function canManageProjects(role: AppRole): boolean {
-  return hasPermission(role, "projects:manage") || hasPermission(role, "projects:manage_team");
+/** Admin, Manager, and Project Lead — may assign squad projects to employees. */
+export function canAssignEmployeeProjects(roleKey: AppRole): boolean {
+  return canManageProjects(roleKey);
 }
 
 export function canManageProjectForTeam(
-  role: AppRole,
+  roleKey: AppRole,
   projectTeam: TeamName,
   userTeam?: TeamName,
 ): boolean {
-  if (hasPermission(role, "projects:manage")) return true;
-  if (hasPermission(role, "projects:manage_team")) {
+  if (hasPermission(roleKey, "projects:manage")) return true;
+  if (hasPermission(roleKey, "projects:manage_team")) {
     return !!userTeam && userTeam === projectTeam;
   }
   return false;
@@ -189,63 +151,81 @@ export function canManageProjectForTeam(
 
 export function filterProjectsForUser(
   projects: Project[],
-  role: AppRole,
+  roleKey: AppRole,
   userTeam?: TeamName,
 ): Project[] {
-  if (hasPermission(role, "projects:read_all")) return projects;
-  if (userTeam) return projects.filter((p) => p.team === userTeam);
+  if (hasPermission(roleKey, "projects:read_all")) return projects;
+  if (userTeam) {
+    return projects.filter((p) => p.teams.includes(userTeam));
+  }
   return [];
+}
+
+export function canManageProject(
+  roleKey: AppRole,
+  projectTeams: TeamName[],
+  userTeam?: TeamName,
+): boolean {
+  return projectTeams.some((t) =>
+    canManageProjectForTeam(roleKey, t, userTeam),
+  );
 }
 
 export function filterEmployeesForUser(
   employees: Employee[],
-  role: AppRole,
+  roleKey: AppRole,
   userTeam?: TeamName,
 ): Employee[] {
-  if (hasPermission(role, "employees:read_all")) return employees;
+  if (hasPermission(roleKey, "employees:read_all")) return employees;
   if (userTeam) return employees.filter((e) => e.team === userTeam);
   return employees;
 }
 
-export function canWriteEmployees(role: AppRole): boolean {
-  return hasPermission(role, "employees:write");
+export function canWriteEmployees(roleKey: AppRole): boolean {
+  return canManageModule(roleKey, "teamMembers");
 }
 
-export function canAssignSeating(role: AppRole): boolean {
-  return hasPermission(role, "seating:assign") || hasPermission(role, "seating:assign_team");
+export function canAssignSeating(roleKey: AppRole): boolean {
+  return (
+    hasPermission(roleKey, "seating:assign") ||
+    hasPermission(roleKey, "seating:assign_team")
+  );
 }
 
 export function canAssignEmployeeToBay(
-  role: AppRole,
+  roleKey: AppRole,
   employee: Employee | undefined,
   userTeam?: TeamName,
 ): boolean {
-  if (hasPermission(role, "seating:assign")) return true;
-  if (hasPermission(role, "seating:assign_team")) {
+  if (hasPermission(roleKey, "seating:assign")) return true;
+  if (hasPermission(roleKey, "seating:assign_team")) {
     if (!employee || !userTeam) return false;
     return employee.team === userTeam;
   }
   return false;
 }
 
-export function canWriteGallery(role: AppRole): boolean {
-  return hasPermission(role, "gallery:write");
+export function canWriteGallery(roleKey: AppRole): boolean {
+  return canManageModule(roleKey, "gallery");
 }
 
-export function buildAccessContext(role: AppRole, team?: TeamName) {
-  const def = getRoleDefinition(role);
+export function buildAccessContext(roleKey: AppRole, team?: TeamName) {
+  const def = getRoleDefinition(roleKey);
   return {
-    role,
+    role: roleKey,
     team,
     definition: def,
-    canManageProjects: canManageProjects(role),
-    canWriteEmployees: canWriteEmployees(role),
-    canAssignSeating: canAssignSeating(role),
-    canWriteGallery: canWriteGallery(role),
+    modules: def.modules,
+    canView: (module: RbacModule) => canViewModule(roleKey, module),
+    canManage: (module: RbacModule) => canManageModule(roleKey, module),
+    canManageProjects: canManageProjects(roleKey),
+    canWriteEmployees: canWriteEmployees(roleKey),
+    canAssignSeating: canAssignSeating(roleKey),
+    canWriteGallery: canWriteGallery(roleKey),
     seesAllTeams:
-      hasPermission(role, "projects:read_all") ||
-      hasPermission(role, "employees:read_all"),
-    has: (permission: Permission) => hasPermission(role, permission),
+      hasPermission(roleKey, "projects:read_all") ||
+      hasPermission(roleKey, "employees:read_all"),
+    has: (permission: Permission) => hasPermission(roleKey, permission),
   };
 }
 

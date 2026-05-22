@@ -4,6 +4,10 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
   UserCheck,
   Upload,
   X,
@@ -22,8 +26,7 @@ import {
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
-import { ROLE_DEFINITIONS, APP_ROLES, roleNeedsTeam } from "@/lib/permissions";
-import { TEAMS } from "@/lib/constants";
+import { roleNeedsTeam } from "@/lib/permissions";
 import type { AppRole, TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
 
@@ -39,7 +42,7 @@ const initialFormState = {
 
 export default function AppUsersPage() {
   const router = useRouter();
-  const { isAdmin, user, refreshData } = useAppState();
+  const { isAdmin, user, refreshData, teamNames, workspaceRoles } = useAppState();
   const { withLoading, isLoadingKey } = useGlobalLoading();
   const [users, setUsers] = React.useState<AppUserPublicDTO[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -48,6 +51,7 @@ export default function AppUsersPage() {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [form, setForm] = React.useState(initialFormState);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const formCardRef = React.useRef<HTMLDivElement | null>(null);
 
   const submitting = isLoadingKey("app-users-submit");
   const showTeamField = roleNeedsTeam(form.appRole);
@@ -82,6 +86,14 @@ export default function AppUsersPage() {
     setForm(initialFormState);
     setSuccess(null);
     setError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const startCreate = () => {
+    resetForm();
+    formCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -165,6 +177,7 @@ export default function AppUsersPage() {
         await refreshData();
         router.refresh();
         setSuccess("Account removed.");
+        if (editingId === id) resetForm();
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to delete account.");
@@ -184,6 +197,7 @@ export default function AppUsersPage() {
     });
     setSuccess(null);
     setError(null);
+    formCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   if (!isAdmin) {
@@ -224,6 +238,17 @@ export default function AppUsersPage() {
                   {!loading && `${users.length} account(s) available.`}
                 </CardDescription>
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                onClick={startCreate}
+                aria-label="Create new account"
+                title="Create new account"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="overflow-x-auto px-0">
@@ -255,28 +280,36 @@ export default function AppUsersPage() {
                         <td className="px-4 py-4 align-top font-medium">{item.email}</td>
                         <td className="px-4 py-4 align-top">{item.name}</td>
                         <td className="px-4 py-4 align-top">
-                          {ROLE_DEFINITIONS[item.appRole]?.label ?? item.appRole}
+                          {workspaceRoles.find((r) => r.key === item.appRole)?.name ??
+                            item.appRole}
                         </td>
                         <td className="px-4 py-4 align-top">{item.team ?? "—"}</td>
                         <td className="px-4 py-4 align-top text-right">
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            className="mr-2"
-                            onClick={() => startEdit(item)}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleDelete(item.id, item.email)}
-                            disabled={item.email === user?.email}
-                          >
-                            Delete
-                          </Button>
+                          <div className="inline-flex justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => startEdit(item)}
+                              aria-label={`Edit ${item.email}`}
+                              title="Edit account"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => handleDelete(item.id, item.email)}
+                              disabled={item.email === user?.email}
+                              aria-label={`Delete ${item.email}`}
+                              title="Delete account"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -294,14 +327,31 @@ export default function AppUsersPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card ref={formCardRef}>
           <CardHeader>
-            <CardTitle>{editingId ? "Edit account" : "Create account"}</CardTitle>
-            <CardDescription>
-              {editingId
-                ? "Update login details and reset password."
-                : "Add a new user account for workspace access."}
-            </CardDescription>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <CardTitle>{editingId ? "Edit account" : "Create account"}</CardTitle>
+                <CardDescription>
+                  {editingId
+                    ? "Update login details and reset password."
+                    : "Add a new user account for workspace access."}
+                </CardDescription>
+              </div>
+              {editingId && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0"
+                  onClick={resetForm}
+                  aria-label="Cancel edit"
+                  title="Cancel edit"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="space-y-5">
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -350,12 +400,15 @@ export default function AppUsersPage() {
                     }
                   >
                     <SelectTrigger>
-                      <SelectValue>{ROLE_DEFINITIONS[form.appRole]?.label ?? form.appRole}</SelectValue>
+                      <SelectValue>
+                        {workspaceRoles.find((r) => r.key === form.appRole)?.name ??
+                          form.appRole}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      {APP_ROLES.map((role) => (
-                        <SelectItem key={role} value={role}>
-                          {ROLE_DEFINITIONS[role]?.label ?? role}
+                      {workspaceRoles.map((role) => (
+                        <SelectItem key={role.key} value={role.key}>
+                          {role.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -374,7 +427,7 @@ export default function AppUsersPage() {
                         <SelectValue>{form.team}</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
-                        {TEAMS.map((team) => (
+                        {teamNames.map((team) => (
                           <SelectItem key={team} value={team}>
                             {team}
                           </SelectItem>
@@ -429,8 +482,11 @@ export default function AppUsersPage() {
                     )}
                   </div>
                   {form.imageUrl && (
-                    <button
+                    <Button
                       type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 shrink-0"
                       onClick={() => {
                         setForm((prev) => ({
                           ...prev,
@@ -440,10 +496,11 @@ export default function AppUsersPage() {
                           fileInputRef.current.value = "";
                         }
                       }}
-                      className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background transition hover:bg-destructive hover:text-white"
+                      aria-label="Remove image"
+                      title="Remove image"
                     >
                       <X className="h-4 w-4" />
-                    </button>
+                    </Button>
                   )}
                   <input
                     ref={fileInputRef}
@@ -463,24 +520,23 @@ export default function AppUsersPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <Button type="submit" className="w-full sm:w-auto" disabled={submitting}>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="h-10 w-10"
+                  disabled={submitting}
+                  aria-label={editingId ? "Update account" : "Create account"}
+                  title={editingId ? "Update account" : "Create account"}
+                >
                   {submitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
-                      {editingId ? "Updating..." : "Creating..."}
-                    </>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                   ) : editingId ? (
-                    "Update account"
+                    <Save className="h-4 w-4" />
                   ) : (
-                    "Create account"
+                    <Plus className="h-4 w-4" />
                   )}
                 </Button>
-                {editingId && (
-                  <Button type="button" variant="secondary" onClick={resetForm} className="w-full sm:w-auto">
-                    Cancel edit
-                  </Button>
-                )}
               </div>
             </form>
           </CardContent>

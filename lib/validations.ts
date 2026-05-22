@@ -1,86 +1,259 @@
 import { z } from "zod";
-import { COMPANY_ROLES, TEAMS } from "@/lib/constants";
-import type { AppRole, CompanyRole, ProjectStatus, TeamName } from "@/types";
 
-const teamEnum = TEAMS as unknown as [TeamName, ...TeamName[]];
+import { COMPANY_ROLES } from "@/lib/constants";
+
+import { RBAC_MODULES, normalizeModulePermissions } from "@/lib/rbac-modules";
+
+import type { CompanyRole, ProjectStatus } from "@/types";
+
+
+
 const roleEnum = COMPANY_ROLES as unknown as [CompanyRole, ...CompanyRole[]];
-const appRoleEnum = ["admin", "manager", "lead", "employee"] as const;
+
+
 
 const projectStatuses: [ProjectStatus, ...ProjectStatus[]] = [
+
   "Yet To Start",
+
   "In Progress",
+
   "Completed",
+
 ];
 
-export const employeeCreateSchema = z.object({
-  employeeId: z.string().min(1),
-  name: z.string().min(1),
-  team: z.enum(teamEnum),
-  role: z.enum(roleEnum),
-  bayNumber: z.string().min(1),
-  imageUrl: z.string().min(1),
+
+
+export const teamNameSchema = z.string().trim().min(1).max(80);
+
+
+
+export const teamCreateSchema = z.object({
+
+  name: teamNameSchema,
+
 });
+
+
+
+const modulePermissionSchema = z.object({
+
+  view: z.boolean(),
+
+  manage: z.boolean(),
+
+});
+
+
+
+const permissionsSchema = z
+
+  .object(
+
+    RBAC_MODULES.reduce(
+
+      (acc, mod) => {
+
+        acc[mod] = modulePermissionSchema.optional();
+
+        return acc;
+
+      },
+
+      {} as Record<(typeof RBAC_MODULES)[number], z.ZodOptional<typeof modulePermissionSchema>>,
+
+    ),
+
+  )
+
+  .partial();
+
+
+
+export const workspaceRoleCreateSchema = z.object({
+
+  name: z.string().trim().min(1).max(80),
+
+  description: z.string().trim().max(500).optional().default(""),
+
+  color: z
+
+    .string()
+
+    .regex(/^#[0-9A-Fa-f]{6}$/, "Use a hex color like #2563eb"),
+
+  permissions: permissionsSchema,
+
+  responsibilities: z.array(z.string().trim().min(1)).optional().default([]),
+
+  scopes: z.array(z.string().trim().min(1)).optional().default([]),
+
+  teamScopedProjects: z.boolean().optional(),
+
+  teamScopedSeating: z.boolean().optional(),
+
+});
+
+
+
+export const workspaceRoleUpdateSchema = workspaceRoleCreateSchema.partial();
+
+
+
+export const employeeCreateSchema = z.object({
+
+  employeeId: z.string().min(1),
+
+  name: z.string().min(1),
+
+  team: teamNameSchema,
+
+  role: z.enum(roleEnum),
+
+  bayNumber: z.string().optional().default(""),
+
+  imageUrl: z.string().min(1),
+
+});
+
+
 
 export const appUserCreateSchema = z.object({
+
   email: z.string().email(),
+
   password: z.string().min(6),
+
   name: z.string().min(1),
-  appRole: z.enum(appRoleEnum),
-  team: z.enum(teamEnum).optional(),
+
+  appRole: z.string().trim().min(1),
+
+  team: teamNameSchema.optional(),
+
   employeeId: z.string().min(1),
+
   imageUrl: z.string().url().optional(),
+
 });
+
+
 
 export const appUserUpdateSchema = z.object({
+
   password: z.string().min(6).optional(),
+
   name: z.string().min(1).optional(),
-  appRole: z.enum(appRoleEnum).optional(),
-  team: z.enum(teamEnum).optional(),
+
+  appRole: z.string().trim().min(1).optional(),
+
+  team: teamNameSchema.optional(),
+
   imageUrl: z.union([z.string().url(), z.literal("")]).optional(),
+
 });
+
+
 
 export const projectCreateSchema = z.object({
+
   name: z.string().min(1),
-  team: z.enum(teamEnum),
+
+  teams: z.array(teamNameSchema).min(1),
+
   assignedDate: z.string().min(1),
+
   lastDate: z.string().min(1),
+
   status: z.enum(projectStatuses),
+
   description: z.string().optional(),
+
   memberIds: z.array(z.string()).optional(),
+
 });
+
+
 
 export const projectUpdateSchema = z.object({
+
   name: z.string().min(1).optional(),
-  team: z.enum(teamEnum).optional(),
+
+  teams: z.array(teamNameSchema).min(1).optional(),
+
   assignedDate: z.string().min(1).optional(),
+
   lastDate: z.string().min(1).optional(),
+
   status: z.enum(projectStatuses).optional(),
+
   description: z.string().optional(),
+
   memberIds: z.array(z.string()).optional(),
+
 });
+
+
 
 export const galleryCreateSchema = z.object({
+
   title: z.string().min(1),
+
   url: z.string().min(1),
+
   caption: z.string().optional(),
+
   uploadedAt: z.string().min(1),
+
 });
 
+
+
 export const bayAssignSchema = z.object({
+
   bayId: z.string().min(1),
+
   employeeId: z.string().min(1).nullable(),
+
+});
+
+
+
+const directoryPatchSchema = z.object({
+  workEmail: z.union([z.string().email(), z.literal("")]).optional(),
+  phone: z.string().optional(),
+  location: z.string().optional(),
+  joinedDate: z.string().optional(),
+  notes: z.string().optional(),
 });
 
 export const employeeUpdateSchema = z.object({
   employeeId: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
-  team: z.enum(teamEnum).optional(),
+  team: teamNameSchema.optional(),
   role: z.enum(roleEnum).optional(),
-  // Empty string means unassigned (see seating / team-members UI).
   bayNumber: z.string().optional(),
   imageUrl: z.string().optional(),
+  directory: directoryPatchSchema.optional(),
 });
 
+
+
 export const employeeProjectsUpdateSchema = z.object({
+
   projectIds: z.array(z.string().min(1)),
+
 });
+
+
+
+export function parseRolePermissionsInput(
+
+  permissions: z.infer<typeof permissionsSchema>,
+
+) {
+
+  return normalizeModulePermissions(permissions);
+
+}
+
+

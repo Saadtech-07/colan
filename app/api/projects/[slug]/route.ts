@@ -4,10 +4,11 @@ import {
   getProjectDetailBySlug,
   updateProjectBySlug,
 } from "@/lib/data-service";
+import { assertTeamsExist } from "@/lib/teams-data";
 import {
   assertCanCreateProject,
   filterProjectsForUser,
-  sessionAccess,
+  sessionAccessAsync,
 } from "@/lib/session-access";
 import { projectUpdateSchema } from "@/lib/validations";
 
@@ -15,7 +16,7 @@ type Params = { params: Promise<{ slug: string }> };
 
 export async function GET(_req: Request, { params }: Params) {
   const session = await auth();
-  const access = sessionAccess(session);
+  const access = await sessionAccessAsync(session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -33,7 +34,7 @@ export async function GET(_req: Request, { params }: Params) {
 
 export async function PATCH(req: Request, { params }: Params) {
   const session = await auth();
-  const access = sessionAccess(session);
+  const access = await sessionAccessAsync(session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -42,7 +43,7 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!existing) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
-  const denied = assertCanCreateProject(access, existing.team);
+  const denied = assertCanCreateProject(access, existing.teams);
   if (denied) {
     return NextResponse.json({ error: denied }, { status: 403 });
   }
@@ -60,10 +61,14 @@ export async function PATCH(req: Request, { params }: Params) {
       { status: 400 },
     );
   }
-  const nextTeam = parsed.data.team ?? existing.team;
-  const teamDenied = assertCanCreateProject(access, nextTeam);
+  const nextTeams = parsed.data.teams ?? existing.teams;
+  const teamDenied = assertCanCreateProject(access, nextTeams);
   if (teamDenied) {
     return NextResponse.json({ error: teamDenied }, { status: 403 });
+  }
+  const teamsMissing = await assertTeamsExist(nextTeams);
+  if (teamsMissing) {
+    return NextResponse.json({ error: teamsMissing }, { status: 400 });
   }
 
   const updated = await updateProjectBySlug(slug, parsed.data);

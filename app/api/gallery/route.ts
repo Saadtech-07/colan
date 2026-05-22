@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createGalleryItem, listGallery } from "@/lib/data-service";
+import { canManageModule, normalizeAppRole } from "@/lib/permissions";
+import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { galleryCreateSchema } from "@/lib/validations";
 
 export async function GET() {
@@ -17,7 +19,8 @@ export async function POST(req: Request) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.appRole !== "admin") {
+  await ensureRoleRegistry();
+  if (!canManageModule(normalizeAppRole(session.user.appRole), "gallery")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   let body: unknown;

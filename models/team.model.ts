@@ -1,16 +1,12 @@
 import type { ObjectId } from "mongodb";
-import type { TeamName } from "@/types";
 import { COLLECTIONS } from "./collections";
 
 export const TEAM_COLLECTION = COLLECTIONS.teams;
 
-/**
- * Canonical team row (for DB-driven team lists, colors, ordering).
- * App enums still use `TeamName`; this collection can mirror those names.
- */
+/** Canonical project squad row in MongoDB `teams` collection. */
 export type TeamDocument = {
   _id: ObjectId;
-  name: TeamName;
+  name: string;
   slug: string;
   description?: string;
   displayOrder: number;
@@ -21,7 +17,7 @@ export type TeamDocument = {
 
 export type TeamDTO = {
   id: string;
-  name: TeamName;
+  name: string;
   slug: string;
   description?: string;
   displayOrder: number;

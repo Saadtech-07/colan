@@ -1,10 +1,14 @@
-export type TeamName =
-  | "React Team"
-  | "Next.js Team"
-  | "Node Team"
-  | "UI/UX Team"
-  | "Testing Team"
-  | "DevOps Team";
+/** Squad name from the `teams` collection (e.g. "React Team"). */
+export type TeamName = string;
+
+export type WorkspaceTeam = {
+  id: string;
+  name: TeamName;
+  slug: string;
+  displayOrder: number;
+  description?: string;
+  accentColor?: string;
+};
 
 export type ProjectStatus = "Yet To Start" | "In Progress" | "Completed";
 
@@ -15,8 +19,8 @@ export type CompanyRole =
   | "Employee"
   | "Intern";
 
-/** Workspace access role (Auth.js / app_users), not directory CompanyRole. */
-export type AppRole = "admin" | "manager" | "lead" | "employee";
+/** Workspace access role key (matches `company_roles.key` / app_users.appRole). */
+export type AppRole = string;
 
 /** Extra directory fields from `employee_details` (Atlas collection). */
 export type EmployeeDirectoryInfo = {
@@ -38,11 +42,17 @@ export interface Employee {
   directory?: EmployeeDirectoryInfo;
 }
 
+export type EmployeeDetail = Employee & {
+  slug: string;
+  assignedProjects: Project[];
+};
+
 export interface Project {
   id: string;
   slug: string;
   name: string;
-  team: TeamName;
+  /** Squads this project is assigned to (one or more). */
+  teams: TeamName[];
   assignedDate: string;
   lastDate: string;
   status: ProjectStatus;

@@ -10,7 +10,7 @@ import { ProjectDetailEditor } from "@/components/features/project-detail-editor
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
-import { canManageProjectForTeam } from "@/lib/permissions";
+import { canManageProject } from "@/lib/permissions";
 import type { ProjectDetail } from "@/types";
 
 export default function ProjectDetailPage() {
@@ -54,7 +54,7 @@ export default function ProjectDetailPage() {
   const canEdit =
     !!access &&
     !!project &&
-    canManageProjectForTeam(access.role, project.team, access.team);
+    canManageProject(access.role, project.teams, access.team);
 
   const onSaved = (detail: ProjectDetail) => {
     setProject(detail);
@@ -85,7 +85,11 @@ export default function ProjectDetailPage() {
               <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
                 {project.name}
               </h1>
-              <Badge variant="secondary">{project.team}</Badge>
+              {project.teams.map((t) => (
+                <Badge key={t} variant="secondary">
+                  {t.replace(" Team", "")}
+                </Badge>
+              ))}
               <Badge>{project.status}</Badge>
             </div>
             <p className="text-sm text-muted-foreground">

@@ -1,38 +1,69 @@
 import type { ObjectId } from "mongodb";
-import type { CompanyRole } from "@/types";
+import type { ModulePermissionsMap } from "@/lib/rbac-modules";
+import { normalizeModulePermissions, resolveLegacyAccess } from "@/lib/rbac-modules";
 import { COLLECTIONS } from "./collections";
 
 export const COMPANY_ROLE_COLLECTION = COLLECTIONS.companyRoles;
 
-/**
- * Company directory role catalog (Manager, Team Lead, …) for RBAC / UI.
- * Distinct from `AppUserDocument.appRole` (admin | employee gate).
- */
 export type CompanyRoleDocument = {
   _id: ObjectId;
-  key: CompanyRole;
+  /** Stable slug for app_users.appRole and session. */
+  key: string;
+  name: string;
   description: string;
-  /** High-level permission labels for future API guards. */
+  color: string;
+  permissions: ModulePermissionsMap;
+  responsibilities: string[];
   scopes: string[];
+  teamScopedProjects?: boolean;
+  teamScopedSeating?: boolean;
+  isSystem: boolean;
   displayOrder: number;
   createdAt?: Date;
   updatedAt?: Date;
 };
 
-export type CompanyRoleDTO = {
+export type WorkspaceRole = {
   id: string;
-  key: CompanyRole;
+  key: string;
+  name: string;
   description: string;
+  color: string;
+  permissions: ModulePermissionsMap;
+  responsibilities: string[];
   scopes: string[];
+  teamScopedProjects: boolean;
+  teamScopedSeating: boolean;
+  isSystem: boolean;
   displayOrder: number;
+  resolvedPermissions: string[];
 };
 
-export function companyRoleDocToDTO(doc: CompanyRoleDocument): CompanyRoleDTO {
+export function companyRoleDocToDTO(
+  doc: CompanyRoleDocument,
+  fallbackPermissions?: ModulePermissionsMap,
+): WorkspaceRole {
+  const permissions = normalizeModulePermissions(
+    doc.permissions ?? fallbackPermissions,
+  );
+  const { permissions: resolvedPermissions } = resolveLegacyAccess(permissions, {
+    teamScopedProjects: doc.teamScopedProjects,
+    teamScopedSeating: doc.teamScopedSeating,
+  });
+
   return {
     id: doc._id.toHexString(),
     key: doc.key,
+    name: doc.name,
     description: doc.description,
-    scopes: doc.scopes,
-    displayOrder: doc.displayOrder,
+    color: doc.color,
+    permissions,
+    responsibilities: doc.responsibilities ?? [],
+    scopes: doc.scopes ?? [],
+    teamScopedProjects: !!doc.teamScopedProjects,
+    teamScopedSeating: !!doc.teamScopedSeating,
+    isSystem: !!doc.isSystem,
+    displayOrder: doc.displayOrder ?? 0,
+    resolvedPermissions,
   };
 }

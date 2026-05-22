@@ -42,6 +42,10 @@ export async function getDataLayerSummary(): Promise<DataLayerSummary> {
     await db.command({ ping: 1 });
     await ensureColanModelIndexes(db);
     await ensureAppUsersSeed(db);
+    const { ensureTeamsSeed } = await import("@/lib/teams-data");
+    const { ensureRolesSeed } = await import("@/lib/roles-data");
+    await ensureTeamsSeed(db);
+    await ensureRolesSeed(db);
     const names = Object.values(COLLECTIONS) as CollectionName[];
     const allCollections = await Promise.all(
       names.map(async (name) => ({

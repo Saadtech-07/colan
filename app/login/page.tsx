@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 
 import { ArrowRight, Sparkles } from "lucide-react";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 import { Button } from "@/components/ui/button";
 
@@ -76,7 +77,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#020617] px-4 py-10">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#020617] px-4 py-10 dark:bg-[#020617]">
+      <div className="absolute right-4 top-4 z-20">
+        <ThemeToggle className="text-white/80 hover:bg-white/10 hover:text-white" />
+      </div>
       {/* Background Effects */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,#2563eb25,transparent_30%)]" />
 
@@ -181,22 +185,6 @@ export default function LoginPage() {
                   />
                 </div>
 
-                {/* Password */}
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
-                    className="h-12 rounded-xl border-slate-200 bg-white/80"
-                  />
-                </div>
-
-                {/* role/team removed — simple email + password login */}
-
                 {/* Button */}
                 <Button
                   type="submit"
@@ -205,8 +193,8 @@ export default function LoginPage() {
                   className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg transition-transform hover:scale-[1.01]"
                 >
                   {pending
-                    ? "Login in..."
-                    : "Login in"}
+                    ? "Signing In..."
+                    : "Continue To Dashboard"}
 
                   {!pending && (
                     <ArrowRight className="ml-2 h-4 w-4" />

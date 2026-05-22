@@ -117,7 +117,10 @@ export async function ensureColanModelIndexes(db: Db): Promise<void> {
   await db
     .collection<ProjectDocument>(COLLECTIONS.projects)
     .createIndex({ slug: 1 }, { unique: true });
-  await db.collection<ProjectDocument>(COLLECTIONS.projects).createIndex({ team: 1, assignedDate: -1 });
+  await db.collection<ProjectDocument>(COLLECTIONS.projects).createIndex({
+    teams: 1,
+    assignedDate: -1,
+  });
 
   await db.collection<GalleryImageDocument>(COLLECTIONS.gallery).createIndex({ uploadedAt: -1 });
 }

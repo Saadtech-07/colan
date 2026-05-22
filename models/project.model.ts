@@ -1,4 +1,5 @@
 import type { ObjectId } from "mongodb";
+import { normalizeProjectTeams } from "@/lib/project-teams";
 import type { Project, ProjectStatus, TeamName } from "@/types";
 import { COLLECTIONS } from "./collections";
 
@@ -8,7 +9,9 @@ export type ProjectDocument = {
   _id: ObjectId;
   slug: string;
   name: string;
-  team: TeamName;
+  /** @deprecated Legacy single team; prefer `teams`. */
+  team?: TeamName;
+  teams?: TeamName[];
   assignedDate: string;
   lastDate: string;
   status: ProjectStatus;
@@ -31,7 +34,7 @@ export function projectDocToDTO(doc: ProjectDocument): Project {
     id: doc._id.toHexString(),
     slug,
     name: doc.name,
-    team: doc.team,
+    teams: normalizeProjectTeams(doc),
     assignedDate: doc.assignedDate,
     lastDate: doc.lastDate,
     status: doc.status,

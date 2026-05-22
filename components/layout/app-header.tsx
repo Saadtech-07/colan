@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, Building2, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,6 +37,7 @@ export function AppHeader() {
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">
+        <ThemeToggle className="text-muted-foreground hover:text-foreground" />
         {/* <Button
           type="button"
           variant="ghost"

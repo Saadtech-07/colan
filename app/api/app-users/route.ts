@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createAppUser, listAppUsers } from "@/lib/app-users";
+import { canManageModule, canViewModule, normalizeAppRole, roleNeedsTeam } from "@/lib/permissions";
+import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { appUserCreateSchema } from "@/lib/validations";
 
 export async function GET() {
@@ -8,7 +10,9 @@ export async function GET() {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.appRole !== "admin") {
+  await ensureRoleRegistry();
+  const roleKey = normalizeAppRole(session.user.appRole);
+  if (!canViewModule(roleKey, "appUsers")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -21,7 +25,9 @@ export async function POST(req: Request) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.appRole !== "admin") {
+  await ensureRoleRegistry();
+  const roleKey = normalizeAppRole(session.user.appRole);
+  if (!canManageModule(roleKey, "appUsers")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -41,7 +47,7 @@ export async function POST(req: Request) {
   }
 
   const payload = parsed.data;
-  if ((payload.appRole === "lead" || payload.appRole === "employee") && !payload.team) {
+  if (roleNeedsTeam(payload.appRole) && !payload.team) {
     return NextResponse.json(
       { error: "Team is required for lead and employee roles." },
       { status: 400 },

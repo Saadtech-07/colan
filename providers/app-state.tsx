@@ -4,6 +4,8 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { buildAccessContext, normalizeAppRole, type AccessContext } from "@/lib/permissions";
+import { hydrateRoleRegistry } from "@/lib/role-registry";
+import type { TeamDTO, WorkspaceRole } from "@/models";
 import type { AuthUser, Employee, GalleryImage, Project } from "@/types";
 import type { DataLayerSummary } from "@/types/data-layer";
 
@@ -16,6 +18,12 @@ type AppStateContextValue = {
   employees: Employee[];
   projects: Project[];
   gallery: GalleryImage[];
+  workspaceTeams: TeamDTO[];
+  workspaceRoles: WorkspaceRole[];
+  /** Squad names sorted for tabs and selects. */
+  teamNames: string[];
+  canManageRoles: boolean;
+  refreshWorkspaceRoles: () => Promise<void>;
   dataLoading: boolean;
   dataError: string | null;
   /** Where workspace data is stored (MongoDB vs in-memory) and Atlas ping result. */
@@ -23,6 +31,7 @@ type AppStateContextValue = {
   refreshData: () => Promise<void>;
   addEmployee: (input: Omit<Employee, "id">) => Promise<void>;
   addProject: (input: Omit<Project, "id" | "slug">) => Promise<void>;
+  addWorkspaceTeam: (name: string) => Promise<void>;
   addGalleryItem: (input: Omit<GalleryImage, "id">) => Promise<void>;
   assignEmployeeToBay: (bayId: string, employeeId: string | null) => Promise<void>;
 };
@@ -57,6 +66,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [employees, setEmployees] = React.useState<Employee[]>([]);
   const [projects, setProjects] = React.useState<Project[]>([]);
   const [gallery, setGallery] = React.useState<GalleryImage[]>([]);
+  const [workspaceTeams, setWorkspaceTeams] = React.useState<TeamDTO[]>([]);
+  const [workspaceRoles, setWorkspaceRoles] = React.useState<WorkspaceRole[]>([]);
   const [dataLoading, setDataLoading] = React.useState(false);
   const [dataError, setDataError] = React.useState<string | null>(null);
   const [dataSummary, setDataSummary] = React.useState<DataLayerSummary | null>(null);
@@ -76,20 +87,28 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const access = React.useMemo(
     () => (user ? buildAccessContext(user.appRole, user.team) : null),
-    [user],
+    [user, workspaceRoles],
   );
 
-  const isAdmin = access?.role === "admin";
+  const isAdmin = access?.canManage("appUsers") ?? false;
+  const canManageRoles = access?.canManage("roles") ?? false;
+
+  const teamNames = React.useMemo(
+    () => workspaceTeams.map((t) => t.name),
+    [workspaceTeams],
+  );
 
   const refreshData = React.useCallback(async () => {
     if (sessionStatus !== "authenticated") return;
     setDataLoading(true);
     setDataError(null);
     try {
-      const [emRes, prRes, gaRes, sumRes] = await Promise.all([
+      const [emRes, prRes, gaRes, teRes, roRes, sumRes] = await Promise.all([
         fetch("/api/employees", { credentials: "include" }),
         fetch("/api/projects", { credentials: "include" }),
         fetch("/api/gallery", { credentials: "include" }),
+        fetch("/api/teams", { credentials: "include" }),
+        fetch("/api/roles", { credentials: "include" }),
         fetch("/api/db-status", { credentials: "include" }),
       ]);
       if (sumRes.ok) {
@@ -100,14 +119,21 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       if (!emRes.ok) throw new Error(await parseApiError(emRes));
       if (!prRes.ok) throw new Error(await parseApiError(prRes));
       if (!gaRes.ok) throw new Error(await parseApiError(gaRes));
-      const [em, pr, ga] = await Promise.all([
+      if (!teRes.ok) throw new Error(await parseApiError(teRes));
+      if (!roRes.ok) throw new Error(await parseApiError(roRes));
+      const [em, pr, ga, te, ro] = await Promise.all([
         emRes.json() as Promise<Employee[]>,
         prRes.json() as Promise<Project[]>,
         gaRes.json() as Promise<GalleryImage[]>,
+        teRes.json() as Promise<TeamDTO[]>,
+        roRes.json() as Promise<WorkspaceRole[]>,
       ]);
       setEmployees(em);
       setProjects(pr);
       setGallery(ga);
+      setWorkspaceTeams(te);
+      setWorkspaceRoles(ro);
+      hydrateRoleRegistry(ro);
     } catch (e) {
       setDataError(e instanceof Error ? e.message : "Failed to load data");
     } finally {
@@ -122,10 +148,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setDataLoading(true);
       setDataError(null);
       try {
-        const [emRes, prRes, gaRes, sumRes] = await Promise.all([
+        const [emRes, prRes, gaRes, teRes, roRes, sumRes] = await Promise.all([
           fetch("/api/employees", { credentials: "include" }),
           fetch("/api/projects", { credentials: "include" }),
           fetch("/api/gallery", { credentials: "include" }),
+          fetch("/api/teams", { credentials: "include" }),
+          fetch("/api/roles", { credentials: "include" }),
           fetch("/api/db-status", { credentials: "include" }),
         ]);
         if (cancelled) return;
@@ -137,15 +165,22 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         if (!emRes.ok) throw new Error(await parseApiError(emRes));
         if (!prRes.ok) throw new Error(await parseApiError(prRes));
         if (!gaRes.ok) throw new Error(await parseApiError(gaRes));
-        const [em, pr, ga] = await Promise.all([
+        if (!teRes.ok) throw new Error(await parseApiError(teRes));
+        if (!roRes.ok) throw new Error(await parseApiError(roRes));
+        const [em, pr, ga, te, ro] = await Promise.all([
           emRes.json() as Promise<Employee[]>,
           prRes.json() as Promise<Project[]>,
           gaRes.json() as Promise<GalleryImage[]>,
+          teRes.json() as Promise<TeamDTO[]>,
+          roRes.json() as Promise<WorkspaceRole[]>,
         ]);
         if (cancelled) return;
         setEmployees(em);
         setProjects(pr);
         setGallery(ga);
+        setWorkspaceTeams(te);
+        setWorkspaceRoles(ro);
+        hydrateRoleRegistry(ro);
       } catch (e) {
         if (cancelled) return;
         setDataError(e instanceof Error ? e.message : "Failed to load data");
@@ -176,6 +211,28 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     },
     [],
   );
+
+  const refreshWorkspaceRoles = React.useCallback(async () => {
+    const res = await fetch("/api/roles", { credentials: "include" });
+    if (!res.ok) throw new Error(await parseApiError(res));
+    const roles = (await res.json()) as WorkspaceRole[];
+    setWorkspaceRoles(roles);
+    hydrateRoleRegistry(roles);
+  }, []);
+
+  const addWorkspaceTeam = React.useCallback(async (name: string) => {
+    const res = await fetch("/api/teams", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error(await parseApiError(res));
+    const created = (await res.json()) as TeamDTO;
+    setWorkspaceTeams((prev) =>
+      [...prev, created].sort((a, b) => a.displayOrder - b.displayOrder),
+    );
+  }, []);
 
   const addProject = React.useCallback(async (input: Omit<Project, "id" | "slug">) => {
     const res = await fetch("/api/projects", {
@@ -229,12 +286,18 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       employees,
       projects,
       gallery,
+      workspaceTeams,
+      workspaceRoles,
+      teamNames,
+      canManageRoles,
+      refreshWorkspaceRoles,
       dataLoading,
       dataError,
       dataSummary,
       refreshData,
       addEmployee,
       addProject,
+      addWorkspaceTeam,
       addGalleryItem,
       assignEmployeeToBay,
     }),
@@ -247,12 +310,18 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       employees,
       projects,
       gallery,
+      workspaceTeams,
+      workspaceRoles,
+      teamNames,
+      canManageRoles,
+      refreshWorkspaceRoles,
       dataLoading,
       dataError,
       dataSummary,
       refreshData,
       addEmployee,
       addProject,
+      addWorkspaceTeam,
       addGalleryItem,
       assignEmployeeToBay,
     ],

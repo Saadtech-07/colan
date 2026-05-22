@@ -1,13 +1,8 @@
-import type { CompanyRole, TeamName } from "@/types";
+import type { CompanyRole } from "@/types";
+import { DEFAULT_TEAM_NAMES } from "@/lib/team-utils";
 
-export const TEAMS: TeamName[] = [
-  "React Team",
-  "Next.js Team",
-  "Node Team",
-  "UI/UX Team",
-  "Testing Team",
-  "DevOps Team",
-];
+/** @deprecated Use workspace teams from API / `useAppState().workspaceTeams`. */
+export const TEAMS = [...DEFAULT_TEAM_NAMES];
 
 export const COMPANY_ROLES: CompanyRole[] = [
   "Admin",
@@ -17,14 +12,4 @@ export const COMPANY_ROLES: CompanyRole[] = [
   "Intern",
 ];
 
-export const BAY_PREFIX = "E";
-
-/** E-01 … E-100 */
-export function bayId(index: number): string {
-  const n = Math.min(100, Math.max(1, index));
-  return `${BAY_PREFIX}-${String(n).padStart(2, "0")}`;
-}
-
-export const ALL_BAY_IDS: string[] = Array.from({ length: 100 }, (_, i) =>
-  bayId(i + 1),
-);
+export { ALL_SEAT_IDS as ALL_BAY_IDS, isValidSeatId } from "@/lib/seating-layout";

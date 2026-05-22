@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { deleteAppUser, updateAppUser } from "@/lib/app-users";
 import { getDb } from "@/lib/mongodb";
+import { canManageModule, normalizeAppRole } from "@/lib/permissions";
+import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { appUserUpdateSchema } from "@/lib/validations";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -13,7 +15,8 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.appRole !== "admin") {
+  await ensureRoleRegistry();
+  if (!canManageModule(normalizeAppRole(session.user.appRole), "appUsers")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -53,7 +56,8 @@ export async function DELETE(_: Request, { params }: RouteParams) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.appRole !== "admin") {
+  await ensureRoleRegistry();
+  if (!canManageModule(normalizeAppRole(session.user.appRole), "appUsers")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

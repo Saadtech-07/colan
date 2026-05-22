@@ -7,10 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AddProjectDialog } from "@/components/features/add-project-dialog";
+import { AddTeamDialog } from "@/components/features/add-team-dialog";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
+import { projectBelongsToTeam } from "@/lib/project-teams";
+import { teamTabLabel } from "@/lib/team-utils";
 import { useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
-import { TEAMS } from "@/lib/constants";
 import type { Project, ProjectStatus, TeamName } from "@/types";
 
 const ALL_TAB = "All";
@@ -22,19 +24,21 @@ function statusVariant(status: ProjectStatus) {
 }
 
 export default function ProjectsPage() {
-  const { projects, addProject, access, user } = useAppState();
+  const { projects, addProject, access, user, teamNames, isAdmin } = useAppState();
   const { withLoading } = useGlobalLoading();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
 
-  const teamsToShow =
-    access?.seesAllTeams || !user?.team ? TEAMS : [user.team];
+  const teamsToShow: TeamName[] =
+    access?.seesAllTeams || !user?.team ? teamNames : [user.team];
 
   const filtered =
-    tab === ALL_TAB ? projects : projects.filter((p) => p.team === tab);
+    tab === ALL_TAB
+      ? projects
+      : projects.filter((p) => projectBelongsToTeam(p, tab as TeamName));
 
   const byTeam = teamsToShow.reduce(
     (acc, team) => {
-      acc[team] = projects.filter((p) => p.team === team);
+      acc[team] = projects.filter((p) => projectBelongsToTeam(p, team));
       return acc;
     },
     {} as Record<TeamName, Project[]>,
@@ -52,16 +56,20 @@ export default function ProjectsPage() {
             edit access.
           </p>
         </div>
-        {access?.canManageProjects && (
-          <AddProjectDialog
-            onCreate={async (input) => {
-              await withLoading("project-create", LOADING_PRESETS.creatingProject, () =>
-                addProject(input),
-              );
-            }}
-            lockedTeam={access.role === "lead" ? user?.team : undefined}
-          />
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {isAdmin && <AddTeamDialog />}
+          {access?.canManageProjects && (
+            <AddProjectDialog
+              teamOptions={teamNames}
+              onCreate={async (input) => {
+                await withLoading("project-create", LOADING_PRESETS.creatingProject, () =>
+                  addProject(input),
+                );
+              }}
+              lockedTeam={access.role === "lead" ? user?.team : undefined}
+            />
+          )}
+        </div>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -69,7 +77,7 @@ export default function ProjectsPage() {
           <TabsTrigger value={ALL_TAB}>All teams</TabsTrigger>
           {teamsToShow.map((t) => (
             <TabsTrigger key={t} value={t}>
-              {t.replace(" Team", "")}
+              {teamTabLabel(t)}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -123,6 +131,13 @@ function ProjectLinkList({ items }: { items: Project[] }) {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1 space-y-2">
                   <p className="font-medium leading-tight">{p.name}</p>
+                  <div className="flex flex-wrap gap-1">
+                    {p.teams.map((t) => (
+                      <Badge key={t} variant="outline" className="text-[10px] font-normal">
+                        {teamTabLabel(t)}
+                      </Badge>
+                    ))}
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {p.assignedDate} → {p.lastDate}
                   </p>

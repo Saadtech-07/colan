@@ -22,19 +22,22 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { CompanyRole, Employee, TeamName } from "@/types";
-import { COMPANY_ROLES, TEAMS } from "@/lib/constants";
+import { COMPANY_ROLES } from "@/lib/constants";
+import { useAppState } from "@/providers/app-state";
 
 type Props = {
   onCreate: (employee: Omit<Employee, "id">) => void | Promise<void>;
 };
 
 export function AddEmployeeDialog({ onCreate }: Props) {
+  const { teamNames } = useAppState();
+  const defaultTeam = teamNames[0] ?? "React Team";
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
   const [employeeId, setEmployeeId] = React.useState("");
-  const [team, setTeam] = React.useState<TeamName>("React Team");
+  const [team, setTeam] = React.useState<TeamName>(defaultTeam);
   const [role, setRole] = React.useState<CompanyRole>("Employee");
-  const [bayNumber, setBayNumber] = React.useState("E-01");
+  const [bayNumber, setBayNumber] = React.useState("");
   const [imageUrl, setImageUrl] = React.useState(
     "https://api.dicebear.com/7.x/avataaars/png?seed=new&size=128",
   );
@@ -44,7 +47,7 @@ export function AddEmployeeDialog({ onCreate }: Props) {
   const resetForm = () => {
     setName("");
     setEmployeeId("");
-    setTeam("React Team");
+    setTeam(defaultTeam);
     setRole("Employee");
     setBayNumber("E-01");
     setImageUrl("https://api.dicebear.com/7.x/avataaars/png?seed=new&size=128");
@@ -139,7 +142,7 @@ export function AddEmployeeDialog({ onCreate }: Props) {
                 id="bay"
                 value={bayNumber}
                 onChange={(e) => setBayNumber(e.target.value)}
-                placeholder="E-01"
+                placeholder="A1 (optional)"
               />
             </div>
             <div className="space-y-2">
@@ -149,7 +152,7 @@ export function AddEmployeeDialog({ onCreate }: Props) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TEAMS.map((t) => (
+                  {teamNames.map((t) => (
                     <SelectItem key={t} value={t}>
                       {t}
                     </SelectItem>

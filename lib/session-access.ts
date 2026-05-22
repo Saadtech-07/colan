@@ -9,6 +9,7 @@ import {
   hasPermission,
   normalizeAppRole,
 } from "@/lib/permissions";
+import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import type { AppRole, Employee, TeamName } from "@/types";
 
 export type SessionAccess = {
@@ -26,6 +27,14 @@ export function sessionAccess(session: Session | null): SessionAccess | null {
   };
 }
 
+/** Loads role catalog from DB before resolving permissions. */
+export async function sessionAccessAsync(
+  session: Session | null,
+): Promise<SessionAccess | null> {
+  await ensureRoleRegistry();
+  return sessionAccess(session);
+}
+
 export function requirePermission(
   access: SessionAccess | null,
   permission: Parameters<typeof hasPermission>[1],
@@ -37,10 +46,15 @@ export { filterEmployeesForUser, filterProjectsForUser };
 
 export function assertCanCreateProject(
   access: SessionAccess,
-  team: TeamName,
+  teams: TeamName[],
 ): string | null {
-  if (!canManageProjectForTeam(access.role, team, access.team)) {
-    return "You cannot create or update projects for this team.";
+  if (teams.length === 0) {
+    return "Select at least one team for this project.";
+  }
+  for (const team of teams) {
+    if (!canManageProjectForTeam(access.role, team, access.team)) {
+      return "You cannot create or update projects for one or more selected teams.";
+    }
   }
   return null;
 }

@@ -6,6 +6,8 @@ import {
   createEmployee,
   listEmployees,
 } from "@/lib/data-service";
+import { canManageModule, normalizeAppRole } from "@/lib/permissions";
+import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { bayAssignSchema, employeeCreateSchema } from "@/lib/validations";
 
 export async function GET() {
@@ -22,7 +24,9 @@ export async function POST(req: Request) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.appRole !== "admin") {
+  await ensureRoleRegistry();
+  const roleKey = normalizeAppRole(session.user.appRole);
+  if (!canManageModule(roleKey, "teamMembers")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   let body: unknown;
@@ -47,7 +51,9 @@ export async function PATCH(req: Request) {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (session.user.appRole !== "admin") {
+  await ensureRoleRegistry();
+  const roleKey = normalizeAppRole(session.user.appRole);
+  if (!canManageModule(roleKey, "seating")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   let body: unknown;

@@ -20,20 +20,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TeamMultiSelect } from "@/components/features/team-multi-select";
 import type { Project, ProjectStatus, TeamName } from "@/types";
-import { TEAMS } from "@/lib/constants";
 
 type Props = {
   onCreate: (project: Omit<Project, "id" | "slug">) => void | Promise<void>;
+  teamOptions: TeamName[];
   lockedTeam?: TeamName;
 };
 
 const STATUSES: ProjectStatus[] = ["Yet To Start", "In Progress", "Completed"];
 
-export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
+export function AddProjectDialog({ onCreate, teamOptions, lockedTeam }: Props) {
   const [open, setOpen] = React.useState(false);
   const [name, setName] = React.useState("");
-  const [team, setTeam] = React.useState<TeamName>(lockedTeam ?? "React Team");
+  const [teams, setTeams] = React.useState<TeamName[]>(
+    lockedTeam ? [lockedTeam] : ["React Team"],
+  );
   const [assignedDate, setAssignedDate] = React.useState("");
   const [lastDate, setLastDate] = React.useState("");
   const [status, setStatus] = React.useState<ProjectStatus>("Yet To Start");
@@ -42,7 +45,7 @@ export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
 
   const reset = () => {
     setName("");
-    setTeam(lockedTeam ?? "React Team");
+    setTeams(lockedTeam ? [lockedTeam] : ["React Team"]);
     setAssignedDate("");
     setLastDate("");
     setStatus("Yet To Start");
@@ -52,12 +55,17 @@ export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
 
   const submit = async () => {
     if (!name.trim() || !assignedDate || !lastDate) return;
+    const assignedTeams = lockedTeam ? [lockedTeam] : teams;
+    if (assignedTeams.length === 0) {
+      setSubmitError("Select at least one team.");
+      return;
+    }
     setSubmitError(null);
     setIsSaving(true);
     try {
       await onCreate({
         name: name.trim(),
-        team: lockedTeam ?? team,
+        teams: assignedTeams,
         assignedDate,
         lastDate,
         status,
@@ -93,7 +101,7 @@ export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
           <DialogDescription>
             {lockedTeam
               ? `Create a project for ${lockedTeam}. Saved to MongoDB when configured.`
-              : "Assign a project to a team. Saved to MongoDB when configured."}
+              : "Assign a project to one or more teams. Saved to MongoDB when configured."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -108,26 +116,26 @@ export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
               id="project-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Billing platform refresh"
+              placeholder="e.g. Tommy platform rollout"
             />
           </div>
           <div className="space-y-2">
-            <Label>Team</Label>
-            {lockedTeam ? (
-              <Input value={lockedTeam} readOnly className="bg-muted" />
-            ) : (
-              <Select value={team} onValueChange={(v) => setTeam(v as TeamName)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TEAMS.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <Label>Teams</Label>
+            <p className="text-xs text-muted-foreground">
+              {lockedTeam
+                ? "Projects for your squad only."
+                : "Select every squad that owns delivery on this project."}
+            </p>
+            <TeamMultiSelect
+              value={teams}
+              onChange={setTeams}
+              options={teamOptions}
+              lockedTeam={lockedTeam}
+            />
+            {!lockedTeam && teams.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Selected: {teams.map((t) => t.replace(" Team", "")).join(", ")}
+              </p>
             )}
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -170,7 +178,12 @@ export function AddProjectDialog({ onCreate, lockedTeam }: Props) {
           </div>
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={isSaving}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+            disabled={isSaving}
+          >
             Cancel
           </Button>
           <Button type="button" onClick={submit} disabled={isSaving}>
