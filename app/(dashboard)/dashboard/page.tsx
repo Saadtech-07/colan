@@ -31,7 +31,6 @@ export default function DashboardPage() {
     access,
     user,
     employees,
-    dataLoading,
     dataError,
     dataSummary,
   } = useAppState();
@@ -103,9 +102,6 @@ export default function DashboardPage() {
             Check API routes and optional <code className="text-xs">MONGODB_URI</code>.
           </span>
         </div>
-      )}
-      {dataLoading && !dataError && (
-        <p className="text-sm text-muted-foreground">Syncing workspace data…</p>
       )}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>

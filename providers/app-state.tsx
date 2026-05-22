@@ -282,20 +282,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [sessionStatus, pathname, router]);
 
-  if (sessionStatus === "loading") {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">
-        Loading…
-      </div>
-    );
-  }
-
-  if (sessionStatus === "unauthenticated") {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center text-muted-foreground">
-        Redirecting…
-      </div>
-    );
+  if (sessionStatus === "loading" || sessionStatus === "unauthenticated") {
+    return null;
   }
 
   return <>{children}</>;

@@ -23,7 +23,9 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { useAppState } from "@/providers/app-state";
+import { useGlobalLoading } from "@/providers/global-loading";
 import { ALL_BAY_IDS, TEAMS } from "@/lib/constants";
 import type { Employee } from "@/types";
 import { cn } from "@/lib/utils";
@@ -32,6 +34,7 @@ const ALL_TAB = "All";
 
 export default function SeatingPage() {
   const { employees, assignEmployeeToBay, access } = useAppState();
+  const { withLoading } = useGlobalLoading();
   const canAssign = access?.canAssignSeating ?? false;
   const [teamTab, setTeamTab] = React.useState<string>(ALL_TAB);
   const [bayDialog, setBayDialog] = React.useState<string | null>(null);
@@ -190,14 +193,12 @@ export default function SeatingPage() {
         onValueChange={(bay) => {
           if (!current) return;
 
-          void assignEmployeeToBay(
-            bay,
-            current.id
-          ).catch(() => {
+          void withLoading("seating-assign", LOADING_PRESETS.assigningBay, async () => {
+            await assignEmployeeToBay(bay, current.id);
+            setBayDialog(null);
+          }).catch(() => {
             alert("Failed to move employee");
           });
-
-          setBayDialog(null);
         }}
       >
         <SelectTrigger className="w-full">
@@ -235,14 +236,12 @@ export default function SeatingPage() {
         onValueChange={(employeeId) => {
           if (!selectedBay) return;
 
-          void assignEmployeeToBay(
-            selectedBay,
-            employeeId
-          ).catch(() => {
+          void withLoading("seating-assign", LOADING_PRESETS.assigningBay, async () => {
+            await assignEmployeeToBay(selectedBay, employeeId);
+            setBayDialog(null);
+          }).catch(() => {
             alert("Assignment failed");
           });
-
-          setBayDialog(null);
         }}
       >
         <SelectTrigger>

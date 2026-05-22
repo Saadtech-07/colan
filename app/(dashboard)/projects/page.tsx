@@ -7,7 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AddProjectDialog } from "@/components/features/add-project-dialog";
+import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { useAppState } from "@/providers/app-state";
+import { useGlobalLoading } from "@/providers/global-loading";
 import { TEAMS } from "@/lib/constants";
 import type { Project, ProjectStatus, TeamName } from "@/types";
 
@@ -20,7 +22,8 @@ function statusVariant(status: ProjectStatus) {
 }
 
 export default function ProjectsPage() {
-  const { projects, addProject, access, user, dataLoading } = useAppState();
+  const { projects, addProject, access, user } = useAppState();
+  const { withLoading } = useGlobalLoading();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
 
   const teamsToShow =
@@ -51,15 +54,15 @@ export default function ProjectsPage() {
         </div>
         {access?.canManageProjects && (
           <AddProjectDialog
-            onCreate={addProject}
+            onCreate={async (input) => {
+              await withLoading("project-create", LOADING_PRESETS.creatingProject, () =>
+                addProject(input),
+              );
+            }}
             lockedTeam={access.role === "lead" ? user?.team : undefined}
           />
         )}
       </div>
-
-      {dataLoading && (
-        <p className="text-sm text-muted-foreground">Loading projects…</p>
-      )}
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="no-scrollbar h-auto w-full flex-wrap justify-start gap-1 bg-muted/60 p-1">

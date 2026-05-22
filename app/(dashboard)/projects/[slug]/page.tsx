@@ -7,7 +7,9 @@ import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProjectDetailEditor } from "@/components/features/project-detail-editor";
+import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { useAppState } from "@/providers/app-state";
+import { useGlobalLoading } from "@/providers/global-loading";
 import { canManageProjectForTeam } from "@/lib/permissions";
 import type { ProjectDetail } from "@/types";
 
@@ -15,6 +17,7 @@ export default function ProjectDetailPage() {
   const params = useParams();
   const slug = String(params.slug ?? "");
   const { access, user, employees, refreshData } = useAppState();
+  const { withLoading } = useGlobalLoading();
   const [project, setProject] = React.useState<ProjectDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -26,13 +29,15 @@ export default function ProjectDetailPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/projects/${slug}`, { credentials: "include" });
-        if (cancelled) return;
-        if (!res.ok) {
-          const j = (await res.json()) as { error?: string };
-          throw new Error(j.error ?? res.statusText);
-        }
-        setProject((await res.json()) as ProjectDetail);
+        await withLoading("project-detail", LOADING_PRESETS.loadingProject, async () => {
+          const res = await fetch(`/api/projects/${slug}`, { credentials: "include" });
+          if (cancelled) return;
+          if (!res.ok) {
+            const j = (await res.json()) as { error?: string };
+            throw new Error(j.error ?? res.statusText);
+          }
+          setProject((await res.json()) as ProjectDetail);
+        });
       } catch (e) {
         if (cancelled) return;
         setProject(null);
@@ -44,7 +49,7 @@ export default function ProjectDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, withLoading]);
 
   const canEdit =
     !!access &&
@@ -67,10 +72,7 @@ export default function ProjectDetailPage() {
         </Button>
       </div>
 
-      {loading && (
-        <p className="text-sm text-muted-foreground">Loading project…</p>
-      )}
-      {error && (
+      {error && !loading && (
         <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>

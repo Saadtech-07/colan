@@ -9,7 +9,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
+import { useGlobalLoading } from "@/providers/global-loading";
 import { TEAMS } from "@/lib/constants";
 import {
   canManageProjectForTeam,
@@ -22,6 +24,7 @@ const ALL_TAB = "All";
 
 export default function TeamMembersPage() {
   const { employees, projects, addEmployee, access, refreshData } = useAppState();
+  const { withLoading } = useGlobalLoading();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
 
   const visibleProjects = React.useMemo(
@@ -39,8 +42,10 @@ export default function TeamMembersPage() {
   );
 
   const handleCreateEmployee = async (employee: Omit<Employee, "id">) => {
-    await addEmployee(employee);
-    setTab(ALL_TAB);
+    await withLoading("employee-create", LOADING_PRESETS.creatingEmployee, async () => {
+      await addEmployee(employee);
+      setTab(ALL_TAB);
+    });
   };
 
   const filtered =
@@ -115,31 +120,49 @@ export default function TeamMembersPage() {
                               projects={visibleProjects}
                               canManage={canManageProjects(access.role)}
                               canManageProject={canManageProject}
-                              onUpdated={refreshData}
+                              onUpdated={() =>
+                                withLoading(
+                                  "employee-projects",
+                                  LOADING_PRESETS.updatingProjectMembership,
+                                  refreshData,
+                                )
+                              }
                             />
                           )}
                           {access?.canWriteEmployees && (
                             <EditEmployeeDialog
                               employee={emp}
                               onSave={async (id, patch) => {
-                                const res = await fetch(`/api/employees/${id}`, {
-                                  method: "PATCH",
-                                  credentials: "include",
-                                  headers: { "Content-Type": "application/json" },
-                                  body: JSON.stringify(patch),
-                                });
-                                if (!res.ok) throw new Error(await parseApiError(res));
-                                await res.json();
-                                await refreshData();
+                                await withLoading(
+                                  "employee-save",
+                                  LOADING_PRESETS.updatingEmployee,
+                                  async () => {
+                                    const res = await fetch(`/api/employees/${id}`, {
+                                      method: "PATCH",
+                                      credentials: "include",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify(patch),
+                                    });
+                                    if (!res.ok) throw new Error(await parseApiError(res));
+                                    await res.json();
+                                    await refreshData();
+                                  },
+                                );
                               }}
                               onDelete={async (id) => {
-                                const res = await fetch(`/api/employees/${id}`, {
-                                  method: "DELETE",
-                                  credentials: "include",
-                                });
-                                if (!res.ok) throw new Error(await parseApiError(res));
-                                await res.json();
-                                await refreshData();
+                                await withLoading(
+                                  "employee-delete",
+                                  LOADING_PRESETS.removingEmployee,
+                                  async () => {
+                                    const res = await fetch(`/api/employees/${id}`, {
+                                      method: "DELETE",
+                                      credentials: "include",
+                                    });
+                                    if (!res.ok) throw new Error(await parseApiError(res));
+                                    await res.json();
+                                    await refreshData();
+                                  },
+                                );
                               }}
                             />
                           )}

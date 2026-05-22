@@ -18,3 +18,4 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     </AuthGate>
   );
 }
+

@@ -10,3 +10,4 @@ export * from "./seating-assignment.model";
 export * from "./team-member.model";
 export * from "./project.model";
 export * from "./gallery-image.model";
+

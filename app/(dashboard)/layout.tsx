@@ -1,5 +1,6 @@
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { AppStateProvider } from "@/providers/app-state";
+import { GlobalLoadingProvider } from "@/providers/global-loading";
 
 export default function DashboardLayout({
   children,
@@ -8,7 +9,9 @@ export default function DashboardLayout({
 }) {
   return (
     <AppStateProvider>
-      <DashboardShell>{children}</DashboardShell>
+      <GlobalLoadingProvider>
+        <DashboardShell>{children}</DashboardShell>
+      </GlobalLoadingProvider>
     </AppStateProvider>
   );
 }
