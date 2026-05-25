@@ -159,7 +159,7 @@ export default function DashboardPage() {
         />
       </div>
 
-      <Card className="overflow-hidden">
+      {/* <Card className="overflow-hidden">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <div>
             <CardTitle>Project analytics</CardTitle>
@@ -171,7 +171,7 @@ export default function DashboardPage() {
         <CardContent>
           <ProjectAnalyticsChart />
         </CardContent>
-      </Card>
+      </Card> */}
 
       <div>
         <div className="mb-4 flex items-center justify-between gap-2">
