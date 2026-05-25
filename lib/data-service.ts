@@ -729,3 +729,67 @@ export async function createGalleryItem(
   await db.collection<GalleryImageDocument>(COLLECTIONS.gallery).insertOne(doc);
   return galleryImageDocToDTO(doc);
 }
+
+export async function updateGalleryItem(
+  id: string,
+  patch: Partial<Omit<GalleryImage, "id">>,
+): Promise<GalleryImage> {
+  const normalizedId = String(id).trim();
+  if (!normalizedId) throw new Error("Gallery item not found");
+
+  const db = await getDb();
+  if (!db) {
+    const idx = memoryStore.gallery.findIndex((item) => item.id === normalizedId);
+    if (idx < 0) throw new Error("Gallery item not found");
+    const current = memoryStore.gallery[idx];
+    const next: GalleryImage = {
+      ...current,
+      ...(patch.title !== undefined ? { title: patch.title } : {}),
+      ...(patch.url !== undefined ? { url: patch.url } : {}),
+      ...(patch.caption !== undefined ? { caption: patch.caption } : {}),
+      ...(patch.uploadedAt !== undefined ? { uploadedAt: patch.uploadedAt } : {}),
+    };
+    memoryStore.gallery[idx] = next;
+    return { ...next };
+  }
+
+  await ensureMongoSeed(db);
+  if (!ObjectId.isValid(normalizedId)) throw new Error("Gallery item not found");
+
+  const col = db.collection<GalleryImageDocument>(COLLECTIONS.gallery);
+  const updates: Partial<GalleryImageDocument> = {};
+  if (patch.title !== undefined) updates.title = patch.title;
+  if (patch.url !== undefined) updates.url = patch.url;
+  if (patch.caption !== undefined) updates.caption = patch.caption;
+  if (patch.uploadedAt !== undefined) updates.uploadedAt = patch.uploadedAt;
+
+  const result = await col.findOneAndUpdate(
+    { _id: new ObjectId(normalizedId) },
+    { $set: updates },
+    { returnDocument: "after" },
+  );
+  if (!result) throw new Error("Gallery item not found");
+  return galleryImageDocToDTO(result);
+}
+
+export async function deleteGalleryItem(id: string): Promise<void> {
+  const normalizedId = String(id).trim();
+  if (!normalizedId) throw new Error("Gallery item not found");
+
+  const db = await getDb();
+  if (!db) {
+    const idx = memoryStore.gallery.findIndex((item) => item.id === normalizedId);
+    if (idx < 0) throw new Error("Gallery item not found");
+    memoryStore.gallery.splice(idx, 1);
+    return;
+  }
+
+  await ensureMongoSeed(db);
+  if (!ObjectId.isValid(normalizedId)) throw new Error("Gallery item not found");
+
+  const result = await db
+    .collection<GalleryImageDocument>(COLLECTIONS.gallery)
+    .deleteOne({ _id: new ObjectId(normalizedId) });
+
+  if (result.deletedCount === 0) throw new Error("Gallery item not found");
+}
