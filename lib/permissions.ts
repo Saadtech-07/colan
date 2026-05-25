@@ -206,7 +206,7 @@ export function canAssignEmployeeToBay(
 }
 
 export function canWriteGallery(roleKey: AppRole): boolean {
-  return roleKey === "admin";
+  return canManageModule(roleKey, "gallery");
 }
 
 export function buildAccessContext(roleKey: AppRole, team?: TeamName) {

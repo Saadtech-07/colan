@@ -57,12 +57,12 @@ export function SeatingFloorPlan({
 
   return (
     <div
-      className="origin-top-left transition-transform duration-200"
+      className="w-max origin-top transition-transform duration-200"
       style={{ transform: `scale(${zoom})` }}
     >
-      <div className="min-w-[1100px] rounded-lg bg-[#4a6fa5] p-4 shadow-inner sm:p-6">
+      <div className="mx-auto min-w-max rounded-[28px] border border-slate-300/40 bg-[#4a6fa5] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.24),0_18px_42px_rgba(15,23,42,0.22)] sm:p-6 lg:p-8">
         {SEATING_ROWS.map((row) => (
-          <div key={row.key} data-row={row.key}>
+          <div key={row.key} data-row={row.key} className="w-max">
             <SeatingRowBlock
               top={row.top}
               bottom={row.bottom}

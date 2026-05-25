@@ -94,11 +94,6 @@ export function SeatingToolbar({
           <span className="rounded-md bg-slate-500/15 px-2.5 py-1 tabular-nums">
             Available <strong>{stats.empty}</strong>
           </span>
-          {stats.legacyUnassigned > 0 && (
-            <span className="rounded-md bg-amber-500/15 px-2.5 py-1 text-amber-800 dark:text-amber-300">
-              Legacy bay IDs <strong>{stats.legacyUnassigned}</strong>
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-1">
           <Button

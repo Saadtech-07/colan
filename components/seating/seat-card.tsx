@@ -2,9 +2,7 @@
 
 import * as React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { teamColorClasses } from "@/lib/seating-utils";
-import { teamTabLabel } from "@/lib/team-utils";
 import type { Employee } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -57,7 +55,7 @@ export function SeatCard({
       }}
       onClick={onSelect}
       className={cn(
-        "group relative flex h-[52px] w-[52px] shrink-0 flex-col items-center justify-center rounded-sm border-2 border-black/80 bg-white px-0.5 py-1 text-center shadow-sm transition-all duration-200",
+        "group relative flex h-[120px] w-[96px] shrink-0 flex-col items-center justify-start rounded-2xl border-2 border-black/70 bg-white px-2 py-2 text-center shadow-sm transition-all duration-200",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         canAssign && "cursor-pointer hover:-translate-y-0.5 hover:shadow-md",
         !occupied && "bg-slate-100 hover:border-primary/60 hover:bg-white dark:bg-slate-200/90",
@@ -71,39 +69,26 @@ export function SeatCard({
       )}
       title={occupied ? `${occupant.name} — ${seatId}` : `Seat ${seatId} (vacant)`}
     >
-      <span className="font-mono text-[9px] font-bold leading-none text-slate-800">
+      <span className="inline-flex min-h-5 items-center rounded-full bg-slate-900/10 px-2 font-mono text-[10px] font-bold leading-none text-slate-800">
         {seatId}
       </span>
       {occupied && occupant ? (
         <>
-          <Avatar className="mt-0.5 h-5 w-5 border border-white/80">
-            <AvatarImage src={occupant.imageUrl} alt="" />
-            <AvatarFallback className="text-[6px]">
+          <Avatar className="mt-1.5 h-11 w-11 border-2 border-white/90 bg-white shadow-sm">
+            <AvatarImage src={occupant.imageUrl} alt="" className="object-contain bg-white p-0.5" />
+            <AvatarFallback className="text-[10px]">
               {occupant.name.slice(0, 2).toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          <span className="mt-0.5 line-clamp-1 w-full px-0.5 text-[7px] font-semibold leading-tight text-slate-900">
-            {occupant.name.split(" ")[0]}
+          <span className="mt-2 line-clamp-2 min-h-[2rem] w-full text-[11px] font-semibold leading-tight text-slate-900">
+            {occupant.name}
           </span>
-          {(selected || highlighted) && (
-            <>
-              <span className="line-clamp-1 w-full text-[6px] text-slate-600">
-                {occupant.employeeId}
-              </span>
-              <Badge
-                variant="secondary"
-                className={cn(
-                  "absolute -right-1 -top-1 h-4 px-1 text-[7px]",
-                  teamColors?.text,
-                )}
-              >
-                {teamTabLabel(occupant.team).slice(0, 4)}
-              </Badge>
-            </>
-          )}
         </>
       ) : (
-        <span className="mt-1 text-[7px] text-slate-500">Vacant</span>
+        <div className="flex flex-1 flex-col items-center justify-center">
+          <span className="text-[11px] font-medium text-slate-500">Vacant</span>
+          <span className="mt-1 text-[9px] text-slate-400">Available seat</span>
+        </div>
       )}
     </button>
   );

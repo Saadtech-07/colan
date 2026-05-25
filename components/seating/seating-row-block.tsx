@@ -5,6 +5,13 @@ import { SeatCard } from "@/components/seating/seat-card";
 import type { Employee } from "@/types";
 import { cn } from "@/lib/utils";
 
+const SEAT_WIDTH = 96;
+const SEAT_HEIGHT = 120;
+const CELL_GAP = 8;
+const LABEL_WIDTH = 116;
+const PILLAR_WIDTH = SEAT_WIDTH * 2 + CELL_GAP;
+const ENTRANCE_WIDTH = SEAT_WIDTH * 3 + CELL_GAP * 2;
+
 function renderCell(
   cell: FloorCell,
   ctx: {
@@ -26,7 +33,8 @@ function renderCell(
       return (
         <div
           key={key}
-          className="flex w-[88px] shrink-0 items-center justify-end pr-2 text-right text-[11px] font-bold uppercase tracking-wide text-sky-200"
+          className="flex shrink-0 items-center justify-end pr-3 text-right text-[11px] font-bold uppercase tracking-[0.2em] text-sky-100/95"
+          style={{ width: LABEL_WIDTH, height: SEAT_HEIGHT }}
         >
           {cell.text}
         </div>
@@ -35,28 +43,48 @@ function renderCell(
       return (
         <div
           key={key}
-          className="mx-1 flex h-[52px] w-10 shrink-0 items-center justify-center rounded-sm bg-zinc-500 shadow-inner"
+          className="flex shrink-0 items-center justify-center rounded-2xl border-2 border-zinc-700 bg-zinc-600 shadow-[inset_0_2px_10px_rgba(255,255,255,0.18),0_8px_16px_rgba(15,23,42,0.22)]"
+          style={{ width: PILLAR_WIDTH, height: SEAT_HEIGHT }}
           aria-hidden
-        />
+        >
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-zinc-100/90">
+            Pillar
+          </span>
+        </div>
       );
     case "entrance":
       return (
         <div
           key={key}
-          className="mx-1 flex h-[52px] min-w-[140px] flex-1 max-w-[220px] items-center justify-center rounded-sm border-2 border-sky-300/80 bg-sky-400/90 px-2 text-center text-[10px] font-bold uppercase leading-tight text-white shadow-md"
+          className="flex shrink-0 items-center justify-center rounded-2xl border-2 border-sky-200/80 bg-sky-400/90 px-4 text-center text-[10px] font-bold uppercase leading-tight text-white shadow-md"
+          style={{ width: ENTRANCE_WIDTH, height: SEAT_HEIGHT }}
         >
           {cell.text}
         </div>
       );
     case "gap":
-      return <div key={key} className="h-[52px] w-[140px] shrink-0" aria-hidden />;
+      return (
+        <div
+          key={key}
+          className="shrink-0"
+          style={{ width: ENTRANCE_WIDTH, height: SEAT_HEIGHT }}
+          aria-hidden
+        />
+      );
     case "seat": {
       const emp = ctx.occupancy.get(cell.id) ?? null;
       const highlighted = ctx.highlightSeats?.has(cell.id) ?? false;
       const dimmed = ctx.dimSeat(cell.id, emp);
       const hidden = ctx.hideSeat(cell.id, emp);
       if (hidden) {
-        return <div key={key} className="h-[52px] w-[52px] shrink-0 opacity-0" aria-hidden />;
+        return (
+          <div
+            key={key}
+            className="shrink-0 opacity-0"
+            style={{ width: SEAT_WIDTH, height: SEAT_HEIGHT }}
+            aria-hidden
+          />
+        );
       }
       return (
         <SeatCard
@@ -101,9 +129,9 @@ export function SeatingRowBlock({
   ...ctx
 }: Props) {
   return (
-    <div className={cn("w-full", showAisle && "mb-5")}>
-      <div className="flex flex-wrap items-center gap-0.5">{top.map((c, i) => renderCell(c, ctx, `t-${i}`))}</div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-0.5">
+    <div className={cn("w-max", showAisle && "mb-7")}>
+      <div className="flex w-max items-stretch gap-2">{top.map((c, i) => renderCell(c, ctx, `t-${i}`))}</div>
+      <div className="mt-2 flex w-max items-stretch gap-2">
         {bottom.map((c, i) => renderCell(c, ctx, `b-${i}`))}
       </div>
     </div>

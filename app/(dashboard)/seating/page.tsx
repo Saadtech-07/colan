@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { SeatingAnalyticsOverview } from "@/components/seating/seating-analytics-overview";
 import { SeatingAssignmentDialog } from "@/components/seating/seating-assignment-dialog";
 import { SeatingFloorPlan } from "@/components/seating/seating-floor-plan";
 import { SeatingLegend } from "@/components/seating/seating-legend";
@@ -25,7 +25,7 @@ export default function SeatingPage() {
   const [search, setSearch] = React.useState("");
   const [teamFilter, setTeamFilter] = React.useState("All");
   const [viewMode, setViewMode] = React.useState<"all" | "occupied" | "available">("all");
-  const [zoom, setZoom] = React.useState(0.85);
+  const [zoom, setZoom] = React.useState(1);
   const [selectedSeat, setSelectedSeat] = React.useState<string | null>(null);
   const [dialogSeat, setDialogSeat] = React.useState<string | null>(null);
   const [focusRow, setFocusRow] = React.useState<string | null>(null);
@@ -90,6 +90,8 @@ export default function SeatingPage() {
         </p>
       </div>
 
+      <SeatingAnalyticsOverview stats={stats} />
+
       <SeatingToolbar
         search={search}
         onSearchChange={setSearch}
@@ -104,23 +106,25 @@ export default function SeatingPage() {
         onReset={resetFilters}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_240px]">
-        <ScrollArea className="h-[calc(100vh-18rem)] rounded-xl border border-border/80 bg-muted/20">
-          <div ref={floorRef} className="p-4">
-            <SeatingFloorPlan
-              occupancy={occupancy}
-              selectedSeat={selectedSeat}
-              highlightSeats={highlights}
-              teamFilter={teamFilter}
-              search={search}
-              viewMode={viewMode}
-              canAssign={canAssign}
-              zoom={zoom}
-              onSeatClick={handleSeatClick}
-              onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}
-            />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_240px] xl:items-start">
+        <div className="h-[calc(100vh-18rem)] overflow-auto rounded-2xl border border-border/80 bg-muted/20 shadow-sm scroll-smooth">
+          <div ref={floorRef} className="min-h-full p-4 md:p-6 xl:p-8">
+            <div className="mx-auto min-w-full w-max">
+              <SeatingFloorPlan
+                occupancy={occupancy}
+                selectedSeat={selectedSeat}
+                highlightSeats={highlights}
+                teamFilter={teamFilter}
+                search={search}
+                viewMode={viewMode}
+                canAssign={canAssign}
+                zoom={zoom}
+                onSeatClick={handleSeatClick}
+                onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}
+              />
+            </div>
           </div>
-        </ScrollArea>
+        </div>
 
         <div className="space-y-4">
           <SeatingMinimap
