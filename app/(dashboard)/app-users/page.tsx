@@ -3,10 +3,12 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
+  CircleCheckBig,
   Loader2,
   Pencil,
   Plus,
   Save,
+  TriangleAlert,
   Trash2,
   UserCheck,
   Upload,
@@ -40,6 +42,22 @@ const initialFormState = {
   imageUrl: "",
 };
 
+type CreateAccountToast = {
+  variant: "success" | "warning";
+  title: string;
+  description: string;
+};
+
+type AppUserMutationResponse = AppUserPublicDTO & {
+  emailDelivery?: {
+    attempted: boolean;
+    sent: boolean;
+    provider: "nodemailer";
+    message?: string;
+    id?: string;
+  };
+};
+
 export default function AppUsersPage() {
   const router = useRouter();
   const { isAdmin, user, refreshData, teamNames, workspaceRoles } = useAppState();
@@ -48,10 +66,12 @@ export default function AppUsersPage() {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
+  const [toast, setToast] = React.useState<CreateAccountToast | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [form, setForm] = React.useState(initialFormState);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const formCardRef = React.useRef<HTMLDivElement | null>(null);
+  const toastTimerRef = React.useRef<number | null>(null);
 
   const submitting = isLoadingKey("app-users-submit");
   const showTeamField = roleNeedsTeam(form.appRole);
@@ -78,14 +98,35 @@ export default function AppUsersPage() {
 
   React.useEffect(() => {
     if (!isAdmin) return;
-    void fetchUsers();
+    const timer = window.setTimeout(() => {
+      void fetchUsers();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [fetchUsers, isAdmin]);
 
-  const resetForm = () => {
+  const showToast = React.useCallback((next: CreateAccountToast) => {
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    setToast(next);
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 5000);
+  }, []);
+
+  React.useEffect(
+    () => () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    },
+    [],
+  );
+
+  const resetForm = (opts?: { clearFeedback?: boolean }) => {
     setEditingId(null);
     setForm(initialFormState);
-    setSuccess(null);
-    setError(null);
+    if (opts?.clearFeedback !== false) {
+      setSuccess(null);
+      setError(null);
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -119,6 +160,7 @@ export default function AppUsersPage() {
     const preset = editingId
       ? LOADING_PRESETS.updatingAccount
       : LOADING_PRESETS.creatingAccount;
+    const isEditing = !!editingId;
 
     try {
       await withLoading("app-users-submit", preset, async () => {
@@ -147,13 +189,36 @@ export default function AppUsersPage() {
         if (!res.ok) {
           throw new Error(await parseApiError(res));
         }
+        const result = (await res.json()) as AppUserMutationResponse;
         await fetchUsers();
         await refreshData();
         router.refresh();
-        setSuccess(
-          editingId ? "Account updated successfully." : "Account created successfully.",
-        );
-        resetForm();
+
+        resetForm({ clearFeedback: false });
+
+        if (isEditing) {
+          setSuccess("Account updated successfully.");
+          return;
+        }
+
+        setSuccess("Employee account created successfully.");
+
+        if (result.emailDelivery?.sent) {
+          showToast({
+            variant: "success",
+            title: "Employee account created successfully",
+            description: "Login credentials email sent.",
+          });
+          return;
+        }
+
+        showToast({
+          variant: "warning",
+          title: "Employee created but email could not be sent",
+          description:
+            result.emailDelivery?.message ||
+            "Check the email configuration and resend the credentials manually.",
+        });
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to save account.");
@@ -177,7 +242,7 @@ export default function AppUsersPage() {
         await refreshData();
         router.refresh();
         setSuccess("Account removed.");
-        if (editingId === id) resetForm();
+        if (editingId === id) resetForm({ clearFeedback: false });
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to delete account.");
@@ -213,6 +278,45 @@ export default function AppUsersPage() {
 
   return (
     <div className="space-y-6">
+      {toast && (
+        <div className="fixed right-4 top-20 z-50 w-[calc(100vw-2rem)] max-w-sm sm:right-6">
+          <div
+            className={
+              toast.variant === "success"
+                ? "rounded-2xl border border-emerald-500/30 bg-card p-4 shadow-xl"
+                : "rounded-2xl border border-amber-500/30 bg-card p-4 shadow-xl"
+            }
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className={
+                  toast.variant === "success"
+                    ? "mt-0.5 rounded-full bg-emerald-500/10 p-2 text-emerald-600"
+                    : "mt-0.5 rounded-full bg-amber-500/10 p-2 text-amber-600"
+                }
+              >
+                {toast.variant === "success" ? (
+                  <CircleCheckBig className="h-4 w-4" />
+                ) : (
+                  <TriangleAlert className="h-4 w-4" />
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">{toast.title}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{toast.description}</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                onClick={() => setToast(null)}
+                aria-label="Dismiss notification"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -344,7 +448,7 @@ export default function AppUsersPage() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 shrink-0"
-                  onClick={resetForm}
+                  onClick={() => resetForm()}
                   aria-label="Cancel edit"
                   title="Cancel edit"
                 >

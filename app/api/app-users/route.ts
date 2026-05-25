@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createAppUser, listAppUsers } from "@/lib/app-users";
+import { resolveLoginUrl } from "@/lib/email";
 import { canManageModule, canViewModule, normalizeAppRole, roleNeedsTeam } from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
+import { sendAccountCreatedEmail } from "@/services/email-service";
 import { appUserCreateSchema } from "@/lib/validations";
 
 export async function GET() {
@@ -56,7 +58,23 @@ export async function POST(req: Request) {
 
   try {
     const created = await createAppUser(payload);
-    return NextResponse.json(created, { status: 201 });
+    const loginUrl = resolveLoginUrl(new URL(req.url).origin);
+    const emailDelivery =
+      loginUrl
+        ? await sendAccountCreatedEmail({
+            employeeName: payload.name.trim(),
+            employeeEmail: payload.email.toLowerCase().trim(),
+            temporaryPassword: payload.password,
+            loginUrl,
+          })
+        : {
+            attempted: false,
+            sent: false,
+            provider: "nodemailer" as const,
+            message: "Login URL could not be resolved.",
+          };
+
+    return NextResponse.json({ ...created, emailDelivery }, { status: 201 });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Failed to create account" },
