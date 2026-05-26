@@ -4,14 +4,14 @@ import {
   updateGalleryItem,
   deleteGalleryItem,
 } from "@/lib/data-service";
-import { assertCanWriteGallery, sessionAccess } from "@/lib/session-access";
+import { assertCanWriteGallery, sessionAccessAsync } from "@/lib/session-access";
 import { galleryCreateSchema } from "@/lib/validations";
  
 type RouteParams = { params: Promise<{ id: string }> };
  
 export async function PUT(req: Request, { params }: RouteParams) {
   const session = await auth();
-  const access = await sessionAccess(session);
+  const access = await sessionAccessAsync(session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -50,7 +50,7 @@ export async function PUT(req: Request, { params }: RouteParams) {
  
 export async function DELETE(_req: Request, { params }: RouteParams) {
   const session = await auth();
-  const access = await sessionAccess(session);
+  const access = await sessionAccessAsync(session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

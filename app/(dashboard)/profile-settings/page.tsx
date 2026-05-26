@@ -17,6 +17,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { LoadingIndicator } from "@/components/ui/loading-indicator";
 import { Label } from "@/components/ui/label";
 import { parseApiError } from "@/providers/app-state";
 
@@ -283,10 +284,7 @@ export default function ProfileSettingsPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="flex min-h-[320px] items-center justify-center text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading profile settings...
-              </div>
+              <LoadingIndicator title="Loading Profile Settings" className="min-h-[320px]" />
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
                 {error && (

@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createAppUser, listAppUsers } from "@/lib/app-users";
 import { resolveLoginUrl } from "@/lib/email";
-import { canManageModule, canViewModule, normalizeAppRole, roleNeedsTeam } from "@/lib/permissions";
+import {
+  canAccessModuleAction,
+  canManageModule,
+  canViewModule,
+  normalizeAppRole,
+  roleNeedsTeam,
+} from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { sendAccountCreatedEmail } from "@/services/email-service";
 import { appUserCreateSchema } from "@/lib/validations";
@@ -29,7 +35,10 @@ export async function POST(req: Request) {
   }
   await ensureRoleRegistry();
   const roleKey = normalizeAppRole(session.user.appRole);
-  if (!canManageModule(roleKey, "appUsers")) {
+  if (
+    !canManageModule(roleKey, "appUsers") &&
+    !canAccessModuleAction(roleKey, "appUsers", "create")
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -5,10 +5,10 @@ import { SeatCard } from "@/components/seating/seat-card";
 import type { Employee } from "@/types";
 import { cn } from "@/lib/utils";
 
-const SEAT_WIDTH = 96;
-const SEAT_HEIGHT = 120;
-const CELL_GAP = 8;
-const LABEL_WIDTH = 116;
+const SEAT_WIDTH = 108;
+const SEAT_HEIGHT = 132;
+const CELL_GAP = 10;
+const LABEL_WIDTH = 128;
 const PILLAR_WIDTH = SEAT_WIDTH * 2 + CELL_GAP;
 const ENTRANCE_WIDTH = SEAT_WIDTH * 3 + CELL_GAP * 2;
 
@@ -33,7 +33,7 @@ function renderCell(
       return (
         <div
           key={key}
-          className="flex shrink-0 items-center justify-end pr-3 text-right text-[11px] font-bold uppercase tracking-[0.2em] text-sky-100/95"
+          className="flex shrink-0 items-center justify-end pr-4 text-right text-[11px] font-bold uppercase tracking-[0.24em] text-sky-100/95"
           style={{ width: LABEL_WIDTH, height: SEAT_HEIGHT }}
         >
           {cell.text}
@@ -43,7 +43,7 @@ function renderCell(
       return (
         <div
           key={key}
-          className="flex shrink-0 items-center justify-center rounded-2xl border-2 border-zinc-700 bg-zinc-600 shadow-[inset_0_2px_10px_rgba(255,255,255,0.18),0_8px_16px_rgba(15,23,42,0.22)]"
+          className="flex shrink-0 items-center justify-center rounded-[24px] border-2 border-zinc-700/90 bg-zinc-600 shadow-[inset_0_2px_10px_rgba(255,255,255,0.18),0_10px_22px_rgba(15,23,42,0.24)]"
           style={{ width: PILLAR_WIDTH, height: SEAT_HEIGHT }}
           aria-hidden
         >
@@ -56,7 +56,7 @@ function renderCell(
       return (
         <div
           key={key}
-          className="flex shrink-0 items-center justify-center rounded-2xl border-2 border-sky-200/80 bg-sky-400/90 px-4 text-center text-[10px] font-bold uppercase leading-tight text-white shadow-md"
+          className="flex shrink-0 items-center justify-center rounded-[24px] border-2 border-sky-200/80 bg-sky-400/90 px-4 text-center text-[10px] font-bold uppercase leading-tight tracking-[0.2em] text-white shadow-md"
           style={{ width: ENTRANCE_WIDTH, height: SEAT_HEIGHT }}
         >
           {cell.text}
@@ -129,9 +129,11 @@ export function SeatingRowBlock({
   ...ctx
 }: Props) {
   return (
-    <div className={cn("w-max", showAisle && "mb-7")}>
-      <div className="flex w-max items-stretch gap-2">{top.map((c, i) => renderCell(c, ctx, `t-${i}`))}</div>
-      <div className="mt-2 flex w-max items-stretch gap-2">
+    <div className={cn("w-max", showAisle && "mb-8")}>
+      <div className="flex w-max items-stretch gap-2.5">
+        {top.map((c, i) => renderCell(c, ctx, `t-${i}`))}
+      </div>
+      <div className="mt-2.5 flex w-max items-stretch gap-2.5">
         {bottom.map((c, i) => renderCell(c, ctx, `b-${i}`))}
       </div>
     </div>

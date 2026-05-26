@@ -8,6 +8,7 @@ import {
 } from "@/lib/data-service";
 import { findEmployeeBySlugOrId } from "@/lib/employee-slug";
 import {
+  canAccessModuleAction,
   canManageModule,
   filterEmployeesForUser,
   normalizeAppRole,
@@ -48,7 +49,11 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await ensureRoleRegistry();
-  if (!canManageModule(normalizeAppRole(session.user.appRole), "teamMembers")) {
+  const roleKey = normalizeAppRole(session.user.appRole);
+  if (
+    !canManageModule(roleKey, "teamMembers") &&
+    !canAccessModuleAction(roleKey, "teamMembers", "edit")
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -84,7 +89,11 @@ export async function DELETE(_: Request, { params }: RouteParams) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   await ensureRoleRegistry();
-  if (!canManageModule(normalizeAppRole(session.user.appRole), "teamMembers")) {
+  const roleKey = normalizeAppRole(session.user.appRole);
+  if (
+    !canManageModule(roleKey, "teamMembers") &&
+    !canAccessModuleAction(roleKey, "teamMembers", "delete")
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

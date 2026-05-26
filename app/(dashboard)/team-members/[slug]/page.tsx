@@ -36,17 +36,19 @@ import {
 } from "@/lib/team-members-ui";
 import type { EmployeeDetail, EmployeeDirectoryInfo } from "@/types";
 import { ManageEmployeeProjectsDialog } from "@/components/features/manage-employee-projects-dialog";
+import { LoadingIndicator } from "@/components/ui/loading-indicator";
 
 export default function TeamMemberDetailPage() {
   const params = useParams();
   const router = useRouter();
   const slug = String(params.slug ?? "");
-  const { access, projects, refreshData } = useAppState();
+  const { access, projects, refreshData, dataLoading } = useAppState();
   const { withLoading } = useGlobalLoading();
   const [employee, setEmployee] = React.useState<EmployeeDetail | null>(null);
-  const [loading, setLoading] = React.useState(true);
+  const [pageLoading, setPageLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [editOpen, setEditOpen] = React.useState(false);
+  const dataLoadingRef = React.useRef(dataLoading);
 
   const workforceAccess = React.useMemo(
     () => buildWorkforceAccess(access),
@@ -59,23 +61,49 @@ export default function TeamMemberDetailPage() {
     [access],
   );
 
-  const loadEmployee = React.useCallback(async () => {
-    if (!slug) return;
-    setLoading(true);
+  React.useEffect(() => {
+    dataLoadingRef.current = dataLoading;
+  }, [dataLoading]);
+
+  const waitForWorkspaceSyncToFinish = React.useCallback(async () => {
+    await new Promise<void>((resolve) => {
+      const check = () => {
+        if (!dataLoadingRef.current) {
+          resolve();
+          return;
+        }
+        window.setTimeout(check, 40);
+      };
+
+      check();
+    });
+  }, []);
+
+  const loadEmployee = React.useCallback(async (options?: { preserveVisibleContent?: boolean }) => {
+    if (!slug) {
+      setPageLoading(false);
+      return;
+    }
+    if (!options?.preserveVisibleContent) {
+      setPageLoading(true);
+    }
     setError(null);
     try {
-      await withLoading("employee-detail", LOADING_PRESETS.loadingAccounts, async () => {
-        const res = await fetch(`/api/employees/${slug}`, { credentials: "include" });
-        if (!res.ok) throw new Error(await parseApiError(res));
-        setEmployee((await res.json()) as EmployeeDetail);
-      });
+      const res = await fetch(`/api/employees/${slug}`, { credentials: "include" });
+      if (!res.ok) throw new Error(await parseApiError(res));
+      setEmployee((await res.json()) as EmployeeDetail);
+      if (!options?.preserveVisibleContent) {
+        await waitForWorkspaceSyncToFinish();
+      }
     } catch (e) {
       setEmployee(null);
       setError(e instanceof Error ? e.message : "Failed to load employee");
     } finally {
-      setLoading(false);
+      if (!options?.preserveVisibleContent) {
+        setPageLoading(false);
+      }
     }
-  }, [slug, withLoading]);
+  }, [slug, waitForWorkspaceSyncToFinish]);
 
   React.useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -83,8 +111,10 @@ export default function TeamMemberDetailPage() {
   }, [loadEmployee]);
 
   const handleRefresh = async () => {
-    await refreshData();
-    await loadEmployee();
+    await Promise.all([
+      refreshData(),
+      loadEmployee({ preserveVisibleContent: true }),
+    ]);
   };
 
   const handleSave = async (
@@ -114,13 +144,13 @@ export default function TeamMemberDetailPage() {
               All team members
             </Link>
           </Button>
-          {employee && !loading && (
+          {employee && !pageLoading && (
             <p className="text-sm text-muted-foreground">
               /team-members/{employee.slug}
             </p>
           )}
         </div>
-        {employee && !loading && (
+        {employee && !pageLoading && (
           <>
             <div className="flex flex-wrap items-center gap-2">
               {workforceAccess.canManageEmployees && (
@@ -173,17 +203,17 @@ export default function TeamMemberDetailPage() {
         )}
       </div>
 
-      {loading && (
-        <p className="text-sm text-muted-foreground">Loading employee profile…</p>
+      {pageLoading && (
+        <LoadingIndicator title="Loading Employee" className="min-h-[420px]" />
       )}
 
-      {error && !loading && (
+      {error && !pageLoading && (
         <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
         </p>
       )}
 
-      {employee && !loading && (
+      {employee && !pageLoading && (
         <>
           <EmployeeWorkspaceHero
             employee={employee}

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { canManageModule, canViewModule, normalizeAppRole } from "@/lib/permissions";
+import {
+  canAccessModuleAction,
+  canManageModule,
+  canViewModule,
+  normalizeAppRole,
+} from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { createWorkspaceRole, listWorkspaceRoles } from "@/lib/roles-data";
 import {
@@ -28,7 +33,10 @@ export async function POST(req: Request) {
   }
   await ensureRoleRegistry();
   const roleKey = normalizeAppRole(session.user.appRole);
-  if (!canManageModule(roleKey, "roles")) {
+  if (
+    !canManageModule(roleKey, "roles") &&
+    !canAccessModuleAction(roleKey, "roles", "createRoles")
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

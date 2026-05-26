@@ -107,15 +107,7 @@ function GlobalLoadingProviderInner({ children }: { children: React.ReactNode })
   return (
     <GlobalLoadingContext.Provider value={value}>
       <GlobalLoadingOverlay open={syncing} title={title} description={description} />
-      <div
-        className={
-          syncing
-            ? "pointer-events-none select-none transition-[filter,opacity] duration-300 blur-[2px] opacity-60"
-            : "transition-[filter,opacity] duration-300"
-        }
-      >
-        {children}
-      </div>
+      {children}
     </GlobalLoadingContext.Provider>
   );
 }

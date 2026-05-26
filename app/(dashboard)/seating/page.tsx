@@ -51,6 +51,17 @@ export default function SeatingPage() {
     return rates;
   }, [occupancy]);
 
+  const occupiedSeatsByRow = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const row of SEATING_ROWS) {
+      const seatIds = [...row.top, ...row.bottom]
+        .filter((c) => c.kind === "seat")
+        .map((c) => c.id);
+      counts[row.key] = seatIds.filter((id) => occupancy.has(id)).length;
+    }
+    return counts;
+  }, [occupancy]);
+
   const resetFilters = () => {
     setSearch("");
     setTeamFilter("All");
@@ -96,35 +107,61 @@ export default function SeatingPage() {
         onReset={resetFilters}
       />
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_240px] xl:items-start">
-        <div className="h-[calc(100vh-18rem)] overflow-auto rounded-2xl border border-border/80 bg-muted/20 shadow-sm scroll-smooth">
-          <div ref={floorRef} className="min-h-full p-4 md:p-6 xl:p-8">
-            <div className="mx-auto min-w-full w-max">
-              <SeatingFloorPlan
-                occupancy={occupancy}
-                selectedSeat={selectedSeat}
-                highlightSeats={highlights}
-                teamFilter={teamFilter}
-                search={search}
-                viewMode={viewMode}
-                canAssign={canAssign}
-                zoom={zoom}
-                onSeatClick={handleSeatClick}
-                onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}
-              />
+      <section className="space-y-5">
+        <div className="rounded-[28px] border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur-sm sm:p-5">
+          <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                Seating arrangement
+              </p>
+              <h2 className="mt-1 text-xl font-semibold tracking-tight">
+                Floor layout
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                The seating map is the primary workspace for assignment and visibility.
+                Scroll horizontally when needed and click any seat to inspect or assign.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="rounded-full border border-border/70 bg-background/85 px-3 py-1.5">
+                Zoom {Math.round(zoom * 100)}%
+              </span>
+              <span className="rounded-full border border-border/70 bg-background/85 px-3 py-1.5">
+                {stats.occupied} occupied of {stats.total}
+              </span>
+            </div>
+          </div>
+
+          <div className="h-[calc(100vh-16rem)] min-h-[560px] overflow-auto rounded-[24px] border border-border/60 bg-gradient-to-br from-muted/30 via-background to-muted/20 shadow-inner scroll-smooth">
+            <div ref={floorRef} className="min-h-full p-4 md:p-6 xl:p-8">
+              <div className="mx-auto min-w-full w-max">
+                <SeatingFloorPlan
+                  occupancy={occupancy}
+                  selectedSeat={selectedSeat}
+                  highlightSeats={highlights}
+                  teamFilter={teamFilter}
+                  search={search}
+                  viewMode={viewMode}
+                  canAssign={canAssign}
+                  zoom={zoom}
+                  onSeatClick={handleSeatClick}
+                  onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}
+                />
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="space-y-4">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
           <SeatingMinimap
             occupancyRateByRow={occupancyRateByRow}
+            occupiedSeatsByRow={occupiedSeatsByRow}
             selectedRow={focusRow}
             onRowClick={scrollToRow}
           />
           <SeatingLegend teamNames={teamNames} />
         </div>
-      </div>
+      </section>
 
       {!canAssign && (
         <p className="text-sm text-muted-foreground">

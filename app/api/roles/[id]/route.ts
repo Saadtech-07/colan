@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { canManageModule, canViewModule, normalizeAppRole } from "@/lib/permissions";
+import {
+  canAccessModuleAction,
+  canManageModule,
+  normalizeAppRole,
+} from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { deleteWorkspaceRole, updateWorkspaceRole } from "@/lib/roles-data";
 import {
@@ -17,7 +21,11 @@ export async function PATCH(req: Request, { params }: Params) {
   }
   await ensureRoleRegistry();
   const roleKey = normalizeAppRole(session.user.appRole);
-  if (!canManageModule(roleKey, "roles")) {
+  if (
+    !canManageModule(roleKey, "roles") &&
+    !canAccessModuleAction(roleKey, "roles", "editRoles") &&
+    !canAccessModuleAction(roleKey, "roles", "managePermissions")
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -61,7 +69,10 @@ export async function DELETE(_req: Request, { params }: Params) {
   }
   await ensureRoleRegistry();
   const roleKey = normalizeAppRole(session.user.appRole);
-  if (!canManageModule(roleKey, "roles")) {
+  if (
+    !canManageModule(roleKey, "roles") &&
+    !canAccessModuleAction(roleKey, "roles", "deleteRoles")
+  ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -1,7 +1,8 @@
 import {
   NAV_PATH_MODULES,
+  hasModulePermissionAction,
+  moduleHasAnyAccess,
   normalizeModulePermissions,
-  resolveLegacyAccess,
   type ModulePermissionsMap,
   type RbacModule,
 } from "@/lib/rbac-modules";
@@ -10,20 +11,58 @@ import type { Employee, Project, TeamName } from "@/types";
 import type { WorkspaceRole } from "@/models";
 
 export type Permission =
+  | "dashboard:view"
+  | "dashboard:analytics"
+  | "dashboard:export"
+  | "dashboard:manage"
+  | "projects:view"
+  | "projects:create"
+  | "projects:edit"
+  | "projects:delete"
+  | "projects:assign"
+  | "projects:change_status"
   | "employees:read"
   | "employees:read_all"
   | "employees:write"
+  | "teamMembers:view"
+  | "teamMembers:create"
+  | "teamMembers:edit"
+  | "teamMembers:delete"
+  | "teamMembers:assign_projects"
+  | "teamMembers:export"
+  | "teamMembers:manage"
   | "projects:read"
   | "projects:read_all"
   | "projects:manage"
   | "projects:manage_team"
+  | "gallery:view"
+  | "gallery:upload"
+  | "gallery:edit"
+  | "gallery:delete"
+  | "gallery:manage"
   | "gallery:read"
   | "gallery:write"
+  | "seating:view"
+  | "seating:assign_seats"
+  | "seating:edit_layout"
+  | "seating:manage"
   | "seating:read"
   | "seating:assign"
   | "seating:assign_team"
-  | "roles:read"
+  | "roles:view"
+  | "roles:create"
+  | "roles:edit"
+  | "roles:delete"
+  | "roles:manage_permissions"
   | "roles:manage"
+  | "roles:read"
+  | "appUsers:view"
+  | "appUsers:create"
+  | "appUsers:edit"
+  | "appUsers:delete"
+  | "appUsers:invite"
+  | "appUsers:suspend"
+  | "appUsers:manage"
   | "appUsers:read"
   | "appUsers:manage";
 
@@ -99,10 +138,20 @@ export function hasPermission(roleKey: AppRole, permission: Permission): boolean
   return role.resolvedPermissions.includes(permission);
 }
 
+export function canAccessModuleAction(
+  roleKey: AppRole,
+  module: RbacModule,
+  actionKey: string,
+): boolean {
+  const role = getRoleFromRegistry(roleKey);
+  if (!role) return false;
+  return hasModulePermissionAction(module, role.permissions[module], actionKey);
+}
+
 export function canViewModule(roleKey: AppRole, module: RbacModule): boolean {
   const role = getRoleFromRegistry(roleKey);
   if (!role) return module === "dashboard";
-  return role.permissions[module]?.view ?? false;
+  return moduleHasAnyAccess(role.permissions[module]);
 }
 
 export function canManageModule(roleKey: AppRole, module: RbacModule): boolean {
@@ -112,8 +161,8 @@ export function canManageModule(roleKey: AppRole, module: RbacModule): boolean {
 }
 
 export function canAccessNav(roleKey: AppRole, href: string): boolean {
-  const module = NAV_PATH_MODULES[href];
-  if (!module) {
+  const matchedModule = NAV_PATH_MODULES[href];
+  if (!matchedModule) {
     if (href.startsWith("/projects/")) {
       return canViewModule(roleKey, "projects");
     }
@@ -122,11 +171,16 @@ export function canAccessNav(roleKey: AppRole, href: string): boolean {
     }
     return true;
   }
-  return canViewModule(roleKey, module);
+  return canViewModule(roleKey, matchedModule);
 }
 
 export function canManageProjects(roleKey: AppRole): boolean {
   return (
+    canAccessModuleAction(roleKey, "projects", "create") ||
+    canAccessModuleAction(roleKey, "projects", "edit") ||
+    canAccessModuleAction(roleKey, "projects", "delete") ||
+    canAccessModuleAction(roleKey, "projects", "assign") ||
+    canAccessModuleAction(roleKey, "projects", "changeStatus") ||
     hasPermission(roleKey, "projects:manage") ||
     hasPermission(roleKey, "projects:manage_team")
   );
@@ -134,7 +188,9 @@ export function canManageProjects(roleKey: AppRole): boolean {
 
 /** Admin, Manager, and Project Lead — may assign squad projects to employees. */
 export function canAssignEmployeeProjects(roleKey: AppRole): boolean {
-  return canManageProjects(roleKey);
+  return (
+    canAccessModuleAction(roleKey, "projects", "assign") || canManageProjects(roleKey)
+  );
 }
 
 export function canManageProjectForTeam(
@@ -142,6 +198,18 @@ export function canManageProjectForTeam(
   projectTeam: TeamName,
   userTeam?: TeamName,
 ): boolean {
+  if (
+    canAccessModuleAction(roleKey, "projects", "create") ||
+    canAccessModuleAction(roleKey, "projects", "edit") ||
+    canAccessModuleAction(roleKey, "projects", "delete") ||
+    canAccessModuleAction(roleKey, "projects", "assign") ||
+    canAccessModuleAction(roleKey, "projects", "changeStatus")
+  ) {
+    if (!userTeam || !hasPermission(roleKey, "projects:manage_team")) {
+      return true;
+    }
+    return userTeam === projectTeam;
+  }
   if (hasPermission(roleKey, "projects:manage")) return true;
   if (hasPermission(roleKey, "projects:manage_team")) {
     return !!userTeam && userTeam === projectTeam;
@@ -182,11 +250,18 @@ export function filterEmployeesForUser(
 }
 
 export function canWriteEmployees(roleKey: AppRole): boolean {
-  return canManageModule(roleKey, "teamMembers");
+  return (
+    canManageModule(roleKey, "teamMembers") ||
+    canAccessModuleAction(roleKey, "teamMembers", "create") ||
+    canAccessModuleAction(roleKey, "teamMembers", "edit") ||
+    canAccessModuleAction(roleKey, "teamMembers", "delete") ||
+    canAccessModuleAction(roleKey, "teamMembers", "assignProjects")
+  );
 }
 
 export function canAssignSeating(roleKey: AppRole): boolean {
   return (
+    canAccessModuleAction(roleKey, "seating", "assignSeats") ||
     hasPermission(roleKey, "seating:assign") ||
     hasPermission(roleKey, "seating:assign_team")
   );
@@ -197,6 +272,12 @@ export function canAssignEmployeeToBay(
   employee: Employee | undefined,
   userTeam?: TeamName,
 ): boolean {
+  if (
+    canAccessModuleAction(roleKey, "seating", "assignSeats") &&
+    !hasPermission(roleKey, "seating:assign_team")
+  ) {
+    return true;
+  }
   if (hasPermission(roleKey, "seating:assign")) return true;
   if (hasPermission(roleKey, "seating:assign_team")) {
     if (!employee || !userTeam) return false;
@@ -206,7 +287,12 @@ export function canAssignEmployeeToBay(
 }
 
 export function canWriteGallery(roleKey: AppRole): boolean {
-  return canManageModule(roleKey, "gallery");
+  return (
+    canManageModule(roleKey, "gallery") ||
+    canAccessModuleAction(roleKey, "gallery", "upload") ||
+    canAccessModuleAction(roleKey, "gallery", "edit") ||
+    canAccessModuleAction(roleKey, "gallery", "delete")
+  );
 }
 
 export function buildAccessContext(roleKey: AppRole, team?: TeamName) {
@@ -218,6 +304,8 @@ export function buildAccessContext(roleKey: AppRole, team?: TeamName) {
     modules: def.modules,
     canView: (module: RbacModule) => canViewModule(roleKey, module),
     canManage: (module: RbacModule) => canManageModule(roleKey, module),
+    canAccess: (module: RbacModule, actionKey: string) =>
+      canAccessModuleAction(roleKey, module, actionKey),
     canManageProjects: canManageProjects(roleKey),
     canWriteEmployees: canWriteEmployees(roleKey),
     canAssignSeating: canAssignSeating(roleKey),

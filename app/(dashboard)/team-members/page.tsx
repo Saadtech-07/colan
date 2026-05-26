@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   BriefcaseBusiness,
   ChevronRight,
@@ -10,12 +10,9 @@ import {
   Search,
   ShieldCheck,
   UserRoundCheck,
-  UserRoundPlus,
   UserX2,
   Users2,
 } from "lucide-react";
-import { EditEmployeeDialog } from "@/components/features/edit-employee-dialog";
-import { ManageEmployeeProjectsDialog } from "@/components/features/manage-employee-projects-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,18 +27,12 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { employeeProfilePath } from "@/lib/employee-slug";
-import { LOADING_PRESETS } from "@/lib/loading-presets";
-import { parseApiError, useAppState } from "@/providers/app-state";
-import { useGlobalLoading } from "@/providers/global-loading";
-import { canManageProject } from "@/lib/permissions";
+import { useAppState } from "@/providers/app-state";
 import { teamTabLabel } from "@/lib/team-utils";
 import {
   buildWorkforceAccess,
   employeeActiveProjects,
   employeeAssignedProjects,
-  employeeAvailabilityState,
-  employeeCompletionRate,
-  employeeWorkloadPercent,
   employeeWorkspaceStatus,
   formatCsvValue,
   workforceAnalytics,
@@ -58,7 +49,6 @@ const ROLE_TABS = [
   { key: "Intern", label: "Interns" },
 ] as const;
 
-type FilterValue = "all" | "available" | "busy" | "capacity";
 type AssignmentFilterValue = "all" | "with-projects" | "without-projects";
 type SeatingFilterValue = "all" | "assigned" | "unassigned";
 
@@ -71,25 +61,6 @@ function getInitials(name: string) {
       .join("")
       .slice(0, 2)
       .toUpperCase() || "?"
-  );
-}
-
-function findCurrentEmployee(
-  employees: ReturnType<typeof useAppState>["employees"],
-  user: ReturnType<typeof useAppState>["user"],
-) {
-  if (!user) return null;
-  const email = user.email.trim().toLowerCase();
-  return (
-    employees.find(
-      (employee) => employee.directory?.workEmail?.trim().toLowerCase() === email,
-    ) ??
-    employees.find(
-      (employee) =>
-        employee.name.trim().toLowerCase() === user.name.trim().toLowerCase() &&
-        (!user.team || employee.team === user.team),
-    ) ??
-    null
   );
 }
 
@@ -110,29 +81,16 @@ function floorZoneLabel(bayNumber: string) {
 }
 
 export default function TeamMembersPage() {
-  const router = useRouter();
-  const { employees, projects, access, refreshData, teamNames, user } = useAppState();
-  const { withLoading } = useGlobalLoading();
+  const { employees, projects, access, teamNames } = useAppState();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
   const [roleTab, setRoleTab] = React.useState<string>("all");
   const [search, setSearch] = React.useState("");
-  const [availabilityFilter, setAvailabilityFilter] = React.useState<FilterValue>("all");
   const [assignmentFilter, setAssignmentFilter] =
     React.useState<AssignmentFilterValue>("all");
   const [seatingFilter, setSeatingFilter] = React.useState<SeatingFilterValue>("all");
 
   const workforceAccess = React.useMemo(
     () => buildWorkforceAccess(access),
-    [access],
-  );
-  const currentEmployee = React.useMemo(
-    () => findCurrentEmployee(employees, user),
-    [employees, user],
-  );
-
-  const canManageProjectForUser = React.useCallback(
-    (project: (typeof projects)[number]) =>
-      !!access && canManageProject(access.role, project.teams, access.team),
     [access],
   );
 
@@ -145,7 +103,6 @@ export default function TeamMembersPage() {
     const query = search.trim().toLowerCase();
 
     return teamScopedEmployees.filter((employee) => {
-      const availability = employeeAvailabilityState(employee, projects).label;
       const assignedProjects = employeeAssignedProjects(employee, projects);
       const seatAssigned = Boolean(employee.bayNumber);
 
@@ -158,11 +115,6 @@ export default function TeamMembersPage() {
         employee.directory?.workEmail?.toLowerCase().includes(query);
 
       const matchesRole = roleTab === "all" || employee.role === roleTab;
-      const matchesAvailability =
-        availabilityFilter === "all" ||
-        (availabilityFilter === "available" && availability === "Available") ||
-        (availabilityFilter === "busy" && availability === "Busy") ||
-        (availabilityFilter === "capacity" && availability === "At capacity");
       const matchesAssignment =
         assignmentFilter === "all" ||
         (assignmentFilter === "with-projects" && assignedProjects.length > 0) ||
@@ -175,14 +127,12 @@ export default function TeamMembersPage() {
       return (
         matchesSearch &&
         matchesRole &&
-        matchesAvailability &&
         matchesAssignment &&
         matchesSeating
       );
     });
   }, [
     assignmentFilter,
-    availabilityFilter,
     projects,
     roleTab,
     search,
@@ -206,7 +156,6 @@ export default function TeamMembersPage() {
         "Phone",
         "Seat",
         "Assigned Projects",
-        "Workload %",
       ],
       ...filteredEmployees.map((employee) => [
         employee.employeeId,
@@ -217,7 +166,6 @@ export default function TeamMembersPage() {
         employee.directory?.phone ?? "",
         employee.bayNumber ?? "",
         employeeAssignedProjects(employee, projects).length,
-        employeeWorkloadPercent(employee, projects),
       ]),
     ];
 
@@ -289,12 +237,6 @@ export default function TeamMembersPage() {
               hint="People available for new work"
             />
             <AnalyticsCard
-              icon={<UserRoundPlus className="h-5 w-5 text-cyan-500" />}
-              title="Available Employees"
-              value={String(analytics.availableEmployees)}
-              hint="Low current workload"
-            />
-            <AnalyticsCard
               icon={<BriefcaseBusiness className="h-5 w-5 text-violet-500" />}
               title="Active Projects Assigned"
               value={String(analytics.activeProjectsAssigned)}
@@ -317,18 +259,7 @@ export default function TeamMembersPage() {
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
-              <FilterSelect
-                value={availabilityFilter}
-                onValueChange={(value) => setAvailabilityFilter(value as FilterValue)}
-                placeholder="Availability"
-                options={[
-                  { value: "all", label: "All availability" },
-                  { value: "available", label: "Available" },
-                  { value: "busy", label: "Busy" },
-                  { value: "capacity", label: "At capacity" },
-                ]}
-              />
+            <div className="grid gap-3 sm:grid-cols-2">
               <FilterSelect
                 value={assignmentFilter}
                 onValueChange={(value) =>
@@ -400,13 +331,10 @@ export default function TeamMembersPage() {
       <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
         {filteredEmployees.map((employee) => {
           const profileHref = employeeProfilePath(employee);
-          const assigned = employeeAssignedProjects(employee, projects);
           const activeProjects = employeeActiveProjects(employee, projects);
-          const workload = employeeWorkloadPercent(employee, projects);
-          const completionRate = employeeCompletionRate(employee, projects);
-          const availability = employeeAvailabilityState(employee, projects);
           const workspace = employeeWorkspaceStatus(employee);
-          const isSelf = currentEmployee?.id === employee.id;
+          const visibleProjects = activeProjects.slice(0, 3);
+          const remainingProjects = activeProjects.length - visibleProjects.length;
 
           return (
             <Card
@@ -428,14 +356,13 @@ export default function TeamMembersPage() {
                         </p>
                         <p className="text-xs text-muted-foreground">{employee.employeeId}</p>
                       </div>
-                      <div
-                        className={cn(
-                          "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold",
-                          availability.toneClass,
-                        )}
+                      <Link
+                        href={profileHref}
+                        className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-background/85 px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:text-primary"
                       >
-                        {availability.label}
-                      </div>
+                        View Profile
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Link>
                     </div>
 
                     <div className="flex flex-wrap gap-1.5">
@@ -447,19 +374,37 @@ export default function TeamMembersPage() {
                   </div>
                 </div>
 
+                <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                    Current projects
+                  </p>
+                  {visibleProjects.length === 0 ? (
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      No active project assigned
+                    </p>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {visibleProjects.map((project) => (
+                        <span
+                          key={project.id}
+                          className="max-w-full truncate rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-foreground"
+                          title={project.name}
+                        >
+                          {project.name}
+                        </span>
+                      ))}
+                      {remainingProjects > 0 && (
+                        <span className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground">
+                          +{remainingProjects} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid gap-3 sm:grid-cols-2">
                   <MiniMetric
-                    label="Assigned projects"
-                    value={`${activeProjects.length} active`}
-                    hint={`${assigned.length} total`}
-                  />
-                  <MiniMetric
-                    label="Workload"
-                    value={`${workload}%`}
-                    hint={`${completionRate}% completion`}
-                  />
-                  <MiniMetric
-                    label="Workspace"
+                    label="Workspace / Seat"
                     value={workspace.label}
                     hint={floorZoneLabel(employee.bayNumber)}
                   />
@@ -468,97 +413,6 @@ export default function TeamMembersPage() {
                     value={joinDateLabel(employee.directory?.joinedDate)}
                     hint={employee.directory?.workEmail ?? "No work email"}
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>Workload progress</span>
-                    <span>{workload}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-muted/70">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all duration-500",
-                        workload >= 85
-                          ? "bg-gradient-to-r from-destructive to-rose-400"
-                          : workload >= 55
-                            ? "bg-gradient-to-r from-amber-500 to-orange-400"
-                            : "bg-gradient-to-r from-primary via-indigo-500 to-cyan-400",
-                      )}
-                      style={{ width: `${workload}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-4">
-                  {workforceAccess.canAssignProjects && (
-                    <ManageEmployeeProjectsDialog
-                      employee={employee}
-                      projects={projects}
-                      canManage={workforceAccess.canAssignProjects}
-                      canManageProject={canManageProjectForUser}
-                      onUpdated={() =>
-                        withLoading(
-                          "employee-projects",
-                          LOADING_PRESETS.updatingProjectMembership,
-                          refreshData,
-                        )
-                      }
-                    />
-                  )}
-
-                  {workforceAccess.canManageEmployees && (
-                    <EditEmployeeDialog
-                      employee={employee}
-                      projectCount={assigned.length}
-                      onSave={async (id, patch) => {
-                        await withLoading(
-                          "employee-save",
-                          LOADING_PRESETS.updatingEmployee,
-                          async () => {
-                            const res = await fetch(`/api/employees/${id}`, {
-                              method: "PATCH",
-                              credentials: "include",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify(patch),
-                            });
-                            if (!res.ok) throw new Error(await parseApiError(res));
-                            await res.json();
-                            await refreshData();
-                          },
-                        );
-                      }}
-                      onDelete={async (id) => {
-                        await withLoading(
-                          "employee-delete",
-                          LOADING_PRESETS.removingEmployee,
-                          async () => {
-                            const res = await fetch(`/api/employees/${id}`, {
-                              method: "DELETE",
-                              credentials: "include",
-                            });
-                            if (!res.ok) throw new Error(await parseApiError(res));
-                            await refreshData();
-                          },
-                        );
-                      }}
-                      triggerLabel="Edit"
-                    />
-                  )}
-
-                  {(workforceAccess.canManageEmployees ||
-                    workforceAccess.canAssignProjects ||
-                    isSelf) && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="ml-auto h-9 rounded-2xl border-border/70 bg-background/80 px-3 shadow-sm"
-                      onClick={() => router.push(profileHref)}
-                    >
-                      View Profile
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
               </CardContent>
             </Card>

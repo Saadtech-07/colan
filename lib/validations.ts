@@ -38,9 +38,11 @@ export const teamCreateSchema = z.object({
 
 const modulePermissionSchema = z.object({
 
-  view: z.boolean(),
+  view: z.boolean().optional(),
 
-  manage: z.boolean(),
+  manage: z.boolean().optional(),
+
+  actions: z.record(z.string(), z.boolean()).optional(),
 
 });
 

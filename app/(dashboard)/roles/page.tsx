@@ -15,7 +15,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ManageRoleDialog } from "@/components/features/manage-role-dialog";
-import { MODULE_LABELS, RBAC_MODULES } from "@/lib/rbac-modules";
+import { LoadingIndicator } from "@/components/ui/loading-indicator";
+import {
+  MODULE_LABELS,
+  RBAC_MODULES,
+  getEnabledModuleActionLabels,
+  moduleHasAnyAccess,
+} from "@/lib/rbac-modules";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
@@ -30,14 +36,26 @@ const ROLE_ICONS: Record<string, typeof Crown> = {
 };
 
 function moduleAccessLabels(role: WorkspaceRole): { title: string; mode: string }[] {
-  return RBAC_MODULES.filter((m) => role.permissions[m]?.view).map((m) => ({
-    title: MODULE_LABELS[m].title,
-    mode: role.permissions[m].manage ? "Manage" : "View",
-  }));
+  return RBAC_MODULES.filter((module) => moduleHasAnyAccess(role.permissions[module])).map(
+    (module) => {
+      const labels = getEnabledModuleActionLabels(module, role.permissions[module]);
+      const actionSummary =
+        role.permissions[module].manage
+          ? "Full access"
+          : labels.length <= 3
+            ? labels.join(", ")
+            : `${labels.slice(0, 2).join(", ")} +${labels.length - 2} more`;
+
+      return {
+        title: MODULE_LABELS[module].title,
+        mode: actionSummary,
+      };
+    },
+  );
 }
 
 export default function RolesPage() {
-  const { access, user, workspaceRoles, refreshWorkspaceRoles, canManageRoles } =
+  const { access, workspaceRoles, refreshWorkspaceRoles, canManageRoles } =
     useAppState();
   const { withLoading } = useGlobalLoading();
   const [search, setSearch] = React.useState("");
@@ -62,6 +80,7 @@ export default function RolesPage() {
   }, [refreshWorkspaceRoles]);
 
   React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadRoles();
   }, [loadRoles]);
 
@@ -146,7 +165,7 @@ export default function RolesPage() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading roles…</p>
+        <LoadingIndicator title="Loading Roles" className="py-12" />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {filtered.map((role) => {
@@ -214,11 +233,11 @@ export default function RolesPage() {
                 <CardContent className="space-y-4">
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Module access
+                      Permission matrix
                     </p>
                     <ul className="flex flex-wrap gap-1.5">
                       {modules.length === 0 ? (
-                        <li className="text-xs text-muted-foreground">No modules enabled</li>
+                        <li className="text-xs text-muted-foreground">No permissions enabled</li>
                       ) : (
                         modules.map((m) => (
                           <li key={`${role.id}-${m.title}`}>

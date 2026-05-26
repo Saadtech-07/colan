@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { LogOut } from "lucide-react";
 import { usePathname } from "next/navigation";
@@ -15,6 +16,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { useSidebar } from "@/components/layout/sidebar-context";
+import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
 
 const PAGE_META: Array<{
@@ -83,15 +86,48 @@ function headerMetaForPath(pathname: string) {
   );
 }
 
+function subscribeToMobileViewport(callback: () => void) {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  const mediaQuery = window.matchMedia("(max-width: 1023px)");
+  mediaQuery.addEventListener("change", callback);
+  return () => mediaQuery.removeEventListener("change", callback);
+}
+
+function getMobileViewportSnapshot() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.matchMedia("(max-width: 1023px)").matches;
+}
+
 export function AppHeader() {
   const { user, logout, access } = useAppState();
+  const { collapsed, mobileOpen } = useSidebar();
   const pathname = usePathname();
   const pageMeta = headerMetaForPath(pathname);
+  const isMobileViewport = React.useSyncExternalStore(
+    subscribeToMobileViewport,
+    getMobileViewportSnapshot,
+    () => false,
+  );
+  const showPageMeta = isMobileViewport ? !mobileOpen : collapsed;
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
-      <div className="min-w-0">
-        <div>
+      <div
+        className={cn(
+          "min-w-0 transition-all duration-300 ease-out",
+          showPageMeta
+            ? "max-w-full opacity-100"
+            : "pointer-events-none max-w-0 overflow-hidden opacity-0",
+        )}
+        aria-hidden={!showPageMeta}
+      >
+        <div className="min-w-0">
           <p className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg">
             {pageMeta.title}
           </p>

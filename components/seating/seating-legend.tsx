@@ -10,57 +10,63 @@ type Props = {
 export function SeatingLegend({ teamNames }: Props) {
   const items = teamLegendItems(teamNames);
   return (
-    <div className="rounded-xl border border-border/80 bg-card p-4">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Legend
-      </p>
-      <ul className="space-y-2 text-xs">
-        <li className="flex items-center gap-2">
-          <span className="h-6 w-10 rounded-sm border-2 border-black/70 bg-slate-100" />
-          <span>Empty seat</span>
+    <section className="rounded-[24px] border border-border/70 bg-card/80 p-4 shadow-sm sm:p-5">
+      <div className="mb-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+          Legend
+        </p>
+        <h3 className="mt-1 text-base font-semibold tracking-tight">Map indicators</h3>
+      </div>
+
+      <ul className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+        <li className="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/75 px-3 py-2.5 text-sm">
+          <span className="h-7 w-11 rounded-xl border-2 border-black/70 bg-slate-100 shadow-sm" />
+          <span className="font-medium">Empty seat</span>
         </li>
-        <li className="flex items-center gap-2">
-          <span className="h-6 w-10 rounded-sm border-2 border-sky-500/60 bg-sky-500/25" />
-          <span>Occupied seat</span>
+        <li className="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/75 px-3 py-2.5 text-sm">
+          <span className="h-7 w-11 rounded-xl border-2 border-sky-500/40 bg-sky-500/20 shadow-sm" />
+          <span className="font-medium">Occupied seat</span>
         </li>
-        <li className="flex items-center gap-2">
-          <span className="h-6 w-10 rounded-sm ring-2 ring-primary ring-offset-1" />
-          <span>Selected</span>
+        <li className="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/75 px-3 py-2.5 text-sm">
+          <span className="h-7 w-11 rounded-xl bg-zinc-500 shadow-sm" />
+          <span className="font-medium">Pillar</span>
         </li>
-        <li className="flex items-center gap-2">
-          <span className="h-6 w-10 rounded-sm bg-zinc-500" />
-          <span>Pillar</span>
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="h-6 min-w-[48px] rounded-sm bg-sky-400/90 px-1 text-[8px] text-white">
+        <li className="flex items-center gap-3 rounded-2xl border border-border/70 bg-background/75 px-3 py-2.5 text-sm">
+          <span className="inline-flex h-7 min-w-[48px] items-center justify-center rounded-xl bg-sky-400/90 px-2 text-[9px] font-bold uppercase tracking-[0.2em] text-white shadow-sm">
             IN
           </span>
-          <span>Entrance</span>
+          <span className="font-medium">Entrance</span>
         </li>
       </ul>
+
       {items.length > 0 && (
         <>
-          <p className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Teams
-          </p>
-          <ul className="flex flex-wrap gap-2">
+          <div className="mb-3 mt-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Teams
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Team color tags used on occupied seats.
+            </p>
+          </div>
+          <ul className="flex flex-wrap gap-2.5">
             {items.map(({ team, label, colors }) => (
               <li
                 key={team}
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5",
+                  "inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium shadow-sm",
                   colors.bg,
                   colors.border,
                   colors.text,
                 )}
               >
-                <span className={cn("h-2 w-2 rounded-full", colors.dot)} />
+                <span className={cn("h-2.5 w-2.5 rounded-full shadow-sm", colors.dot)} />
                 {label}
               </li>
             ))}
           </ul>
         </>
       )}
-    </div>
+    </section>
   );
 }
