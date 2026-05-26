@@ -9,6 +9,7 @@ type Props = {
   canManage: boolean;
   canManageProject: (project: Project) => boolean;
   onUpdated: () => void | Promise<void>;
+  triggerClassName?: string;
 };
 
 /** @deprecated Use ProjectAssignmentModal directly. */
@@ -18,6 +19,7 @@ export function ManageEmployeeProjectsDialog({
   canManage,
   canManageProject,
   onUpdated,
+  triggerClassName,
 }: Props) {
   if (!canManage) return null;
 
@@ -27,6 +29,7 @@ export function ManageEmployeeProjectsDialog({
       projects={projects}
       canManageProject={canManageProject}
       onUpdated={onUpdated}
+      triggerClassName={triggerClassName}
     />
   );
 }

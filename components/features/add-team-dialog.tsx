@@ -58,13 +58,16 @@ export function AddTeamDialog({ onCreated }: Props) {
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" className="gap-2 shadow-sm">
+        <Button
+          variant="outline"
+          className="h-11 gap-2 rounded-2xl border-border/70 bg-background/80 px-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+        >
           <Plus className="h-4 w-4" />
           Add team
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="border-border/70 bg-background/95 shadow-2xl backdrop-blur-xl sm:max-w-lg sm:rounded-[28px]">
+        <DialogHeader className="space-y-2 border-b border-border/60 pb-4">
           <DialogTitle>New project team</DialogTitle>
           <DialogDescription>
             Create a squad for filtering projects and assigning work. Saved to the
@@ -84,6 +87,7 @@ export function AddTeamDialog({ onCreated }: Props) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Java, Mobile, Data"
+              className="h-11 rounded-2xl border-border/70 bg-background/80"
               onKeyDown={(e) => {
                 if (e.key === "Enter") void submit();
               }}
@@ -95,16 +99,22 @@ export function AddTeamDialog({ onCreated }: Props) {
             )}
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="border-t border-border/60 pt-4">
           <Button
             type="button"
             variant="outline"
             onClick={() => setOpen(false)}
             disabled={saving}
+            className="h-11 rounded-2xl border-border/70 bg-background/80"
           >
             Cancel
           </Button>
-          <Button type="button" onClick={submit} disabled={saving || !name.trim()}>
+          <Button
+            type="button"
+            onClick={submit}
+            disabled={saving || !name.trim()}
+            className="h-11 rounded-2xl px-5"
+          >
             {saving ? "Creating..." : "Create team"}
           </Button>
         </DialogFooter>

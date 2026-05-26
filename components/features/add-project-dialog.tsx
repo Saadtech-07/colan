@@ -91,12 +91,12 @@ export function AddProjectDialog({ onCreate, teamOptions, lockedTeam }: Props) {
       }}
     >
       <DialogTrigger asChild>
-        <Button className="shadow-sm transition-transform hover:-translate-y-0.5">
+        <Button className="h-11 rounded-2xl px-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
           Add Project
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="border-border/70 bg-background/95 shadow-2xl backdrop-blur-xl sm:max-w-xl sm:rounded-[28px]">
+        <DialogHeader className="space-y-2 border-b border-border/60 pb-4">
           <DialogTitle>New project</DialogTitle>
           <DialogDescription>
             {lockedTeam
@@ -117,6 +117,7 @@ export function AddProjectDialog({ onCreate, teamOptions, lockedTeam }: Props) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Tommy platform rollout"
+              className="h-11 rounded-2xl border-border/70 bg-background/80"
             />
           </div>
           <div className="space-y-2">
@@ -146,6 +147,7 @@ export function AddProjectDialog({ onCreate, teamOptions, lockedTeam }: Props) {
                 type="date"
                 value={assignedDate}
                 onChange={(e) => setAssignedDate(e.target.value)}
+                className="h-11 rounded-2xl border-border/70 bg-background/80"
               />
             </div>
             <div className="space-y-2">
@@ -155,6 +157,7 @@ export function AddProjectDialog({ onCreate, teamOptions, lockedTeam }: Props) {
                 type="date"
                 value={lastDate}
                 onChange={(e) => setLastDate(e.target.value)}
+                className="h-11 rounded-2xl border-border/70 bg-background/80"
               />
             </div>
           </div>
@@ -164,12 +167,12 @@ export function AddProjectDialog({ onCreate, teamOptions, lockedTeam }: Props) {
               value={status}
               onValueChange={(v) => setStatus(v as ProjectStatus)}
             >
-              <SelectTrigger>
+              <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/80">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="rounded-2xl border-border/70 bg-background/95 backdrop-blur-xl">
                 {STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>
+                  <SelectItem key={s} value={s} className="rounded-xl">
                     {s}
                   </SelectItem>
                 ))}
@@ -177,16 +180,17 @@ export function AddProjectDialog({ onCreate, teamOptions, lockedTeam }: Props) {
             </Select>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="border-t border-border/60 pt-4">
           <Button
             type="button"
             variant="outline"
             onClick={() => setOpen(false)}
             disabled={isSaving}
+            className="h-11 rounded-2xl border-border/70 bg-background/80"
           >
             Cancel
           </Button>
-          <Button type="button" onClick={submit} disabled={isSaving}>
+          <Button type="button" onClick={submit} disabled={isSaving} className="h-11 rounded-2xl px-5">
             {isSaving ? "Creating..." : "Create project"}
           </Button>
         </DialogFooter>

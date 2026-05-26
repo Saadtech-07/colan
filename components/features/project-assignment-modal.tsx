@@ -40,6 +40,7 @@ type Props = {
   projects: Project[];
   canManageProject: (project: Project) => boolean;
   onUpdated: () => void | Promise<void>;
+  triggerClassName?: string;
 };
 
 function formatProjectDate(value: string): string {
@@ -58,6 +59,7 @@ export function ProjectAssignmentModal({
   projects,
   canManageProject,
   onUpdated,
+  triggerClassName,
 }: Props) {
   const [open, setOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
@@ -83,9 +85,11 @@ export function ProjectAssignmentModal({
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    /* eslint-disable react-hooks/set-state-in-effect */
     setLoading(true);
     setError(null);
     setSearch("");
+    /* eslint-enable react-hooks/set-state-in-effect */
 
     (async () => {
       try {
@@ -115,7 +119,7 @@ export function ProjectAssignmentModal({
     return () => {
       cancelled = true;
     };
-  }, [open, employee.id]);
+  }, [open, employee.id, teamProjects]);
 
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -159,7 +163,11 @@ export function ProjectAssignmentModal({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
+        <Button
+          variant="outline"
+          size="sm"
+          className={triggerClassName ?? "gap-1.5"}
+        >
           <Briefcase className="h-3.5 w-3.5" />
           Projects
           {assigned.length > 0 && (
