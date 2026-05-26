@@ -16,6 +16,7 @@ export type VerifiedAppUser = {
   appRole: AppRole;
   team?: TeamName;
   imageUrl: string;
+  isProfileCompleted: boolean;
 };
 
 type SeedUser = {
@@ -25,6 +26,7 @@ type SeedUser = {
   appRole: AppRole;
   team?: TeamName;
   imageUrl: string;
+  isProfileCompleted?: boolean;
 };
 
 const SEED_USERS: SeedUser[] = [
@@ -34,6 +36,7 @@ const SEED_USERS: SeedUser[] = [
     name: "Alex Morgan",
     appRole: "admin",
     imageUrl: dicebearAvatarPng("admin"),
+    isProfileCompleted: true,
   },
   {
     email: "manager@colan.io",
@@ -41,6 +44,7 @@ const SEED_USERS: SeedUser[] = [
     name: "Sofia Nielsen",
     appRole: "manager",
     imageUrl: dicebearAvatarPng("sofia-mgr"),
+    isProfileCompleted: true,
   },
   {
     email: "lead@colan.io",
@@ -49,6 +53,7 @@ const SEED_USERS: SeedUser[] = [
     appRole: "lead",
     team: "React Team",
     imageUrl: dicebearAvatarPng("priya-lead"),
+    isProfileCompleted: true,
   },
   {
     email: "employee@colan.io",
@@ -57,10 +62,15 @@ const SEED_USERS: SeedUser[] = [
     appRole: "employee",
     team: "React Team",
     imageUrl: dicebearAvatarPng("jamie"),
+    isProfileCompleted: true,
   },
 ];
 
 const DEV_APP_USERS = SEED_USERS;
+
+function normalizeProfileCompleted(value: boolean | undefined): boolean {
+  return value ?? true;
+}
 
 async function upsertSeedUser(
   col: import("mongodb").Collection<AppUserDocument>,
@@ -77,6 +87,10 @@ async function upsertSeedUser(
     team: u.team,
     employeeId: `COL-${Math.floor(Math.random() * 9000) + 1000}`,
     imageUrl: u.imageUrl,
+    isProfileCompleted: normalizeProfileCompleted(u.isProfileCompleted),
+    updatedProfileAt: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
   });
 }
 
@@ -90,6 +104,10 @@ export async function ensureAppUsersSeed(
   for (const u of SEED_USERS) {
     await upsertSeedUser(col, u, rounds);
   }
+  await col.updateMany(
+    { isProfileCompleted: { $exists: false } },
+    { $set: { isProfileCompleted: true, updatedProfileAt: new Date() } },
+  );
 }
 
 export type AppUserCreateInput = {
@@ -109,6 +127,25 @@ export type AppUserUpdateInput = {
   team?: TeamName;
   employeeId?: string;
   imageUrl?: string;
+};
+
+export type AppUserProfileDTO = {
+  email: string;
+  name: string;
+  appRole: AppRole;
+  team?: TeamName;
+  employeeId: string;
+  imageUrl: string;
+  isProfileCompleted: boolean;
+  updatedProfileAt?: string;
+};
+
+export type ProfileSetupUpdateInput = {
+  email: string;
+  name: string;
+  imageUrl?: string;
+  currentPassword?: string;
+  newPassword?: string;
 };
 
 export async function listAppUsers(): Promise<ReturnType<typeof appUserDocToPublic>[]> {
@@ -141,6 +178,7 @@ export async function createAppUser(
     team: input.team,
     employeeId: input.employeeId,
     imageUrl: input.imageUrl ?? dicebearAvatarPng(email),
+    isProfileCompleted: false,
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -316,6 +354,7 @@ export async function verifyAppUserCredentials(
       appRole: u.appRole,
       team: u.team,
       imageUrl: u.imageUrl,
+      isProfileCompleted: normalizeProfileCompleted(u.isProfileCompleted),
     };
   }
 
@@ -338,5 +377,107 @@ export async function verifyAppUserCredentials(
     appRole,
     team,
     imageUrl: doc.imageUrl,
+    isProfileCompleted: normalizeProfileCompleted(doc.isProfileCompleted),
   };
+}
+
+function appUserDocToProfile(doc: AppUserDocument): AppUserProfileDTO {
+  return {
+    email: doc.email,
+    name: doc.name,
+    appRole: doc.appRole,
+    team: doc.team,
+    employeeId: doc.employeeId,
+    imageUrl: doc.imageUrl,
+    isProfileCompleted: normalizeProfileCompleted(doc.isProfileCompleted),
+    updatedProfileAt: doc.updatedProfileAt?.toISOString(),
+  };
+}
+
+export async function getCurrentAppUserProfile(email: string): Promise<AppUserProfileDTO> {
+  const normalized = email.toLowerCase().trim();
+  if (!normalized) throw new Error("Invalid user email.");
+
+  const db = await getDb();
+  if (!db) {
+    const user = DEV_APP_USERS.find((item) => item.email === normalized);
+    if (!user) throw new Error("User not found.");
+    return {
+      email: user.email,
+      name: user.name,
+      appRole: user.appRole,
+      team: user.team,
+      employeeId: "DEV-USER",
+      imageUrl: user.imageUrl,
+      isProfileCompleted: normalizeProfileCompleted(user.isProfileCompleted),
+      updatedProfileAt: new Date().toISOString(),
+    };
+  }
+
+  await ensureAppUsersSeed(db);
+  const doc = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).findOne({ email: normalized });
+  if (!doc) throw new Error("User not found.");
+  return appUserDocToProfile(doc);
+}
+
+export async function completeCurrentAppUserProfile(
+  input: ProfileSetupUpdateInput,
+): Promise<AppUserProfileDTO> {
+  const email = input.email.toLowerCase().trim();
+  if (!email) throw new Error("Invalid user email.");
+
+  const db = await getDb();
+  if (!db) throw new Error("MongoDB is not configured.");
+
+  await ensureAppUsersSeed(db);
+  const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
+  const current = await col.findOne({ email });
+  if (!current) throw new Error("User not found.");
+
+  const trimmedName = input.name.trim();
+  if (!trimmedName) throw new Error("Full name is required.");
+
+  const nextImageUrl = input.imageUrl?.trim() ? input.imageUrl.trim() : dicebearAvatarPng(email);
+  const wantsPasswordChange = Boolean(input.newPassword);
+
+  if (wantsPasswordChange) {
+    const currentPassword = input.currentPassword?.trim() ?? "";
+    if (!currentPassword) throw new Error("Current password is required to change password.");
+    const ok = await bcrypt.compare(currentPassword, current.passwordHash);
+    if (!ok) throw new Error("Current password is incorrect.");
+  }
+
+  const updates: Partial<AppUserDocument> = {
+    name: trimmedName,
+    imageUrl: nextImageUrl,
+    isProfileCompleted: true,
+    updatedProfileAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  if (wantsPasswordChange && input.newPassword) {
+    updates.passwordHash = await bcrypt.hash(input.newPassword, 10);
+  }
+
+  const updated = await col.findOneAndUpdate(
+    { _id: current._id },
+    { $set: updates },
+    { returnDocument: "after" },
+  );
+  if (!updated) throw new Error("User not found.");
+
+  await db.collection("employees").updateOne(
+    {
+      $or: [{ email }, { "directory.workEmail": email }],
+    },
+    {
+      $set: {
+        name: trimmedName,
+        imageUrl: nextImageUrl,
+        "directory.workEmail": email,
+      },
+    },
+  );
+
+  return appUserDocToProfile(updated);
 }

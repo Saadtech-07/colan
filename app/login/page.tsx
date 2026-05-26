@@ -27,7 +27,7 @@ import colanlogo2 from "../image/colanlogo2.png";
 export default function LoginPage() {
   const router = useRouter();
 
-  const { status } = useSession();
+  const { data: session, status } = useSession();
 
   const [email, setEmail] = React.useState("admin@colan.io");
   const [password, setPassword] = React.useState("admin123");
@@ -40,9 +40,9 @@ export default function LoginPage() {
 
   React.useEffect(() => {
     if (status === "authenticated") {
-      router.replace("/dashboard");
+      router.replace(session?.user?.isProfileCompleted === false ? "/profile-settings" : "/dashboard");
     }
-  }, [status, router]);
+  }, [router, session?.user?.isProfileCompleted, status]);
 
   const handleSubmit = async (
     e: React.FormEvent
@@ -68,9 +68,14 @@ export default function LoginPage() {
         return;
       }
 
+      const sessionRes = await fetch("/api/auth/session");
+      const nextSession = sessionRes.ok ? ((await sessionRes.json()) as { user?: { isProfileCompleted?: boolean } }) : null;
+      const nextPath =
+        nextSession?.user?.isProfileCompleted === false ? "/profile-settings" : "/dashboard";
+
       router.refresh();
 
-      router.push("/dashboard");
+      router.push(nextPath);
     } finally {
       setPending(false);
     }

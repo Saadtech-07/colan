@@ -46,16 +46,7 @@ export default function ProjectsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            Team-based projects
-          </h1>
-          <p className="mt-1 max-w-2xl text-muted-foreground">
-            Browse delivery work by squad. Open a project to view details when you have
-            edit access.
-          </p>
-        </div>
+      {(isAdmin || access?.canManageProjects) && (
         <div className="flex flex-wrap items-center gap-2">
           {isAdmin && <AddTeamDialog />}
           {access?.canManageProjects && (
@@ -70,7 +61,7 @@ export default function ProjectsPage() {
             />
           )}
         </div>
-      </div>
+      )}
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="no-scrollbar h-auto w-full flex-wrap justify-start gap-1 bg-muted/60 p-1">

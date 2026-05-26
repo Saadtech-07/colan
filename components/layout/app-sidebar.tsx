@@ -54,20 +54,20 @@ function SidebarNavItem({
         onClick={onNavigate}
         title={collapsed ? label : undefined}
         className={cn(
-          "group flex items-center rounded-lg text-sm font-medium transition-all duration-300 ease-in-out",
-          collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2.5",
+          "group flex items-center rounded-xl text-sm font-medium transition-all duration-300 ease-out",
+          collapsed ? "mx-auto h-11 w-11 justify-center" : "gap-3 px-3.5 py-2.5",
           active
-            ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+            ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[0_10px_24px_rgba(2,6,23,0.18)]"
             : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
         )}
       >
-        <Icon className="h-4 w-4 shrink-0 transition-transform duration-200 group-hover:scale-110" />
+        <Icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-200 group-hover:scale-110" />
         <span
           className={cn(
-            "truncate transition-all duration-300 ease-in-out",
+            "truncate transition-all duration-300 ease-out",
             collapsed
-              ? "pointer-events-none w-0 overflow-hidden opacity-0"
-              : "w-auto opacity-100",
+              ? "pointer-events-none max-w-0 overflow-hidden opacity-0 -translate-x-1"
+              : "max-w-[180px] opacity-100 translate-x-0",
           )}
         >
           {label}
@@ -118,35 +118,23 @@ export function AppSidebar() {
     <>
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-300 ease-in-out",
-          showExpandedChrome ? "w-64" : "w-20",
+          "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[0_0_0_1px_rgba(255,255,255,0.03)] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          showExpandedChrome ? "w-64" : "w-24",
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
-        <header className="h-16 shrink-0 overflow-hidden border-b border-sidebar-border transition-all duration-300 ease-in-out">
+        <header className="h-16 shrink-0 overflow-hidden border-b border-sidebar-border transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
           {showExpandedChrome ? (
-            <div className="flex h-full items-center gap-2 px-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 shrink-0 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                onClick={handleSidebarToggle}
-                aria-label={toggleAriaLabel}
-              >
-                {mobileOpen ? (
-                  <X className="h-4 w-4 lg:hidden" />
-                ) : (
-                  <Menu className="h-4 w-4" />
-                )}
-              </Button>
-              <div className="flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden">
-                <img
-                  src={colanlogo.src}
-                  alt="Colan Infotech"
-                  className="h-9 w-auto shrink-0 object-contain transition-all duration-300 ease-in-out"
-                />
-                <div className="min-w-0 flex-1 overflow-hidden">
+            <div className="flex h-full items-center justify-between gap-3 px-3">
+              <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 shadow-sm transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
+                  <img
+                    src={colanlogo.src}
+                    alt="Colan Infotech"
+                    className="h-8 w-auto shrink-0 object-contain"
+                  />
+                </div>
+                <div className="min-w-0 flex-1 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
                   <p className="truncate text-sm font-semibold leading-tight tracking-tight">
                     COLAN INFOTECH
                   </p>
@@ -155,46 +143,50 @@ export function AppSidebar() {
                   </p>
                 </div>
               </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="group h-9 w-9 shrink-0 rounded-xl border border-transparent bg-transparent text-sidebar-foreground/80 transition-all duration-300 hover:border-white/10 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground"
+                onClick={handleSidebarToggle}
+                aria-label={toggleAriaLabel}
+              >
+                {mobileOpen ? (
+                  <X className="h-4 w-4 lg:hidden" />
+                ) : (
+                  <Menu className="h-4 w-4 transition-transform duration-300 group-hover:scale-105" />
+                )}
+              </Button>
             </div>
           ) : (
-            <div className="grid h-full grid-rows-[2rem_1fr] px-1.5">
-              <div className="flex items-center justify-start">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  onClick={handleSidebarToggle}
-                  aria-label={toggleAriaLabel}
-                >
-                  {mobileOpen ? (
-                    <X className="h-4 w-4 lg:hidden" />
-                  ) : (
-                    <Menu className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-              <div className="flex items-center justify-center">
+            <div className="flex h-full items-center justify-center px-3">
+              <button
+                type="button"
+                className="group flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 shadow-sm transition-all duration-300 hover:bg-sidebar-accent/80 hover:ring-white/20"
+                onClick={handleSidebarToggle}
+                aria-label={toggleAriaLabel}
+                title={toggleAriaLabel}
+              >
                 <img
                   src={colanlogo.src}
                   alt="Colan Infotech"
-                  className="h-7 w-7 shrink-0 object-contain object-center transition-all duration-300 ease-in-out"
+                  className="h-6 w-auto shrink-0 object-contain object-center transition-transform duration-300 group-hover:scale-105"
                 />
-              </div>
+              </button>
             </div>
           )}
         </header>
 
         <div
           className={cn(
-            "flex-1 overflow-x-visible overflow-y-auto transition-all duration-300 ease-in-out",
-            showExpandedChrome ? "px-3 py-4" : "px-1.5 py-3",
+            "flex-1 overflow-x-visible overflow-y-auto transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            showExpandedChrome ? "px-3 py-4" : "px-2.5 py-4",
           )}
         >
           <nav
             className={cn(
               "flex flex-col",
-              showExpandedChrome ? "gap-1" : "gap-0.5",
+              showExpandedChrome ? "gap-1.5" : "gap-2",
             )}
           >
             {visibleNav.map((item) => {
@@ -221,7 +213,7 @@ export function AppSidebar() {
         <Separator className="bg-sidebar-border" />
         <div
           className={cn(
-            "shrink-0 overflow-hidden p-4 text-xs text-sidebar-foreground/60 transition-all duration-300 ease-in-out",
+            "shrink-0 overflow-hidden p-4 text-xs text-sidebar-foreground/60 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
             showExpandedChrome ? "max-h-24 opacity-100" : "max-h-0 p-0 opacity-0",
           )}
         >

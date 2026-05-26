@@ -152,6 +152,54 @@ export const appUserUpdateSchema = z.object({
 
 });
 
+const profileImageSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) =>
+      value === "" ||
+      /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value) ||
+      /^https?:\/\//.test(value),
+    "Use an image URL or upload an image file.",
+  );
+
+export const profileSettingsUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1, "Full name is required."),
+    imageUrl: profileImageSchema.optional(),
+    currentPassword: z.string().optional().default(""),
+    newPassword: z.string().optional().default(""),
+    confirmNewPassword: z.string().optional().default(""),
+  })
+  .superRefine((value, ctx) => {
+    const wantsPasswordChange = value.newPassword.trim().length > 0;
+    if (!wantsPasswordChange) return;
+
+    if ((value.currentPassword ?? "").trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["currentPassword"],
+        message: "Current password is required.",
+      });
+    }
+
+    if (value.newPassword!.trim().length < 6) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["newPassword"],
+        message: "New password must be at least 6 characters.",
+      });
+    }
+
+    if ((value.confirmNewPassword ?? "").trim() !== value.newPassword!.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmNewPassword"],
+        message: "Confirm password must match the new password.",
+      });
+    }
+  });
+
 
 
 export const projectCreateSchema = z.object({

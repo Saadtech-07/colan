@@ -30,6 +30,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           appRole,
           team,
           image: row.imageUrl,
+          isProfileCompleted: row.isProfileCompleted,
         };
       },
     }),

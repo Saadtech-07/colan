@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { LogOut } from "lucide-react";
+import { usePathname } from "next/navigation";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -14,25 +16,87 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useAppState } from "@/providers/app-state";
-import colanlogo2 from "@/app/image/colanlogo2.png";
+
+const PAGE_META: Array<{
+  match: RegExp;
+  title: string;
+  subtitle: string;
+}> = [
+  {
+    match: /^\/dashboard$/,
+    title: "Dashboard",
+    subtitle: "Company-wide project pulse and team workload.",
+  },
+  {
+    match: /^\/projects$/,
+    title: "Team-based projects",
+    subtitle: "Browse delivery work by squad and open a project to view details.",
+  },
+  {
+    match: /^\/projects\/.+$/,
+    title: "Project details",
+    subtitle: "Review delivery status, members, and timeline information.",
+  },
+  {
+    match: /^\/team-members$/,
+    title: "Team members",
+    subtitle: "Browse employees, roles, and workspace teams.",
+  },
+  {
+    match: /^\/team-members\/.+$/,
+    title: "Employee profile",
+    subtitle: "View employee details, assignments, and project access.",
+  },
+  {
+    match: /^\/gallery$/,
+    title: "Gallery",
+    subtitle: "Manage uploaded images and workspace highlights.",
+  },
+  {
+    match: /^\/seating$/,
+    title: "Seating arrangement",
+    subtitle: "Manage floor plan seating, assignments, and capacity.",
+  },
+  {
+    match: /^\/roles$/,
+    title: "Roles & access",
+    subtitle: "Manage workspace permissions and role policies.",
+  },
+  {
+    match: /^\/app-users$/,
+    title: "App account management",
+    subtitle: "Create and manage login accounts for the workspace.",
+  },
+  {
+    match: /^\/profile-settings$/,
+    title: "Profile settings",
+    subtitle: "Complete your first-login setup and secure your account.",
+  },
+];
+
+function headerMetaForPath(pathname: string) {
+  return (
+    PAGE_META.find((item) => item.match.test(pathname)) ?? {
+      title: "Colan Infotech",
+      subtitle: "Employee and project workspace.",
+    }
+  );
+}
 
 export function AppHeader() {
   const { user, logout, access } = useAppState();
+  const pathname = usePathname();
+  const pageMeta = headerMetaForPath(pathname);
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center text-primary-foreground shadow-sm">
-          <img
-        src={colanlogo2.src}
-  alt="Colan Infotech"
-  className="h-8 w-auto object-contain"
-/>
-        </div>
+      <div className="min-w-0">
         <div>
-          <p className="text-sm font-semibold tracking-tight">COLAN INFOTECH</p>
-          <p className="text-xs text-muted-foreground">
-            Employee &amp; project hub
+          <p className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg">
+            {pageMeta.title}
+          </p>
+          <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
+            {pageMeta.subtitle}
           </p>
         </div>
       </div>
@@ -87,8 +151,8 @@ export function AppHeader() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled className="text-muted-foreground">
-              Profile settings (soon)
+            <DropdownMenuItem asChild>
+              <Link href="/profile-settings">Profile settings</Link>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={logout} className="gap-2 text-destructive focus:text-destructive">
               <LogOut className="h-4 w-4" />

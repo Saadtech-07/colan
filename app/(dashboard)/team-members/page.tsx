@@ -51,17 +51,11 @@ export default function TeamMembersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Team members</h1>
-          <p className="mt-1 text-muted-foreground">
-            Browse the directory — open a profile for full details, projects, and seating.
-          </p>
-        </div>
-        {access?.canWriteEmployees && (
+      {access?.canWriteEmployees && (
+        <div className="flex justify-end">
           <AddEmployeeDialog onCreate={handleCreateEmployee} />
-        )}
-      </div>
+        </div>
+      )}
 
       <Tabs value={tab} onValueChange={setTab} className="w-full">
         <TabsList className="no-scrollbar h-auto w-full flex-wrap justify-start gap-1 overflow-x-auto bg-muted/60 p-1">

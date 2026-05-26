@@ -80,16 +80,6 @@ export default function SeatingPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-          Seating arrangement
-        </h1>
-        <p className="mt-1 max-w-3xl text-muted-foreground">
-          Office floor plan with rows A–G. Assign employees to individual seats, drag between
-          desks, and filter by team or availability.
-        </p>
-      </div>
-
       <SeatingAnalyticsOverview stats={stats} />
 
       <SeatingToolbar

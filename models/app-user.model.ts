@@ -17,6 +17,8 @@ export type AppUserDocument = {
   team?: TeamName;
   employeeId: string;
   imageUrl: string;
+  isProfileCompleted?: boolean;
+  updatedProfileAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -29,6 +31,8 @@ export type AppUserPublicDTO = {
   team?: TeamName;
   employeeId: string;
   imageUrl: string;
+  isProfileCompleted: boolean;
+  updatedProfileAt?: string;
 };
 
 export function appUserDocToPublic(doc: AppUserDocument): AppUserPublicDTO {
@@ -40,5 +44,7 @@ export function appUserDocToPublic(doc: AppUserDocument): AppUserPublicDTO {
     team: doc.team,
     employeeId: doc.employeeId,
     imageUrl: doc.imageUrl,
+    isProfileCompleted: doc.isProfileCompleted ?? true,
+    updatedProfileAt: doc.updatedProfileAt?.toISOString(),
   };
 }

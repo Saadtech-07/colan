@@ -5,6 +5,7 @@ declare module "next-auth" {
   interface User {
     appRole: AppRole;
     team?: TeamName;
+    isProfileCompleted: boolean;
   }
 
   interface Session {
@@ -12,6 +13,7 @@ declare module "next-auth" {
       id: string;
       appRole: AppRole;
       team?: TeamName;
+      isProfileCompleted: boolean;
     };
   }
 }
@@ -21,5 +23,6 @@ declare module "next-auth/jwt" {
     appRole?: AppRole;
     team?: TeamName;
     picture?: string | null;
+    isProfileCompleted?: boolean;
   }
 }

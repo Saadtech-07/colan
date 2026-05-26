@@ -13,8 +13,8 @@ function DashboardShellInner({ children }: { children: ReactNode }) {
   return (
     <div
       className={cn(
-        "min-h-screen bg-muted/30 transition-[padding] duration-300 ease-in-out",
-        collapsed ? "lg:pl-20" : "lg:pl-64",
+        "min-h-screen bg-muted/30 transition-[padding] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        collapsed ? "lg:pl-24" : "lg:pl-64",
       )}
     >
       <AppSidebar />

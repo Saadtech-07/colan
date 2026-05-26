@@ -80,4 +80,5 @@ export interface AuthUser {
   appRole: AppRole;
   team?: TeamName;
   avatarUrl?: string;
+  isProfileCompleted: boolean;
 }

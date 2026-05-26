@@ -312,13 +312,8 @@ export default function GalleryPage() {
         </div>
       )}
  
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Gallery</h1>
-          <p className="mt-1 text-muted-foreground">Company gallery images</p>
-        </div>
- 
-        {access?.canWriteGallery && (
+      {access?.canWriteGallery && (
+        <div className="flex justify-end">
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
@@ -371,8 +366,8 @@ export default function GalleryPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        )}
-      </div>
+        </div>
+      )}
  
       {galleryItems.length === 0 ? (
         <div className="rounded-3xl border border-border/70 bg-card p-10 text-center">

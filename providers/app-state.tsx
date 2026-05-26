@@ -82,6 +82,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       appRole: normalizeAppRole(u.appRole),
       team: u.team,
       avatarUrl: u.image ?? undefined,
+      isProfileCompleted: u.isProfileCompleted !== false,
     };
   }, [session?.user]);
 

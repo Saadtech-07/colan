@@ -126,40 +126,14 @@ export default function RolesPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-            Roles &amp; access
-          </h1>
-          <p className="mt-1 max-w-2xl text-muted-foreground">
-            {user?.name ? (
-              <>
-                Signed in as <span className="font-medium text-foreground">{user.name}</span>
-                {access && (
-                  <>
-                    {" "}
-                    with the{" "}
-                    <span className="font-medium text-foreground">
-                      {access.definition.label}
-                    </span>{" "}
-                    role
-                    {access.team ? ` on ${access.team}` : ""}. Permissions are loaded from
-                    MongoDB.
-                  </>
-                )}
-              </>
-            ) : (
-              "Enterprise role-based access for Colan workspace modules."
-            )}
-          </p>
-        </div>
-        {canManageRoles && (
+      {canManageRoles && (
+        <div className="flex justify-end">
           <Button className="gap-2 shadow-sm" onClick={openCreate}>
             <Plus className="h-4 w-4" />
             Create role
           </Button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

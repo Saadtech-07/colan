@@ -317,18 +317,10 @@ export default function AppUsersPage() {
           </div>
         </div>
       )}
-      <div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">App account management</h1>
-            <p className="mt-2 max-w-2xl text-muted-foreground">
-              Create, update, and delete login accounts for the Colan workspace.
-            </p>
-          </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
-            <UserCheck className="h-4 w-4 text-primary" />
-            {user?.email}
-          </div>
+      <div className="flex justify-end">
+        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+          <UserCheck className="h-4 w-4 text-primary" />
+          {user?.email}
         </div>
       </div>
 
