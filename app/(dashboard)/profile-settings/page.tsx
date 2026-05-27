@@ -162,6 +162,13 @@ export default function ProfileSettingsPage() {
       return;
     }
 
+    const isOnboarding = profile.isProfileCompleted === false;
+
+    if (isOnboarding && !form.newPassword.trim()) {
+      setError("Set a new password to complete your first login setup.");
+      return;
+    }
+
     if (form.newPassword.trim() && form.confirmNewPassword.trim() !== form.newPassword.trim()) {
       setError("Confirm password must match the new password.");
       return;
@@ -186,6 +193,7 @@ export default function ProfileSettingsPage() {
       if (!res.ok) throw new Error(await parseApiError(res));
 
       const updated = (await res.json()) as ProfileSettingsResponse;
+      const wasOnboarding = profile.isProfileCompleted === false;
       setProfile(updated);
       setForm({
         name: updated.name,
@@ -199,19 +207,27 @@ export default function ProfileSettingsPage() {
       // Never put uploaded base64 avatars in the JWT cookie — it exceeds header limits on Vercel.
       await update({
         name: updated.name,
-        isProfileCompleted: true,
+        isProfileCompleted: updated.isProfileCompleted,
       });
       await refreshProfileAvatar();
 
+      if (wasOnboarding) {
+        showToast({
+          variant: "success",
+          title: "Profile setup completed",
+          description: "Your profile has been saved. Redirecting to dashboard...",
+        });
+        window.setTimeout(() => {
+          router.replace("/dashboard");
+        }, 700);
+        return;
+      }
+
       showToast({
         variant: "success",
-        title: "Profile setup completed",
-        description: "Your profile has been updated. Redirecting to dashboard...",
+        title: "Profile updated",
+        description: "Your profile settings have been saved.",
       });
-
-      window.setTimeout(() => {
-        router.replace("/dashboard");
-      }, 700);
     } catch (nextError) {
       const message =
         nextError instanceof Error ? nextError.message : "Unable to save your profile settings.";
@@ -229,6 +245,7 @@ export default function ProfileSettingsPage() {
   const strength = passwordStrength(form.newPassword);
   const previewName =
     form.name.trim() || profile?.name || session?.user?.name || session?.user?.email || "User";
+  const isOnboarding = profile?.isProfileCompleted === false;
 
   return (
     <div className="space-y-6">
@@ -277,11 +294,15 @@ export default function ProfileSettingsPage() {
           <CardHeader className="space-y-2">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
               <ShieldCheck className="h-3.5 w-3.5" />
-              {profile?.isProfileCompleted ? "Profile ready" : "First login setup"}
+              {isOnboarding ? "First login setup" : "Account settings"}
             </div>
-            <CardTitle className="text-xl">Complete your profile</CardTitle>
+            <CardTitle className="text-xl">
+              {isOnboarding ? "Complete your profile" : "Profile settings"}
+            </CardTitle>
             <CardDescription>
-              Update your personal details before entering the workspace dashboard.
+              {isOnboarding
+                ? "Update your personal details and password before entering the dashboard."
+                : "Update your profile photo and password whenever you need to."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -378,7 +399,9 @@ export default function ProfileSettingsPage() {
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="current-password">Current password</Label>
+                      <Label htmlFor="current-password">
+                        {isOnboarding ? "Temporary password" : "Current password"}
+                      </Label>
                       <Input
                         id="current-password"
                         type="password"
@@ -386,11 +409,17 @@ export default function ProfileSettingsPage() {
                         onChange={(event) =>
                           setForm((prev) => ({ ...prev, currentPassword: event.target.value }))
                         }
-                        placeholder="Required only if changing password"
+                        placeholder={
+                          isOnboarding
+                            ? "Enter the password from your welcome email"
+                            : "Required only if changing password"
+                        }
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="new-password">New password</Label>
+                      <Label htmlFor="new-password">
+                        {isOnboarding ? "New password" : "New password (optional)"}
+                      </Label>
                       <Input
                         id="new-password"
                         type="password"
@@ -398,7 +427,11 @@ export default function ProfileSettingsPage() {
                         onChange={(event) =>
                           setForm((prev) => ({ ...prev, newPassword: event.target.value }))
                         }
-                        placeholder="Leave blank to keep current password"
+                        placeholder={
+                          isOnboarding
+                            ? "Create your new password"
+                            : "Leave blank to keep current password"
+                        }
                       />
                       {strength && <p className={`text-xs font-medium ${strength.tone}`}>{strength.label}</p>}
                     </div>
@@ -427,8 +460,10 @@ export default function ProfileSettingsPage() {
                         <Loader2 className="h-4 w-4 animate-spin" />
                         Saving profile...
                       </>
-                    ) : (
+                    ) : isOnboarding ? (
                       "Save and continue"
+                    ) : (
+                      "Save changes"
                     )}
                   </Button>
                 </div>
@@ -444,7 +479,9 @@ export default function ProfileSettingsPage() {
               Setup checklist
             </CardTitle>
             <CardDescription>
-              Finish these items once to unlock the normal dashboard experience.
+              {isOnboarding
+                ? "Finish these items once to unlock the normal dashboard experience."
+                : "You can return here anytime from the header menu to update your profile."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 text-sm text-muted-foreground">

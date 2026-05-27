@@ -440,6 +440,12 @@ export async function completeCurrentAppUserProfile(
   const nextImageUrl = input.imageUrl?.trim() ? input.imageUrl.trim() : dicebearAvatarPng(email);
   const wantsPasswordChange = Boolean(input.newPassword);
 
+  const isFirstLoginSetup = !normalizeProfileCompleted(current.isProfileCompleted);
+
+  if (isFirstLoginSetup && !wantsPasswordChange) {
+    throw new Error("Set a new password to complete your first login setup.");
+  }
+
   if (wantsPasswordChange) {
     const currentPassword = input.currentPassword?.trim() ?? "";
     if (!currentPassword) throw new Error("Current password is required to change password.");

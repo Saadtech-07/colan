@@ -51,6 +51,7 @@ import { cn } from "@/lib/utils";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
+import { generateTemporaryPassword } from "@/lib/password-utils";
 import { roleNeedsTeam } from "@/lib/permissions";
 import type { AppRole, TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
@@ -318,6 +319,10 @@ export default function AppUsersPage() {
 
   const startCreate = () => {
     resetForm();
+    setForm({
+      ...buildInitialForm(defaultTeam),
+      password: generateTemporaryPassword(),
+    });
     setDialogOpen(true);
   };
 
@@ -331,8 +336,8 @@ export default function AppUsersPage() {
       return;
     }
 
-    if (!editingId && form.password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (!editingId && form.password.trim() && form.password.trim().length < 6) {
+      setError("Password must be at least 6 characters when provided.");
       return;
     }
 
@@ -977,10 +982,28 @@ export default function AppUsersPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor="password">Password</Label>
+                      {!editingId && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 rounded-xl text-xs"
+                          onClick={() =>
+                            setForm((prev) => ({
+                              ...prev,
+                              password: generateTemporaryPassword(),
+                            }))
+                          }
+                        >
+                          Generate password
+                        </Button>
+                      )}
+                    </div>
                     <Input
                       id="password"
-                      type="password"
+                      type="text"
                       value={form.password}
                       onChange={(event) =>
                         setForm((prev) => ({ ...prev, password: event.target.value }))
@@ -988,14 +1011,15 @@ export default function AppUsersPage() {
                       placeholder={
                         editingId
                           ? "Leave blank to keep current password"
-                          : "Set a password"
+                          : "Auto-generated if left empty"
                       }
-                      className="h-11 rounded-2xl border-border/70"
+                      className="h-11 rounded-2xl border-border/70 font-mono text-sm"
+                      autoComplete="new-password"
                     />
                     <p className="text-xs text-muted-foreground">
                       {editingId
                         ? "Only enter a new password if you want to replace the current one."
-                        : "A minimum of 6 characters is required for new accounts."}
+                        : "A professional onboarding email with login email, temporary password, and secure login link is sent automatically after account creation."}
                     </p>
                   </div>
                 </section>

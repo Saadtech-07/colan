@@ -57,18 +57,20 @@ export function buildAccountCreatedEmail({
         ${detailCard("Employee name", safeName)}
         ${detailCard("Work email", safeEmail)}
         ${detailCard("Temporary password", safePassword)}
+        ${detailCard("Secure login link", safeLoginUrl)}
 
         <div style="padding-top:12px;padding-bottom:8px;">
           <a
             href="${safeLoginUrl}"
             style="display:inline-block;padding:14px 22px;background:#2563eb;color:#fff;text-decoration:none;border-radius:12px;font-size:14px;font-weight:700;"
           >
-            Open login page
+            Sign in to your workspace
           </a>
         </div>
 
         <p style="margin:16px 0 0;color:#475569;font-size:14px;line-height:1.6;">
-          For security, please sign in and change this temporary password as soon as possible.
+          Use the secure login link above with your work email and temporary password. On your first
+          sign-in, you will be guided to complete profile setup before accessing the dashboard.
         </p>
       </div>
 
@@ -96,9 +98,9 @@ export function buildAccountCreatedEmail({
     `Employee name: ${employeeName}`,
     `Work email: ${employeeEmail}`,
     `Temporary password: ${temporaryPassword}`,
-    `Login URL: ${loginUrl}`,
+    `Secure login link: ${loginUrl}`,
     "",
-    "Please sign in and change this temporary password as soon as possible.",
+    "Sign in with the link above, then complete profile setup on your first login.",
   ].join("\n");
 
   return { subject, html, text };

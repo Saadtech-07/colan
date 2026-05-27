@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createAppUser, listAppUsers } from "@/lib/app-users";
 import { resolveLoginUrl } from "@/lib/email";
+import { generateTemporaryPassword } from "@/lib/password-utils";
 import {
   canAccessModuleAction,
   canManageModule,
@@ -66,14 +67,22 @@ export async function POST(req: Request) {
   }
 
   try {
-    const created = await createAppUser(payload);
+    const temporaryPassword =
+      payload.password?.trim() && payload.password.trim().length >= 6
+        ? payload.password.trim()
+        : generateTemporaryPassword();
+
+    const created = await createAppUser({
+      ...payload,
+      password: temporaryPassword,
+    });
     const loginUrl = resolveLoginUrl(new URL(req.url).origin);
     const emailDelivery =
       loginUrl
         ? await sendAccountCreatedEmail({
             employeeName: payload.name.trim(),
             employeeEmail: payload.email.toLowerCase().trim(),
-            temporaryPassword: payload.password,
+            temporaryPassword,
             loginUrl,
           })
         : {

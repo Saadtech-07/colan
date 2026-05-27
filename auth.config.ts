@@ -43,7 +43,7 @@ export const authConfig = {
         return NextResponse.redirect(new URL("/profile-settings", request.url));
       }
 
-      if (isProfileSettingsPage || isLoginPage) {
+      if (isLoginPage) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
 
