@@ -2,13 +2,19 @@
 
 import * as React from "react";
 import { SEATING_ROWS } from "@/lib/seating-layout";
+import { SeatingLayoutCanvas } from "@/components/seating/seating-layout-canvas";
 import { SeatingRowBlock } from "@/components/seating/seating-row-block";
+import type { SeatingAiZone } from "@/lib/seating-ai-types";
 import type { Employee } from "@/types";
 
 type Props = {
   occupancy: Map<string, Employee>;
   selectedSeat: string | null;
   highlightSeats: Set<string> | null;
+  layoutMode?: boolean;
+  layoutSeats?: Set<string> | null;
+  layoutZones?: SeatingAiZone[];
+  zoneBySeat?: Map<string, string>;
   teamFilter: string;
   search: string;
   viewMode: "all" | "occupied" | "available";
@@ -22,6 +28,10 @@ export function SeatingFloorPlan({
   occupancy,
   selectedSeat,
   highlightSeats,
+  layoutMode = false,
+  layoutSeats = null,
+  layoutZones = [],
+  zoneBySeat = new Map(),
   teamFilter,
   search,
   viewMode,
@@ -55,6 +65,21 @@ export function SeatingFloorPlan({
     [viewMode],
   );
 
+  if (layoutMode && layoutZones.length > 0) {
+    return (
+      <SeatingLayoutCanvas
+        zones={layoutZones}
+        occupancy={occupancy}
+        zoneBySeat={zoneBySeat}
+        selectedSeat={selectedSeat}
+        canAssign={canAssign}
+        zoom={zoom}
+        onSeatClick={onSeatClick}
+        onAssignSeat={onAssignSeat}
+      />
+    );
+  }
+
   return (
     <div
       className="w-max origin-top transition-transform duration-200 ease-out"
@@ -69,6 +94,9 @@ export function SeatingFloorPlan({
               occupancy={occupancy}
               selectedSeat={selectedSeat}
               highlightSeats={highlightSeats}
+              layoutMode={layoutMode}
+              layoutSeats={layoutSeats}
+              zoneBySeat={zoneBySeat}
               dimSeat={dimSeat}
               hideSeat={hideSeat}
               canAssign={canAssign}

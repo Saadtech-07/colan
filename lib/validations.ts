@@ -268,6 +268,36 @@ export const bayAssignSchema = z.object({
 
 
 
+const seatingAiMimeTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
+
+
+
+export const seatingAiGenerateSchema = z.discriminatedUnion("mode", [
+
+  z.object({
+
+    mode: z.literal("text"),
+
+    prompt: z.string().trim().min(10).max(2000),
+
+  }),
+
+  z.object({
+
+    mode: z.literal("image"),
+
+    prompt: z.string().trim().max(2000).optional(),
+
+    imageBase64: z.string().min(64).max(9_000_000),
+
+    mimeType: z.enum(seatingAiMimeTypes),
+
+  }),
+
+]);
+
+
+
 const directoryPatchSchema = z.object({
   workEmail: z.union([z.string().email(), z.literal("")]).optional(),
   phone: z.string().optional(),

@@ -13,6 +13,8 @@ type Props = {
   selected: boolean;
   highlighted: boolean;
   dimmed: boolean;
+  layoutZoneLabel?: string | null;
+  inLayoutCanvas?: boolean;
   canAssign: boolean;
   onSelect: () => void;
   onDragStart?: (employeeId: string) => void;
@@ -25,6 +27,8 @@ export function SeatCard({
   selected,
   highlighted,
   dimmed,
+  layoutZoneLabel,
+  inLayoutCanvas = false,
   canAssign,
   onSelect,
   onDragStart,
@@ -66,14 +70,28 @@ export function SeatCard({
         selected &&
           "ring-2 ring-primary ring-offset-2 ring-offset-[#4a6fa5] shadow-[0_0_0_1px_rgba(255,255,255,0.25),0_18px_34px_rgba(59,130,246,0.26)]",
         highlighted && !selected && "ring-2 ring-amber-400/90 ring-offset-1",
+        inLayoutCanvas &&
+          !occupied &&
+          "ring-2 ring-violet-500/80 ring-offset-2 ring-offset-[#4a6fa5] border-violet-400/60",
         dimmed && "opacity-30 saturate-[0.7]",
         !canAssign && "cursor-default",
       )}
-      title={occupied ? `${occupant.name} — ${seatId}` : `Seat ${seatId} (vacant)`}
+      title={
+        layoutZoneLabel && !occupied
+          ? `${layoutZoneLabel} — ${seatId} (assign manually)`
+          : occupied
+            ? `${occupant.name} — ${seatId}`
+            : `Seat ${seatId} (vacant)`
+      }
       aria-pressed={selected}
     >
-      <span className="inline-flex min-h-6 items-center rounded-full border border-black/5 bg-slate-900/10 px-2.5 font-mono text-[10px] font-bold leading-none text-slate-800 shadow-sm">
+      <span className="inline-flex min-h-6 items-center gap-1 rounded-full border border-black/5 bg-slate-900/10 px-2.5 font-mono text-[10px] font-bold leading-none text-slate-800 shadow-sm">
         {seatId}
+        {inLayoutCanvas && !occupied && (
+          <span className="rounded-full bg-violet-600 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">
+            New
+          </span>
+        )}
       </span>
       {occupied && occupant ? (
         <>
@@ -97,6 +115,15 @@ export function SeatCard({
             {teamTabLabel(occupant.team)}
           </span>
         </>
+      ) : layoutZoneLabel ? (
+        <div className="flex flex-1 flex-col items-center justify-center px-1">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-violet-700">
+            Open desk
+          </span>
+          <span className="mt-1 line-clamp-2 text-[10px] font-semibold leading-tight text-slate-800">
+            {layoutZoneLabel}
+          </span>
+        </div>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center">
           <span className="text-[11px] font-semibold text-slate-600">Vacant</span>

@@ -45,6 +45,14 @@ export const LOADING_PRESETS = {
     title: "Updating Seating",
     description: "Please wait while the bay assignment is being updated...",
   },
+  seatingAiGenerate: {
+    title: "Generating Seating Layout",
+    description: "AI is analyzing your prompt and building seat suggestions...",
+  },
+  seatingAiApply: {
+    title: "Applying Seating Suggestions",
+    description: "Updating workspace seat assignments from the AI preview...",
+  },
   loadingProjects: {
     title: "Loading Projects",
     description: "Fetching project portfolio data from the workspace...",
@@ -73,6 +81,8 @@ export const LOADING_KEY_PRIORITY = [
   "employee-projects",
   "project-create",
   "seating-assign",
+  "seating-ai-generate",
+  "seating-ai-apply",
   "project-detail",
   "workspace-sync",
   "session",
