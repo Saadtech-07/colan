@@ -4,7 +4,9 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { buildAccessContext, normalizeAppRole, type AccessContext } from "@/lib/permissions";
+import { dicebearAvatarPng } from "@/lib/mock-data";
 import { hydrateRoleRegistry } from "@/lib/role-registry";
+import { sanitizeSessionImageUrl } from "@/lib/session-token";
 import type { TeamDTO, WorkspaceRole } from "@/models";
 import type { AuthUser, Employee, GalleryImage, Project } from "@/types";
 import type { DataLayerSummary } from "@/types/data-layer";
@@ -29,6 +31,7 @@ type AppStateContextValue = {
   /** Where workspace data is stored (MongoDB vs in-memory) and Atlas ping result. */
   dataSummary: DataLayerSummary | null;
   refreshData: () => Promise<void>;
+  refreshProfileAvatar: () => Promise<void>;
   addEmployee: (input: Omit<Employee, "id">) => Promise<void>;
   addProject: (input: Omit<Project, "id" | "slug">) => Promise<void>;
   addWorkspaceTeam: (name: string) => Promise<void>;
@@ -71,20 +74,53 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [dataLoading, setDataLoading] = React.useState(false);
   const [dataError, setDataError] = React.useState<string | null>(null);
   const [dataSummary, setDataSummary] = React.useState<DataLayerSummary | null>(null);
+  const [profileAvatarUrl, setProfileAvatarUrl] = React.useState<string | undefined>();
+
+  const refreshProfileAvatar = React.useCallback(async () => {
+    if (sessionStatus !== "authenticated") {
+      setProfileAvatarUrl(undefined);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/profile-settings", { credentials: "include" });
+      if (!res.ok) {
+        setProfileAvatarUrl(undefined);
+        return;
+      }
+      const profile = (await res.json()) as { imageUrl?: string };
+      setProfileAvatarUrl(profile?.imageUrl?.trim() || undefined);
+    } catch {
+      setProfileAvatarUrl(undefined);
+    }
+  }, [sessionStatus]);
+
+  React.useEffect(() => {
+    if (sessionStatus !== "authenticated" || !session?.user?.email) {
+      setProfileAvatarUrl(undefined);
+      return;
+    }
+    void refreshProfileAvatar();
+  }, [refreshProfileAvatar, session?.user?.email, sessionStatus]);
 
   const user = React.useMemo<AuthUser | null>(() => {
     if (!session?.user) return null;
     const u = session.user;
+    const email = u.email ?? "";
+    const sessionAvatar = sanitizeSessionImageUrl(u.image);
     return {
-      id: u.id ?? u.email ?? "",
+      id: u.id ?? email,
       name: u.name ?? "",
-      email: u.email ?? "",
+      email,
       appRole: normalizeAppRole(u.appRole),
       team: u.team,
-      avatarUrl: u.image ?? undefined,
+      avatarUrl:
+        profileAvatarUrl ??
+        sessionAvatar ??
+        (email ? dicebearAvatarPng(email) : undefined),
       isProfileCompleted: u.isProfileCompleted !== false,
     };
-  }, [session?.user]);
+  }, [profileAvatarUrl, session?.user]);
 
   const access = React.useMemo(
     () => (user ? buildAccessContext(user.appRole, user.team) : null),
@@ -296,6 +332,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       dataError,
       dataSummary,
       refreshData,
+      refreshProfileAvatar,
       addEmployee,
       addProject,
       addWorkspaceTeam,
@@ -320,6 +357,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       dataError,
       dataSummary,
       refreshData,
+      refreshProfileAvatar,
       addEmployee,
       addProject,
       addWorkspaceTeam,

@@ -1,7 +1,15 @@
 import { normalizeAppRole } from "@/lib/permissions";
+import { isSessionSafeImageUrl, sanitizeSessionImageUrl } from "@/lib/session-token";
 import { NextResponse } from "next/server";
 import type { NextAuthConfig } from "next-auth";
 import type { TeamName } from "@/types";
+
+function stripUnsafeJwtPicture(token: Record<string, unknown>) {
+  const picture = token.picture;
+  if (typeof picture === "string" && !isSessionSafeImageUrl(picture)) {
+    delete token.picture;
+  }
+}
 
 /**
  * Edge-safe auth config (no MongoDB, bcrypt, or other Node-only imports).
@@ -42,16 +50,24 @@ export const authConfig = {
       return true;
     },
     jwt({ token, user, trigger, session }) {
+      stripUnsafeJwtPicture(token as Record<string, unknown>);
+
       if (user) {
         token.appRole = user.appRole;
         token.team = user.team;
         token.isProfileCompleted = user.isProfileCompleted;
         token.name = user.name;
-        if (user.image) token.picture = user.image;
+        const safeImage = sanitizeSessionImageUrl(user.image);
+        if (safeImage) token.picture = safeImage;
+        else delete token.picture;
       }
       if (trigger === "update" && session) {
         if (typeof session.name === "string" && session.name) token.name = session.name;
-        if ("image" in session && session.image !== undefined) token.picture = session.image as string;
+        if ("image" in session) {
+          const safeImage = sanitizeSessionImageUrl(session.image as string | undefined);
+          if (safeImage) token.picture = safeImage;
+          else delete token.picture;
+        }
         if ("isProfileCompleted" in session) {
           token.isProfileCompleted = Boolean(session.isProfileCompleted);
         }
@@ -65,8 +81,9 @@ export const authConfig = {
         session.user.team = token.team as TeamName | undefined;
         session.user.isProfileCompleted = token.isProfileCompleted !== false;
         if (typeof token.name === "string" && token.name) session.user.name = token.name;
-        const pic = token.picture as string | undefined;
+        const pic = sanitizeSessionImageUrl(token.picture as string | undefined);
         if (pic) session.user.image = pic;
+        else delete session.user.image;
       }
       return session;
     },

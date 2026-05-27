@@ -4,9 +4,11 @@ import * as React from "react";
 import Link from "next/link";
 import {
   BriefcaseBusiness,
+  CalendarClock,
   ChevronRight,
   Download,
-  Filter,
+  LayoutGrid,
+  Mail,
   Search,
   ShieldCheck,
   UserRoundCheck,
@@ -25,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { employeeProfilePath } from "@/lib/employee-slug";
 import { useAppState } from "@/providers/app-state";
 import { teamTabLabel } from "@/lib/team-utils";
@@ -35,6 +36,8 @@ import {
   employeeAssignedProjects,
   employeeWorkspaceStatus,
   formatCsvValue,
+  hasAssignedWorkspaceSeat,
+  type EmployeeWorkspaceStatus,
   workforceAnalytics,
 } from "@/lib/team-members-ui";
 import { cn } from "@/lib/utils";
@@ -48,9 +51,6 @@ const ROLE_TABS = [
   { key: "Employee", label: "Employees" },
   { key: "Intern", label: "Interns" },
 ] as const;
-
-type AssignmentFilterValue = "all" | "with-projects" | "without-projects";
-type SeatingFilterValue = "all" | "assigned" | "unassigned";
 
 function getInitials(name: string) {
   return (
@@ -75,19 +75,11 @@ function joinDateLabel(date?: string) {
   });
 }
 
-function floorZoneLabel(bayNumber: string) {
-  if (!bayNumber) return "No workspace assigned";
-  return `${bayNumber.charAt(0)}-Zone`;
-}
-
 export default function TeamMembersPage() {
   const { employees, projects, access, teamNames } = useAppState();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
   const [roleTab, setRoleTab] = React.useState<string>("all");
   const [search, setSearch] = React.useState("");
-  const [assignmentFilter, setAssignmentFilter] =
-    React.useState<AssignmentFilterValue>("all");
-  const [seatingFilter, setSeatingFilter] = React.useState<SeatingFilterValue>("all");
 
   const workforceAccess = React.useMemo(
     () => buildWorkforceAccess(access),
@@ -103,9 +95,6 @@ export default function TeamMembersPage() {
     const query = search.trim().toLowerCase();
 
     return teamScopedEmployees.filter((employee) => {
-      const assignedProjects = employeeAssignedProjects(employee, projects);
-      const seatAssigned = Boolean(employee.bayNumber);
-
       const matchesSearch =
         !query ||
         employee.name.toLowerCase().includes(query) ||
@@ -115,30 +104,10 @@ export default function TeamMembersPage() {
         employee.directory?.workEmail?.toLowerCase().includes(query);
 
       const matchesRole = roleTab === "all" || employee.role === roleTab;
-      const matchesAssignment =
-        assignmentFilter === "all" ||
-        (assignmentFilter === "with-projects" && assignedProjects.length > 0) ||
-        (assignmentFilter === "without-projects" && assignedProjects.length === 0);
-      const matchesSeating =
-        seatingFilter === "all" ||
-        (seatingFilter === "assigned" && seatAssigned) ||
-        (seatingFilter === "unassigned" && !seatAssigned);
 
-      return (
-        matchesSearch &&
-        matchesRole &&
-        matchesAssignment &&
-        matchesSeating
-      );
+      return matchesSearch && matchesRole;
     });
-  }, [
-    assignmentFilter,
-    projects,
-    roleTab,
-    search,
-    seatingFilter,
-    teamScopedEmployees,
-  ]);
+  }, [roleTab, search, teamScopedEmployees]);
 
   const analytics = React.useMemo(
     () => workforceAnalytics(filteredEmployees, projects),
@@ -164,7 +133,9 @@ export default function TeamMembersPage() {
         employee.role,
         employee.directory?.workEmail ?? "",
         employee.directory?.phone ?? "",
-        employee.bayNumber ?? "",
+        hasAssignedWorkspaceSeat(employee)
+          ? `Seat ${employee.bayNumber.trim()}`
+          : "Unassigned",
         employeeAssignedProjects(employee, projects).length,
       ]),
     ];
@@ -189,7 +160,7 @@ export default function TeamMembersPage() {
                 <Users2 className="h-3.5 w-3.5" />
                 Workforce management
               </div>
-              <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+              <h2 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                 Team Members
               </h2>
               <p className="max-w-2xl text-sm text-muted-foreground">
@@ -246,89 +217,73 @@ export default function TeamMembersPage() {
         </div>
       </section>
 
-      <section className="rounded-[28px] border border-border/70 bg-background/75 p-5 shadow-[0_18px_50px_-34px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-6">
-        <div className="space-y-4">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto]">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search by name, employee ID, email, team, or role"
-                className="h-11 rounded-2xl border-border/70 bg-background/80 pl-10"
-              />
+      <section className="overflow-hidden rounded-2xl border border-border/70 bg-background/75 p-4 shadow-sm backdrop-blur-xl sm:p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+              <Search className="h-4 w-4" />
             </div>
+            <h3 className="text-sm font-bold text-foreground">Search directory</h3>
+          </div>
+          <Badge variant="secondary" className="rounded-full px-2.5 py-0.5 text-xs font-medium">
+            {filteredEmployees.length} result{filteredEmployees.length === 1 ? "" : "s"}
+          </Badge>
+        </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <FilterSelect
-                value={assignmentFilter}
-                onValueChange={(value) =>
-                  setAssignmentFilter(value as AssignmentFilterValue)
-                }
-                placeholder="Assignments"
-                options={[
-                  { value: "all", label: "All assignments" },
-                  { value: "with-projects", label: "With projects" },
-                  { value: "without-projects", label: "Without projects" },
-                ]}
-              />
-              <FilterSelect
-                value={seatingFilter}
-                onValueChange={(value) => setSeatingFilter(value as SeatingFilterValue)}
-                placeholder="Seating"
-                options={[
-                  { value: "all", label: "All seating" },
-                  { value: "assigned", label: "Seat assigned" },
-                  { value: "unassigned", label: "Seat unassigned" },
-                ]}
-              />
-            </div>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" />
+            <Input
+              id="team-member-search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Name, ID, email, team, or role"
+              className="h-10 rounded-xl border-2 border-primary/20 bg-background pl-9 text-sm shadow-sm focus-visible:border-primary/40"
+            />
           </div>
 
-          <Tabs value={tab} onValueChange={setTab} className="w-full">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div className="overflow-x-auto">
-                <TabsList className="inline-flex h-11 min-w-max flex-nowrap items-center gap-1 rounded-2xl border border-border/70 bg-muted/40 p-1 shadow-sm">
-                  <TabsTrigger value={ALL_TAB} className="rounded-xl px-4 data-[state=active]:shadow-sm">
-                    All teams
-                  </TabsTrigger>
-                  {teamNames.map((team) => (
-                    <TabsTrigger
-                      key={team}
-                      value={team}
-                      className="rounded-xl px-4 data-[state=active]:shadow-sm"
-                    >
-                      {teamTabLabel(team)}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </div>
-
-              <div className="overflow-x-auto">
-                <div className="inline-flex min-w-max items-center gap-2 rounded-2xl border border-border/70 bg-muted/30 p-1.5">
-                  {ROLE_TABS.map((role) => (
-                    <button
-                      key={role.key}
-                      type="button"
-                      onClick={() => setRoleTab(role.key)}
-                      className={cn(
-                        "rounded-xl px-3 py-2 text-sm font-medium transition-all duration-200",
-                        roleTab === role.key
-                          ? "bg-background text-foreground shadow-sm"
-                          : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
-                      )}
-                    >
-                      {role.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </Tabs>
+          <div className="flex flex-wrap items-center justify-end gap-3 lg:shrink-0">
+            <FilterDropdown
+              label="Team"
+              value={tab}
+              onValueChange={setTab}
+              options={[
+                { value: ALL_TAB, label: "All" },
+                ...teamNames.map((team) => ({
+                  value: team,
+                  label: teamTabLabel(team),
+                })),
+              ]}
+            />
+            <FilterDropdown
+              label="Role"
+              value={roleTab}
+              onValueChange={setRoleTab}
+              options={ROLE_TABS.map((role) => ({
+                value: role.key,
+                label: role.label,
+              }))}
+            />
+          </div>
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+      <section className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3 px-1">
+          <div>
+            <h3 className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
+              Team directory
+            </h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Employee cards with projects, seat assignment, and profile access
+            </p>
+          </div>
+          <Badge variant="outline" className="rounded-full border-border/70 bg-background/80 px-3 py-1">
+            Showing {filteredEmployees.length} member{filteredEmployees.length === 1 ? "" : "s"}
+          </Badge>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
         {filteredEmployees.map((employee) => {
           const profileHref = employeeProfilePath(employee);
           const activeProjects = employeeActiveProjects(employee, projects);
@@ -374,16 +329,11 @@ export default function TeamMembersPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                    Current projects
-                  </p>
+                <MemberInfoSection title="Current projects" icon={BriefcaseBusiness}>
                   {visibleProjects.length === 0 ? (
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      No active project assigned
-                    </p>
+                    <p className="text-sm text-muted-foreground">No active project assigned</p>
                   ) : (
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2">
                       {visibleProjects.map((project) => (
                         <span
                           key={project.id}
@@ -400,24 +350,27 @@ export default function TeamMembersPage() {
                       )}
                     </div>
                   )}
-                </div>
+                </MemberInfoSection>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <MiniMetric
-                    label="Workspace / Seat"
-                    value={workspace.label}
-                    hint={floorZoneLabel(employee.bayNumber)}
-                  />
-                  <MiniMetric
-                    label="Join date"
-                    value={joinDateLabel(employee.directory?.joinedDate)}
-                    hint={employee.directory?.workEmail ?? "No work email"}
-                  />
+                  <SeatAssignmentBlock workspace={workspace} />
+                  <MemberInfoSection title="Join date" icon={CalendarClock}>
+                    <p className="text-sm font-semibold text-foreground">
+                      {joinDateLabel(employee.directory?.joinedDate)}
+                    </p>
+                    <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Mail className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">
+                        {employee.directory?.workEmail ?? "No work email"}
+                      </span>
+                    </p>
+                  </MemberInfoSection>
                 </div>
               </CardContent>
             </Card>
           );
         })}
+        </div>
       </section>
 
       {filteredEmployees.length === 0 && (
@@ -431,6 +384,36 @@ export default function TeamMembersPage() {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+function FilterDropdown({
+  label,
+  value,
+  onValueChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="shrink-0 text-xs font-bold text-foreground">{label}</span>
+      <Select value={value} onValueChange={onValueChange}>
+        <SelectTrigger className="h-10 w-[min(100%,9.5rem)] min-w-[7.5rem] rounded-xl border border-border/70 bg-background/80 px-3 text-sm font-medium shadow-sm sm:w-36">
+          <SelectValue placeholder="All" />
+        </SelectTrigger>
+        <SelectContent className="rounded-xl border-border/70 bg-background/95 backdrop-blur-xl">
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="rounded-lg text-sm">
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -462,50 +445,58 @@ function AnalyticsCard({
   );
 }
 
-function FilterSelect({
-  value,
-  onValueChange,
-  placeholder,
-  options,
+function MemberInfoSection({
+  title,
+  icon: Icon,
+  children,
 }: {
-  value: string;
-  onValueChange: (value: string) => void;
-  placeholder: string;
-  options: Array<{ value: string; label: string }>;
+  title: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
 }) {
   return (
-    <Select value={value} onValueChange={onValueChange}>
-      <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/80">
-        <Filter className="mr-2 h-4 w-4 text-muted-foreground" />
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent className="rounded-2xl border-border/70 bg-background/95 backdrop-blur-xl">
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} className="rounded-xl">
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function MiniMetric({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-border/60 bg-muted/15 p-3.5">
-      <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 text-sm font-semibold leading-5 text-foreground">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+    <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
+      <div className="flex items-center gap-2">
+        <Icon className="h-4 w-4 text-primary" />
+        <h4 className="text-sm font-bold text-foreground">{title}</h4>
+      </div>
+      <div className="mt-3">{children}</div>
     </div>
   );
 }
+
+function SeatAssignmentBlock({ workspace }: { workspace: EmployeeWorkspaceStatus }) {
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border border-border/60 bg-muted/15 p-4",
+        !workspace.isAssigned && "border-dashed",
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <LayoutGrid
+          className={cn(
+            "h-4 w-4",
+            workspace.isAssigned ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground",
+          )}
+        />
+        <h4 className="text-sm font-bold text-foreground">Seat assignment</h4>
+      </div>
+      {workspace.isAssigned ? (
+        <>
+          <p className="mt-3 text-base font-semibold leading-6 text-emerald-900 dark:text-emerald-100">
+            {workspace.label}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {workspace.zoneLabel} · office floor plan
+          </p>
+        </>
+      ) : (
+        <p className="mt-3 min-h-[1.5rem] text-xs text-muted-foreground">
+          No seat on the seating arrangement yet
+        </p>
+      )}
+    </div>
+  );
+}
+

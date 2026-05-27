@@ -41,9 +41,7 @@ export function buildWorkforceAccess(access: AccessContext | null): WorkforceAcc
 }
 
 export function employeeAssignedProjects(employee: Pick<Employee, "id" | "team">, projects: Project[]) {
-  return getProjectsForEmployee(employee.id, projects).filter((project) =>
-    project.teams.includes(employee.team),
-  );
+  return getProjectsForEmployee(employee.id, projects);
 }
 
 export function employeeActiveProjects(employee: Pick<Employee, "id" | "team">, projects: Project[]) {
@@ -106,23 +104,41 @@ export function employeeCompletionRate(
   return Math.round((completed / assigned.length) * 100);
 }
 
-export function employeeWorkspaceStatus(employee: Pick<Employee, "bayNumber">) {
-  if (!employee.bayNumber) {
+export type EmployeeWorkspaceStatus = {
+  label: string;
+  toneClass: string;
+  isAssigned: boolean;
+  zoneLabel?: string;
+};
+
+export function normalizeEmployeeBayNumber(bayNumber?: string) {
+  return bayNumber?.trim() ?? "";
+}
+
+export function hasAssignedWorkspaceSeat(employee: Pick<Employee, "bayNumber">) {
+  const bay = normalizeEmployeeBayNumber(employee.bayNumber);
+  return bay.length > 0 && isValidSeatId(bay);
+}
+
+export function employeeWorkspaceStatus(
+  employee: Pick<Employee, "bayNumber">,
+): EmployeeWorkspaceStatus {
+  const bay = normalizeEmployeeBayNumber(employee.bayNumber);
+
+  if (!hasAssignedWorkspaceSeat(employee)) {
     return {
-      label: "Unassigned workspace",
-      toneClass: "border-border/60 bg-muted/20 text-muted-foreground",
+      label: "Unassigned",
+      toneClass: "border-border/60 bg-muted/30 text-muted-foreground",
+      isAssigned: false,
     };
   }
-  if (isValidSeatId(employee.bayNumber)) {
-    return {
-      label: `Seat ${employee.bayNumber}`,
-      toneClass: "border-primary/20 bg-primary/10 text-primary",
-    };
-  }
+
   return {
-    label: `Legacy seat ${employee.bayNumber}`,
+    label: `Seat ${bay}`,
     toneClass:
-      "border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-300",
+      "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200",
+    isAssigned: true,
+    zoneLabel: `${bay.charAt(0)}-Zone`,
   };
 }
 
@@ -187,11 +203,12 @@ export function employeeActivityFeed(
     });
   }
 
-  if (employee.bayNumber) {
+  if (hasAssignedWorkspaceSeat(employee)) {
+    const bay = normalizeEmployeeBayNumber(employee.bayNumber);
     items.push({
       id: `seat-${employee.id}`,
       title: "Workspace seat assigned",
-      description: `Current workspace seat: ${employee.bayNumber}.`,
+      description: `Current workspace seat: Seat ${bay}.`,
       date: employee.directory?.joinedDate ?? new Date().toISOString().slice(0, 10),
       tone: "default" as const,
     });

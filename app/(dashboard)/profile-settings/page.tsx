@@ -19,7 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
 import { Label } from "@/components/ui/label";
-import { parseApiError } from "@/providers/app-state";
+import { parseApiError, useAppState } from "@/providers/app-state";
 
 type ProfileSettingsResponse = {
   email: string;
@@ -64,6 +64,7 @@ function passwordStrength(password: string): { label: string; tone: string } | n
 export default function ProfileSettingsPage() {
   const router = useRouter();
   const { data: session, status, update } = useSession();
+  const { refreshProfileAvatar } = useAppState();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const toastTimerRef = React.useRef<number | null>(null);
 
@@ -195,11 +196,12 @@ export default function ProfileSettingsPage() {
       });
       if (fileInputRef.current) fileInputRef.current.value = "";
 
+      // Never put uploaded base64 avatars in the JWT cookie — it exceeds header limits on Vercel.
       await update({
         name: updated.name,
-        image: updated.imageUrl,
         isProfileCompleted: true,
       });
+      await refreshProfileAvatar();
 
       showToast({
         variant: "success",

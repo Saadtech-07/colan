@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "@/auth.config";
 import { verifyAppUserCredentials } from "@/lib/app-users";
 import { roleNeedsTeam } from "@/lib/permissions";
+import { sanitizeSessionImageUrl } from "@/lib/session-token";
 import type { AppRole, TeamName } from "@/types";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -29,7 +30,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: row.name,
           appRole,
           team,
-          image: row.imageUrl,
+          image: sanitizeSessionImageUrl(row.imageUrl),
           isProfileCompleted: row.isProfileCompleted,
         };
       },

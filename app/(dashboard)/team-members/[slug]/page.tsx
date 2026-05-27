@@ -169,16 +169,6 @@ export default function TeamMemberDetailPage() {
                   triggerClassName="h-11 gap-1.5 rounded-2xl border-border/70 bg-background/80 px-5 shadow-sm"
                 />
               )}
-              <Button
-                variant="outline"
-                className="h-11 rounded-2xl border-border/70 bg-background/80 px-5 shadow-sm"
-                asChild
-              >
-                <a href="#employee-performance">
-                  <BarChart3 className="h-4 w-4" />
-                  View Analytics
-                </a>
-              </Button>
             </div>
             <EditEmployeeDialog
               employee={employee}

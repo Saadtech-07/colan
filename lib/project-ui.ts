@@ -49,25 +49,18 @@ export function isProjectDueSoon(
   return deadline >= start && deadline <= end;
 }
 
+/** Progress shown in UI bars — matches project status values. */
+export function projectStatusProgressPercent(status: ProjectStatus): number {
+  if (status === "Completed") return 100;
+  if (status === "In Progress") return 50;
+  return 0;
+}
+
 export function projectProgressPercent(
-  project: Pick<Project, "assignedDate" | "lastDate" | "status">,
-  today = new Date(),
+  project: Pick<Project, "status">,
+  _today?: Date,
 ) {
-  if (project.status === "Completed") return 100;
-  if (project.status === "Yet To Start") return 12;
-
-  const start = parseProjectDate(project.assignedDate);
-  const end = parseProjectDate(project.lastDate);
-  if (!start || !end || end <= start) return 68;
-
-  const total = end.getTime() - start.getTime();
-  const elapsed = startOfDay(today).getTime() - start.getTime();
-  const raw = Math.round((elapsed / total) * 100);
-
-  if (isProjectDelayed(project, today)) {
-    return Math.max(85, Math.min(97, raw));
-  }
-  return Math.max(18, Math.min(92, raw));
+  return projectStatusProgressPercent(project.status);
 }
 
 export function projectPriority(project: Pick<Project, "lastDate" | "status">, today = new Date()) {

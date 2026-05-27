@@ -45,6 +45,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { getProjectsForEmployee } from "@/lib/project-assignments";
+import { projectProgressPercent } from "@/lib/project-ui";
 import { teamTabLabel } from "@/lib/team-utils";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
@@ -71,17 +72,6 @@ type TeamDistributionDatum = {
   value: number;
   percentage: number;
   color: string;
-};
-
-type TeamPerformanceDatum = {
-  team: TeamName;
-  total: number;
-  completed: number;
-  active: number;
-  delayed: number;
-  headcount: number;
-  completionPercentage: number;
-  members: Employee[];
 };
 
 type ActivityItem = {
@@ -240,13 +230,6 @@ function projectStatusBadge(project: Project, today: Date) {
   };
 }
 
-function projectProgressValue(project: Project, today: Date) {
-  if (isProjectDelayed(project, today)) return 36;
-  if (project.status === "Completed") return 100;
-  if (project.status === "In Progress") return 68;
-  return 18;
-}
-
 function renderTeamIcon(team: string, className?: string) {
   const normalized = team.toLowerCase();
   if (normalized.includes("react") || normalized.includes("next")) {
@@ -370,35 +353,6 @@ function buildDeadlines(projects: Project[], today: Date) {
       };
     })
     .slice(0, 8);
-}
-
-function buildTeamPerformance(
-  teams: TeamName[],
-  projects: Project[],
-  employees: Employee[],
-  today: Date,
-) {
-  return teams
-    .map((team) => {
-      const teamProjects = projects.filter((project) => project.teams.includes(team));
-      const members = employees.filter((employee) => employee.team === team);
-      const completed = teamProjects.filter((project) => project.status === "Completed").length;
-      const active = teamProjects.filter((project) => project.status !== "Completed").length;
-      const delayed = teamProjects.filter((project) => isProjectDelayed(project, today)).length;
-      return {
-        team,
-        total: teamProjects.length,
-        completed,
-        active,
-        delayed,
-        headcount: members.length,
-        completionPercentage:
-          teamProjects.length === 0 ? 0 : Math.round((completed / teamProjects.length) * 100),
-        members: members.slice(0, 4),
-      } satisfies TeamPerformanceDatum;
-    })
-    .filter((entry) => entry.total > 0 || entry.headcount > 0)
-    .sort((a, b) => b.completionPercentage - a.completionPercentage);
 }
 
 function toneBadgeClass(tone: DeadlineItem["tone"]) {
@@ -622,11 +576,6 @@ export default function DashboardPage() {
       .filter((entry) => entry.value > 0);
   }, [dashboardScope, employees, scopedEmployees, teamsInScope]);
 
-  const teamPerformance = React.useMemo(
-    () => buildTeamPerformance(teamsInScope, scopedProjects, employees, today),
-    [employees, scopedProjects, teamsInScope, today],
-  );
-
   const activityItems = React.useMemo(
     () => buildActivityFeed(scopedProjects, dashboardScope === "company" ? employees : scopedEmployees, today),
     [dashboardScope, employees, scopedEmployees, scopedProjects, today],
@@ -747,16 +696,9 @@ export default function DashboardPage() {
           <section className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
             <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
               <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-border/60 pb-4">
-                <div className="space-y-1">
-                  <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                    <FolderKanban className="h-3.5 w-3.5" />
-                    Analytics
-                  </div>
-                  <CardTitle className="text-xl">Project status analytics</CardTitle>
-                  <CardDescription>
-                    Live portfolio mix for your current dashboard scope.
-                  </CardDescription>
-                </div>
+                <CardTitle className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
+                  Project status analytics
+                </CardTitle>
                 <Badge variant="outline" className="rounded-full border-border/70 bg-background/80 px-3 py-1 font-normal">
                   {dashboardScope === "company"
                     ? "Company-wide"
@@ -831,14 +773,9 @@ export default function DashboardPage() {
             {showDistributionChart ? (
               <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
                 <CardHeader className="border-b border-border/60 pb-4">
-                  <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                    <Users2 className="h-3.5 w-3.5" />
-                    Distribution
-                  </div>
-                  <CardTitle className="text-xl">Team employee distribution</CardTitle>
-                  <CardDescription>
-                    Headcount split across the teams visible in this workspace view.
-                  </CardDescription>
+                  <CardTitle className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
+                    Team employee distribution
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="p-6">
                   <div className="space-y-6">
@@ -911,45 +848,10 @@ export default function DashboardPage() {
             )}
           </section>
 
-          {dashboardScope !== "personal" && (
-            <section className="space-y-4">
-              <SectionHeader
-                eyebrow="Delivery health"
-                title="Team performance"
-                description="Completion percentage, active workload, and squad-level execution metrics."
-              />
-              <div className="grid gap-4 xl:grid-cols-2">
-                {teamPerformance.length === 0 ? (
-                  <Card className="border-dashed border-border/70 bg-background/60 xl:col-span-2">
-                    <CardContent className="flex min-h-[180px] items-center justify-center p-6">
-                      <EmptySectionState
-                        icon={Workflow}
-                        title="No team performance data yet"
-                        description="Team metrics will appear as projects and members are added."
-                      />
-                    </CardContent>
-                  </Card>
-                ) : (
-                  teamPerformance.map((item) => (
-                    <TeamPerformanceCard key={item.team} item={item} />
-                  ))
-                )}
-              </div>
-            </section>
-          )}
-
           <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
             <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
               <CardHeader className="border-b border-border/60 pb-4">
-                <SectionHeader
-                  eyebrow="Activity"
-                  title="Recent activity"
-                  description={
-                    dashboardScope === "personal"
-                      ? "Recent updates related to your assigned work."
-                      : "Latest delivery and roster activity across this dashboard scope."
-                  }
-                />
+                <SectionHeader title="Recent activity" />
               </CardHeader>
               <CardContent className="p-0">
                 {activityItems.length === 0 ? (
@@ -998,11 +900,7 @@ export default function DashboardPage() {
 
             <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
               <CardHeader className="border-b border-border/60 pb-4">
-                <SectionHeader
-                  eyebrow="Planning"
-                  title="Upcoming deadlines"
-                  description="Priority deadlines, sprint risk, and projects that need follow-up."
-                />
+                <SectionHeader title="Upcoming deadlines" />
               </CardHeader>
               <CardContent className="p-0">
                 {deadlineItems.length === 0 ? (
@@ -1052,13 +950,7 @@ export default function DashboardPage() {
 
           <section className="space-y-4">
             <SectionHeader
-              eyebrow={dashboardScope === "personal" ? "Assigned work" : "Portfolio"}
               title={dashboardScope === "personal" ? "Assigned projects" : "Team-based projects"}
-              description={
-                dashboardScope === "personal"
-                  ? "Your current project assignments with timeline and status visibility."
-                  : "Redesigned project cards with stronger hierarchy, status clarity, and team context."
-              }
             />
 
             {dashboardScope === "personal" ? (
@@ -1122,23 +1014,9 @@ function AlertStrip({
   );
 }
 
-function SectionHeader({
-  eyebrow,
-  title,
-  description,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-}) {
+function SectionHeader({ title }: { title: string }) {
   return (
-    <div className="space-y-1">
-      <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-        {eyebrow}
-      </div>
-      <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
-      <p className="text-sm text-muted-foreground">{description}</p>
-    </div>
+    <h2 className="text-lg font-bold tracking-tight text-foreground sm:text-xl">{title}</h2>
   );
 }
 
@@ -1180,18 +1058,9 @@ function TeamSpotlightCard({
   return (
     <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
       <CardHeader className="border-b border-border/60 pb-4">
-        <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-          <Users2 className="h-3.5 w-3.5" />
-          Spotlight
-        </div>
-        <CardTitle className="text-xl">
+        <CardTitle className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
           {scope === "personal" ? "Personal focus" : team ? `${teamTabLabel(team)} spotlight` : "Workspace spotlight"}
         </CardTitle>
-        <CardDescription>
-          {scope === "personal"
-            ? "A compact view of your current workload."
-            : "Key headcount and delivery signals for the current team view."}
-        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 p-6">
         <div className="grid gap-3 sm:grid-cols-3">
@@ -1233,80 +1102,6 @@ function SpotlightMetric({ title, value }: { title: string; value: string }) {
         {title}
       </p>
       <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{value}</p>
-    </div>
-  );
-}
-
-function TeamPerformanceCard({ item }: { item: TeamPerformanceDatum }) {
-  return (
-    <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_18px_40px_-28px_rgba(15,23,42,0.45)]">
-      <CardContent className="space-y-5 p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-border/60 bg-muted/30 p-3">
-              {renderTeamIcon(item.team, "h-5 w-5 text-primary")}
-            </div>
-            <div>
-              <p className="text-base font-semibold text-foreground">{item.team}</p>
-              <p className="text-sm text-muted-foreground">
-                {item.headcount} member{item.headcount === 1 ? "" : "s"} · {item.total} project{item.total === 1 ? "" : "s"}
-              </p>
-            </div>
-          </div>
-          <div className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-            {item.completionPercentage}% completed
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Completion progress</span>
-            <span className="font-medium text-foreground">{item.completionPercentage}%</span>
-          </div>
-          <div className="h-2.5 rounded-full bg-muted/70">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-primary via-indigo-500 to-cyan-400 transition-all duration-500"
-              style={{ width: `${item.completionPercentage}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-3">
-          <PerformanceMiniStat label="Active workload" value={String(item.active)} />
-          <PerformanceMiniStat label="Completed" value={String(item.completed)} />
-          <PerformanceMiniStat label="Delayed" value={String(item.delayed)} />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {item.members.length > 0 ? (
-            item.members.map((member) => (
-              <div
-                key={member.id}
-                className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-2.5 py-1.5"
-              >
-                <Avatar className="h-7 w-7 ring-1 ring-border/60">
-                  <AvatarImage src={member.imageUrl} alt={member.name} />
-                  <AvatarFallback>{getInitials(member.name)}</AvatarFallback>
-                </Avatar>
-                <span className="max-w-[110px] truncate text-xs font-medium text-foreground">
-                  {member.name}
-                </span>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">No members in this team yet.</p>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PerformanceMiniStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold tracking-tight text-foreground">{value}</p>
     </div>
   );
 }
@@ -1402,7 +1197,7 @@ function TeamProjectCard({
               <div className="mt-4 space-y-2">
                 <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                   <span>Delivery progress</span>
-                  <span>{projectProgressValue(project, today)}%</span>
+                  <span>{projectProgressPercent(project, today)}%</span>
                 </div>
                 <div className="h-2 rounded-full bg-muted/70">
                   <div
@@ -1414,7 +1209,7 @@ function TeamProjectCard({
                           ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
                           : "bg-gradient-to-r from-primary via-indigo-500 to-cyan-400",
                     )}
-                    style={{ width: `${projectProgressValue(project, today)}%` }}
+                    style={{ width: `${projectProgressPercent(project, today)}%` }}
                   />
                 </div>
               </div>
@@ -1456,12 +1251,12 @@ function ProjectRowCard({ project, today }: { project: Project; today: Date }) {
       <div className="mt-4 space-y-2">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>Progress</span>
-          <span>{projectProgressValue(project, today)}%</span>
+          <span>{projectProgressPercent(project, today)}%</span>
         </div>
         <div className="h-2 rounded-full bg-muted/70">
           <div
             className="h-full rounded-full bg-gradient-to-r from-primary via-indigo-500 to-cyan-400 transition-all duration-500"
-            style={{ width: `${projectProgressValue(project, today)}%` }}
+            style={{ width: `${projectProgressPercent(project, today)}%` }}
           />
         </div>
       </div>
