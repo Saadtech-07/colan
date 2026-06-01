@@ -63,8 +63,16 @@ export async function parseApiError(res: Response): Promise<string> {
   }
 }
 
+type ProfileSessionSync = {
+  name: string;
+  appRole: string;
+  team?: string;
+  isProfileCompleted: boolean;
+};
+
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
-  const { data: session, status: sessionStatus } = useSession();
+  const pathname = usePathname();
+  const { data: session, status: sessionStatus, update: updateSession } = useSession();
 
   const [employees, setEmployees] = React.useState<Employee[]>([]);
   const [projects, setProjects] = React.useState<Project[]>([]);
@@ -75,6 +83,36 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [dataError, setDataError] = React.useState<string | null>(null);
   const [dataSummary, setDataSummary] = React.useState<DataLayerSummary | null>(null);
   const [profileAvatarUrl, setProfileAvatarUrl] = React.useState<string | undefined>();
+  const hydratedForEmailRef = React.useRef<string | null>(null);
+
+  const syncSessionFromProfile = React.useCallback(
+    async (profile: ProfileSessionSync) => {
+      const current = session?.user;
+      if (!current?.email) return;
+
+      const nextRole = normalizeAppRole(profile.appRole);
+      const currentRole = normalizeAppRole(current.appRole);
+      const profileComplete = profile.isProfileCompleted !== false;
+      const sessionComplete = current.isProfileCompleted !== false;
+
+      if (
+        profile.name === (current.name ?? "") &&
+        nextRole === currentRole &&
+        (profile.team ?? undefined) === (current.team ?? undefined) &&
+        profileComplete === sessionComplete
+      ) {
+        return;
+      }
+
+      await updateSession({
+        name: profile.name,
+        appRole: profile.appRole,
+        team: profile.team,
+        isProfileCompleted: profile.isProfileCompleted,
+      });
+    },
+    [session?.user, updateSession],
+  );
 
   const refreshProfileAvatar = React.useCallback(async () => {
     if (sessionStatus !== "authenticated") {
@@ -83,25 +121,30 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const res = await fetch("/api/profile-settings", { credentials: "include" });
+      const res = await fetch("/api/profile-settings", {
+        credentials: "include",
+        cache: "no-store",
+      });
       if (!res.ok) {
         setProfileAvatarUrl(undefined);
         return;
       }
-      const profile = (await res.json()) as { imageUrl?: string };
+      const profile = (await res.json()) as ProfileSessionSync & { imageUrl?: string };
       setProfileAvatarUrl(profile?.imageUrl?.trim() || undefined);
+      await syncSessionFromProfile(profile);
     } catch {
       setProfileAvatarUrl(undefined);
     }
-  }, [sessionStatus]);
+  }, [sessionStatus, syncSessionFromProfile]);
 
   React.useEffect(() => {
     if (sessionStatus !== "authenticated" || !session?.user?.email) {
       setProfileAvatarUrl(undefined);
       return;
     }
+    if (pathname === "/profile-settings") return;
     void refreshProfileAvatar();
-  }, [refreshProfileAvatar, session?.user?.email, sessionStatus]);
+  }, [pathname, refreshProfileAvatar, session?.user?.email, sessionStatus]);
 
   const user = React.useMemo<AuthUser | null>(() => {
     if (!session?.user) return null;
@@ -171,15 +214,31 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setWorkspaceTeams(te);
       setWorkspaceRoles(ro);
       hydrateRoleRegistry(ro);
+      hydratedForEmailRef.current = session?.user?.email?.trim().toLowerCase() ?? null;
     } catch (e) {
       setDataError(e instanceof Error ? e.message : "Failed to load data");
     } finally {
       setDataLoading(false);
     }
-  }, [sessionStatus]);
+  }, [session?.user?.email, sessionStatus]);
+
+  const sessionEmail = session?.user?.email?.trim().toLowerCase() ?? "";
 
   React.useEffect(() => {
-    if (sessionStatus !== "authenticated") return;
+    if (!sessionEmail) {
+      hydratedForEmailRef.current = null;
+      setEmployees([]);
+      setProjects([]);
+      setGallery([]);
+      setWorkspaceTeams([]);
+      setWorkspaceRoles([]);
+      setDataSummary(null);
+      setDataError(null);
+      setDataLoading(false);
+      return;
+    }
+    if (hydratedForEmailRef.current === sessionEmail) return;
+
     let cancelled = false;
     void (async () => {
       setDataLoading(true);
@@ -218,6 +277,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         setWorkspaceTeams(te);
         setWorkspaceRoles(ro);
         hydrateRoleRegistry(ro);
+        hydratedForEmailRef.current = sessionEmail;
       } catch (e) {
         if (cancelled) return;
         setDataError(e instanceof Error ? e.message : "Failed to load data");
@@ -228,7 +288,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [sessionStatus]);
+  }, [sessionEmail]);
 
   const logout = React.useCallback(async () => {
     await signOut({ callbackUrl: "/login" });
@@ -380,7 +440,7 @@ export function useAppState() {
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
-  const { sessionStatus } = useAppState();
+  const { sessionStatus, user } = useAppState();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -390,7 +450,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [sessionStatus, pathname, router]);
 
-  if (sessionStatus === "loading" || sessionStatus === "unauthenticated") {
+  if (sessionStatus === "unauthenticated") {
+    return null;
+  }
+
+  // NextAuth sets status to "loading" during session updates; keep the shell visible.
+  if (sessionStatus === "loading" && !user) {
     return null;
   }
 

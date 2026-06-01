@@ -90,6 +90,10 @@ export function AppSidebar() {
   const { collapsed, setCollapsed, mobileOpen, setMobileOpen } = useSidebar();
   const { access } = useAppState();
 
+  const workspaceSubtitle = access
+    ? `${access.definition.label} workspace`
+    : "Workspace";
+
   const visibleNav = nav.filter(
     (item) => access && canAccessNav(access.role, item.href),
   );
@@ -139,7 +143,7 @@ export function AppSidebar() {
                     COLAN INFOTECH
                   </p>
                   <p className="truncate text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
-                    Admin workspace
+                    {workspaceSubtitle}
                   </p>
                 </div>
               </div>

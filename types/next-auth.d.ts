@@ -20,9 +20,11 @@ declare module "next-auth" {
 
 declare module "next-auth/jwt" {
   interface JWT {
+    email?: string;
     appRole?: AppRole;
     team?: TeamName;
     picture?: string | null;
     isProfileCompleted?: boolean;
+    refreshedAt?: number;
   }
 }

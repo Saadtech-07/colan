@@ -19,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
 import { Label } from "@/components/ui/label";
+import { normalizeAppRole } from "@/lib/permissions";
 import { parseApiError, useAppState } from "@/providers/app-state";
 
 type ProfileSettingsResponse = {
@@ -30,6 +31,17 @@ type ProfileSettingsResponse = {
   imageUrl: string;
   isProfileCompleted: boolean;
   updatedProfileAt?: string;
+  workspaceRole?: string;
+  phone?: string;
+  location?: string;
+  bayNumber?: string;
+};
+
+const APP_ROLE_LABELS: Record<string, string> = {
+  admin: "Admin",
+  manager: "Manager",
+  lead: "Team Lead",
+  employee: "Employee",
 };
 
 type ToastState = {
@@ -61,12 +73,39 @@ function passwordStrength(password: string): { label: string; tone: string } | n
   return { label: "Strong password", tone: "text-emerald-600" };
 }
 
+function sessionDiffersFromProfile(
+  sessionUser: {
+    name?: string | null;
+    appRole?: string;
+    team?: string;
+    isProfileCompleted?: boolean;
+  } | undefined,
+  profile: Pick<
+    ProfileSettingsResponse,
+    "name" | "appRole" | "team" | "isProfileCompleted"
+  >,
+): boolean {
+  if (!sessionUser) return true;
+
+  const sessionComplete = sessionUser.isProfileCompleted !== false;
+  const profileComplete = profile.isProfileCompleted !== false;
+
+  return (
+    profile.name !== (sessionUser.name ?? "") ||
+    normalizeAppRole(profile.appRole) !== normalizeAppRole(sessionUser.appRole) ||
+    (profile.team ?? undefined) !== (sessionUser.team ?? undefined) ||
+    profileComplete !== sessionComplete
+  );
+}
+
 export default function ProfileSettingsPage() {
   const router = useRouter();
   const { data: session, status, update } = useSession();
   const { refreshProfileAvatar } = useAppState();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const toastTimerRef = React.useRef<number | null>(null);
+  const loadedForEmailRef = React.useRef<string | null>(null);
+  const loadInFlightRef = React.useRef(false);
 
   const [profile, setProfile] = React.useState<ProfileSettingsResponse | null>(null);
   const [form, setForm] = React.useState(initialForm);
@@ -91,11 +130,16 @@ export default function ProfileSettingsPage() {
     [],
   );
 
-  const loadProfile = React.useCallback(async () => {
+  const loadProfile = React.useCallback(async (email: string) => {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/profile-settings", { credentials: "include" });
+      const res = await fetch("/api/profile-settings", {
+        credentials: "include",
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error(await parseApiError(res));
       const nextProfile = (await res.json()) as ProfileSettingsResponse;
       setProfile(nextProfile);
@@ -106,20 +150,32 @@ export default function ProfileSettingsPage() {
         newPassword: "",
         confirmNewPassword: "",
       });
+      loadedForEmailRef.current = email;
     } catch (nextError) {
+      loadedForEmailRef.current = null;
       setError(nextError instanceof Error ? nextError.message : "Unable to load profile settings.");
     } finally {
       setLoading(false);
+      loadInFlightRef.current = false;
     }
   }, []);
 
   React.useEffect(() => {
+    if (status === "unauthenticated") {
+      loadedForEmailRef.current = null;
+      setProfile(null);
+      setForm(initialForm);
+      setLoading(false);
+      return;
+    }
     if (status !== "authenticated") return;
-    const timer = window.setTimeout(() => {
-      void loadProfile();
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [loadProfile, status]);
+
+    const email = session?.user?.email?.trim().toLowerCase() ?? "";
+    if (!email) return;
+    if (loadedForEmailRef.current === email) return;
+
+    void loadProfile(email);
+  }, [loadProfile, session?.user?.email, status]);
 
   const handleReset = () => {
     if (!profile) return;
@@ -204,11 +260,15 @@ export default function ProfileSettingsPage() {
       });
       if (fileInputRef.current) fileInputRef.current.value = "";
 
-      // Never put uploaded base64 avatars in the JWT cookie — it exceeds header limits on Vercel.
-      await update({
-        name: updated.name,
-        isProfileCompleted: updated.isProfileCompleted,
-      });
+      if (sessionDiffersFromProfile(session?.user, updated)) {
+        // Never put uploaded base64 avatars in the JWT cookie — it exceeds header limits on Vercel.
+        await update({
+          name: updated.name,
+          appRole: updated.appRole,
+          team: updated.team,
+          isProfileCompleted: updated.isProfileCompleted,
+        });
+      }
       await refreshProfileAvatar();
 
       if (wasOnboarding) {
@@ -386,7 +446,72 @@ export default function ProfileSettingsPage() {
                       <Label htmlFor="profile-employee-id">Employee ID</Label>
                       <Input id="profile-employee-id" value={profile?.employeeId ?? ""} readOnly disabled />
                     </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-app-role">Access role</Label>
+                      <Input
+                        id="profile-app-role"
+                        value={
+                          APP_ROLE_LABELS[profile?.appRole ?? ""] ??
+                          profile?.appRole ??
+                          ""
+                        }
+                        readOnly
+                        disabled
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-team">Team</Label>
+                      <Input
+                        id="profile-team"
+                        value={profile?.team?.trim() || "—"}
+                        readOnly
+                        disabled
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-workspace-role">Workspace role</Label>
+                      <Input
+                        id="profile-workspace-role"
+                        value={profile?.workspaceRole?.trim() || "—"}
+                        readOnly
+                        disabled
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-phone">Phone</Label>
+                      <Input
+                        id="profile-phone"
+                        value={profile?.phone?.trim() || "—"}
+                        readOnly
+                        disabled
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="profile-location">Location</Label>
+                      <Input
+                        id="profile-location"
+                        value={profile?.location?.trim() || "—"}
+                        readOnly
+                        disabled
+                      />
+                    </div>
+
+                    {profile?.bayNumber ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="profile-seat">Assigned seat</Label>
+                        <Input id="profile-seat" value={profile.bayNumber} readOnly disabled />
+                      </div>
+                    ) : null}
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Team, access role, and directory details are managed by administrators. Contact
+                    your admin if anything needs to change.
+                  </p>
                 </section>
 
                 <section className="space-y-4">

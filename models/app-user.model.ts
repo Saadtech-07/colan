@@ -44,7 +44,7 @@ export function appUserDocToPublic(doc: AppUserDocument): AppUserPublicDTO {
     team: doc.team,
     employeeId: doc.employeeId,
     imageUrl: doc.imageUrl,
-    isProfileCompleted: doc.isProfileCompleted ?? true,
+    isProfileCompleted: doc.isProfileCompleted === true,
     updatedProfileAt: doc.updatedProfileAt?.toISOString(),
   };
 }

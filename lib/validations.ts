@@ -150,6 +150,8 @@ export const appUserUpdateSchema = z.object({
 
   team: teamNameSchema.optional(),
 
+  employeeId: z.string().min(1).optional(),
+
   imageUrl: z.union([z.string().url(), z.literal("")]).optional(),
 
 });

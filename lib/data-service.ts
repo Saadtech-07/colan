@@ -465,9 +465,32 @@ export async function updateEmployee(
   const base = employeeDocToDTO(row);
   const detCol = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
   const detailDoc = await detCol.findOne({ employeeRef: oid });
-  return detailDoc
+  const updated = detailDoc
     ? { ...base, directory: detailsToDirectory(employeeDetailsDocToDTO(detailDoc)) }
     : base;
+
+  const workEmail = (
+    updated.directory?.workEmail ??
+    (row as { email?: string }).email ??
+    ""
+  )
+    .trim()
+    .toLowerCase();
+  if (workEmail) {
+    const { syncAppUserFromEmployeeByEmail } = await import("@/lib/app-users");
+    await syncAppUserFromEmployeeByEmail(workEmail, {
+      ...(employeePatch.name !== undefined ? { name: employeePatch.name } : {}),
+      ...(employeePatch.employeeId !== undefined
+        ? { employeeId: employeePatch.employeeId }
+        : {}),
+      ...(employeePatch.team !== undefined
+        ? { team: employeePatch.team as import("@/types").TeamName }
+        : {}),
+      ...(employeePatch.imageUrl !== undefined ? { imageUrl: employeePatch.imageUrl } : {}),
+    });
+  }
+
+  return updated;
 }
 
 export async function deleteEmployee(id: string): Promise<void> {

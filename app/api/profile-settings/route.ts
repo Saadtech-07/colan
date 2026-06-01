@@ -15,7 +15,9 @@ export async function GET() {
 
   try {
     const profile = await getCurrentAppUserProfile(email);
-    return NextResponse.json(profile);
+    return NextResponse.json(profile, {
+      headers: { "Cache-Control": "no-store" },
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unable to load profile settings." },

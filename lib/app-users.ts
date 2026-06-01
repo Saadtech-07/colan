@@ -138,6 +138,18 @@ export type AppUserProfileDTO = {
   imageUrl: string;
   isProfileCompleted: boolean;
   updatedProfileAt?: string;
+  workspaceRole?: string;
+  phone?: string;
+  location?: string;
+  bayNumber?: string;
+};
+
+export type AppUserSessionRefresh = {
+  name: string;
+  appRole: AppRole;
+  team?: TeamName;
+  imageUrl: string;
+  isProfileCompleted: boolean;
 };
 
 export type ProfileSetupUpdateInput = {
@@ -242,6 +254,7 @@ export async function updateAppUser(
 
   if (input.name !== undefined) updates.name = input.name.trim();
   if (input.appRole !== undefined) updates.appRole = input.appRole;
+  if (input.employeeId !== undefined) updates.employeeId = input.employeeId.trim();
   if (input.imageUrl !== undefined) updates.imageUrl = input.imageUrl;
   if (input.password) {
     updates.passwordHash = await bcrypt.hash(input.password, 10);
@@ -266,37 +279,90 @@ export async function updateAppUser(
 
   if (!result) throw new Error("User not found.");
 
-  await db.collection("employees").updateOne(
-    {
-      "directory.workEmail": current.email,
-    },
-    {
-      $set: {
-        employeeId: input.employeeId ?? current.employeeId,
-  
-        name: input.name?.trim() ?? current.name,
-  
-        role:
-          (input.appRole ?? current.appRole) === "admin"
-            ? "Admin"
-            : (input.appRole ?? current.appRole) === "manager"
-            ? "Manager"
-            : (input.appRole ?? current.appRole) === "lead"
-            ? "Team Lead"
-            : "Employee",
-  
-        team: input.team ?? current.team ?? "Unassigned",
-  
-        imageUrl:
-          input.imageUrl ??
-          current.imageUrl ??
-          dicebearAvatarPng(current.email),
-  
-        "directory.workEmail": current.email,
+  const nextEmployeeId = input.employeeId?.trim() ?? current.employeeId;
+  const nextName = input.name?.trim() ?? current.name;
+  const nextTeam = input.team ?? current.team ?? "Unassigned";
+  const nextImageUrl =
+    input.imageUrl ?? current.imageUrl ?? dicebearAvatarPng(current.email);
+
+  const employeeRole =
+    nextRole === "admin"
+      ? "Admin"
+      : nextRole === "manager"
+        ? "Manager"
+        : nextRole === "lead"
+          ? "Team Lead"
+          : "Employee";
+
+  const employeeSet = {
+    employeeId: nextEmployeeId,
+    name: nextName,
+    role: employeeRole,
+    team: nextTeam,
+    imageUrl: nextImageUrl,
+    email: current.email,
+    "directory.workEmail": current.email,
+  };
+
+  const employeeFilter = {
+    $or: [{ email: current.email }, { "directory.workEmail": current.email }],
+  };
+
+  const employeeUpdate = await db.collection("employees").updateOne(employeeFilter, {
+    $set: employeeSet,
+  });
+
+  if (employeeUpdate.matchedCount === 0) {
+    await db.collection("employees").insertOne({
+      employeeId: nextEmployeeId,
+      email: current.email,
+      name: nextName,
+      role: employeeRole,
+      team: nextTeam,
+      imageUrl: nextImageUrl,
+      bayNumber: "",
+      projectIds: [],
+      directory: {
+        workEmail: current.email,
+        phone: "",
+        location: "Unassigned",
+        joinedDate: new Date().toISOString().split("T")[0],
+        notes: "",
       },
-    }
-  );
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+
   return appUserDocToPublic(result);
+}
+
+/** Keeps login accounts in sync when team member records are edited elsewhere. */
+export async function syncAppUserFromEmployeeByEmail(
+  workEmail: string,
+  patch: {
+    name?: string;
+    employeeId?: string;
+    team?: TeamName;
+    imageUrl?: string;
+  },
+): Promise<void> {
+  const email = workEmail.toLowerCase().trim();
+  if (!email) return;
+
+  const db = await getDb();
+  if (!db) return;
+
+  const updates: Partial<AppUserDocument> = { updatedAt: new Date() };
+  if (patch.name !== undefined) updates.name = patch.name.trim();
+  if (patch.employeeId !== undefined) updates.employeeId = patch.employeeId.trim();
+  if (patch.team !== undefined) updates.team = patch.team;
+  if (patch.imageUrl !== undefined) updates.imageUrl = patch.imageUrl;
+  if (Object.keys(updates).length <= 1) return;
+
+  await db
+    .collection<AppUserDocument>(COLLECTIONS.appUsers)
+    .updateOne({ email }, { $set: updates });
 }
 
 
@@ -381,13 +447,52 @@ export async function verifyAppUserCredentials(
   };
 }
 
-function appUserDocToProfile(doc: AppUserDocument): AppUserProfileDTO {
+export async function getAppUserSessionRefresh(
+  email: string,
+): Promise<AppUserSessionRefresh | null> {
+  const normalized = email.toLowerCase().trim();
+  if (!normalized) return null;
+
+  const db = await getDb();
+  if (!db) {
+    const user = DEV_APP_USERS.find((item) => item.email === normalized);
+    if (!user) return null;
+    return {
+      name: user.name,
+      appRole: user.appRole,
+      team: user.team,
+      imageUrl: user.imageUrl,
+      isProfileCompleted: normalizeProfileCompleted(user.isProfileCompleted),
+    };
+  }
+
+  await ensureAppUsersSeed(db);
+  const doc = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).findOne({ email: normalized });
+  if (!doc) return null;
+
+  const appRole = normalizeAppRole(doc.appRole);
+  const team =
+    roleNeedsTeam(appRole) && doc.team ? (doc.team as TeamName) : undefined;
+
+  return {
+    name: doc.name,
+    appRole,
+    team,
+    imageUrl: doc.imageUrl,
+    isProfileCompleted: normalizeProfileCompleted(doc.isProfileCompleted),
+  };
+}
+
+function appUserDocToProfile(
+  doc: AppUserDocument,
+  employeeIdFallback?: string,
+): AppUserProfileDTO {
   return {
     email: doc.email,
     name: doc.name,
     appRole: doc.appRole,
     team: doc.team,
-    employeeId: doc.employeeId,
+    employeeId: doc.employeeId?.trim() || employeeIdFallback || "",
     imageUrl: doc.imageUrl,
     isProfileCompleted: normalizeProfileCompleted(doc.isProfileCompleted),
     updatedProfileAt: doc.updatedProfileAt?.toISOString(),
@@ -417,7 +522,40 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
   await ensureAppUsersSeed(db);
   const doc = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).findOne({ email: normalized });
   if (!doc) throw new Error("User not found.");
-  return appUserDocToProfile(doc);
+
+  const employee = await db.collection(COLLECTIONS.employees).findOne({
+    $or: [{ email: normalized }, { "directory.workEmail": normalized }],
+  });
+
+  const profile = appUserDocToProfile(
+    doc,
+    typeof employee?.employeeId === "string" ? employee.employeeId : undefined,
+  );
+
+  if (!employee) return profile;
+
+  if (!profile.employeeId && typeof employee.employeeId === "string") {
+    profile.employeeId = employee.employeeId;
+  }
+
+  profile.workspaceRole = typeof employee.role === "string" ? employee.role : undefined;
+  profile.bayNumber = typeof employee.bayNumber === "string" ? employee.bayNumber : undefined;
+
+  const embeddedDirectory = employee.directory as
+    | { phone?: string; location?: string; workEmail?: string }
+    | undefined;
+  if (embeddedDirectory?.phone) profile.phone = embeddedDirectory.phone;
+  if (embeddedDirectory?.location) profile.location = embeddedDirectory.location;
+
+  const details = await db.collection(COLLECTIONS.employeeDetails).findOne({
+    employeeRef: employee._id,
+  });
+  if (details) {
+    if (details.phone) profile.phone = details.phone;
+    if (details.location) profile.location = details.location;
+  }
+
+  return profile;
 }
 
 export async function completeCurrentAppUserProfile(

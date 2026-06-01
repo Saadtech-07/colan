@@ -53,6 +53,11 @@ export const authConfig = {
       stripUnsafeJwtPicture(token as Record<string, unknown>);
 
       if (user) {
+        const loginEmail =
+          (typeof user.email === "string" && user.email) ||
+          (typeof user.id === "string" && user.id.includes("@") ? user.id : "");
+        if (loginEmail) token.email = loginEmail.toLowerCase().trim();
+
         token.appRole = user.appRole;
         token.team = user.team;
         token.isProfileCompleted = user.isProfileCompleted;
@@ -62,14 +67,27 @@ export const authConfig = {
         else delete token.picture;
       }
       if (trigger === "update" && session) {
-        if (typeof session.name === "string" && session.name) token.name = session.name;
-        if ("image" in session) {
-          const safeImage = sanitizeSessionImageUrl(session.image as string | undefined);
+        const patch = session as {
+          name?: string;
+          image?: string;
+          isProfileCompleted?: boolean;
+          appRole?: string;
+          team?: TeamName;
+        };
+        if (typeof patch.name === "string" && patch.name) token.name = patch.name;
+        if ("image" in patch) {
+          const safeImage = sanitizeSessionImageUrl(patch.image);
           if (safeImage) token.picture = safeImage;
           else delete token.picture;
         }
-        if ("isProfileCompleted" in session) {
-          token.isProfileCompleted = Boolean(session.isProfileCompleted);
+        if ("isProfileCompleted" in patch) {
+          token.isProfileCompleted = Boolean(patch.isProfileCompleted);
+        }
+        if (typeof patch.appRole === "string" && patch.appRole) {
+          token.appRole = normalizeAppRole(patch.appRole);
+        }
+        if ("team" in patch) {
+          token.team = patch.team;
         }
       }
       return token;

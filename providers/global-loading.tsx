@@ -113,11 +113,17 @@ function GlobalLoadingProviderInner({ children }: { children: React.ReactNode })
 }
 
 function WorkspaceSyncBridge() {
-  const { dataLoading } = useAppState();
+  const { dataLoading, employees, projects, workspaceTeams } = useAppState();
   const { showLoading, hideLoading } = useGlobalLoading();
 
+  const isInitialSync =
+    dataLoading &&
+    employees.length === 0 &&
+    projects.length === 0 &&
+    workspaceTeams.length === 0;
+
   React.useEffect(() => {
-    if (dataLoading) {
+    if (isInitialSync) {
       showLoading("workspace-sync", {
         title: "Syncing Workspace",
         description:
@@ -126,17 +132,19 @@ function WorkspaceSyncBridge() {
     } else {
       hideLoading("workspace-sync");
     }
-  }, [dataLoading, hideLoading, showLoading]);
+  }, [isInitialSync, hideLoading, showLoading]);
 
   return null;
 }
 
 function SessionLoadingBridge() {
-  const { sessionStatus } = useAppState();
+  const { sessionStatus, user } = useAppState();
   const { showLoading, hideLoading } = useGlobalLoading();
 
+  const isBootstrappingSession = sessionStatus === "loading" && !user;
+
   React.useEffect(() => {
-    if (sessionStatus === "loading") {
+    if (isBootstrappingSession) {
       showLoading("session", {
         title: "Loading Workspace",
         description: "Preparing your admin dashboard session...",
@@ -144,7 +152,7 @@ function SessionLoadingBridge() {
     } else {
       hideLoading("session");
     }
-  }, [sessionStatus, hideLoading, showLoading]);
+  }, [isBootstrappingSession, hideLoading, showLoading]);
 
   return null;
 }

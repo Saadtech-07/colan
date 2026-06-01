@@ -160,7 +160,7 @@ export default function LoginPage() {
                 </h2>
 
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Login to continue to your
+                  Sign in to continue to your
                   workspace dashboard
                 </p>
               </div>
