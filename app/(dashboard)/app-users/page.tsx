@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   Building2,
   CircleCheckBig,
-  ImagePlus,
   Loader2,
   Mail,
   Pencil,
@@ -15,11 +14,16 @@ import {
   ShieldCheck,
   Trash2,
   TriangleAlert,
-  Upload,
   UserCheck,
   Users,
   X,
 } from "lucide-react";
+import { AvatarUploadField } from "@/components/features/avatar-upload-field";
+import {
+  CreateAppUserWizardDialog,
+  type AccountSetupForm,
+  type EmployeeProfileForm,
+} from "@/components/features/create-app-user-wizard-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,7 +55,6 @@ import { cn } from "@/lib/utils";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
-import { generateTemporaryPassword } from "@/lib/password-utils";
 import { roleNeedsTeam } from "@/lib/permissions";
 import type { AppRole, TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
@@ -122,7 +125,7 @@ function profileStatusMeta(isProfileCompleted: boolean) {
 
 export default function AppUsersPage() {
   const router = useRouter();
-  const { isAdmin, user, refreshData, teamNames, workspaceRoles } = useAppState();
+  const { isAdmin, user, refreshData, teamNames, workspaceRoles, employees } = useAppState();
   const { withLoading, isLoadingKey } = useGlobalLoading();
 
   const defaultTeam = (teamNames[0] ?? FALLBACK_TEAM) as TeamName;
@@ -134,18 +137,16 @@ export default function AppUsersPage() {
   const [toast, setToast] = React.useState<CreateAccountToast | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
+  const [createWizardOpen, setCreateWizardOpen] = React.useState(false);
   const [form, setForm] = React.useState<AppUserFormState>(() =>
     buildInitialForm(FALLBACK_TEAM),
   );
   const [searchQuery, setSearchQuery] = React.useState("");
   const [roleFilter, setRoleFilter] = React.useState("all");
   const [teamFilter, setTeamFilter] = React.useState("all");
-  const [dragActive, setDragActive] = React.useState(false);
 
-  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const formRef = React.useRef<HTMLFormElement | null>(null);
   const toastTimerRef = React.useRef<number | null>(null);
-  const blobPreviewRef = React.useRef<string | null>(null);
 
   const submitting = isLoadingKey("app-users-submit");
   const showTeamField = roleNeedsTeam(form.appRole);
@@ -209,13 +210,6 @@ export default function AppUsersPage() {
     };
   }, [users]);
 
-  const clearBlobPreview = React.useCallback(() => {
-    if (blobPreviewRef.current) {
-      URL.revokeObjectURL(blobPreviewRef.current);
-      blobPreviewRef.current = null;
-    }
-  }, []);
-
   const fetchUsers = React.useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -256,26 +250,20 @@ export default function AppUsersPage() {
   React.useEffect(
     () => () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-      clearBlobPreview();
     },
-    [clearBlobPreview],
+    [],
   );
 
   const resetForm = React.useCallback(
     (opts?: { clearFeedback?: boolean }) => {
-      clearBlobPreview();
       setEditingId(null);
       setForm(buildInitialForm(defaultTeam));
-      setDragActive(false);
       if (opts?.clearFeedback !== false) {
         setSuccess(null);
         setError(null);
       }
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
     },
-    [clearBlobPreview, defaultTeam],
+    [defaultTeam],
   );
 
   const handleDialogOpenChange = (nextOpen: boolean) => {
@@ -285,32 +273,6 @@ export default function AppUsersPage() {
     setDialogOpen(nextOpen);
   };
 
-  const applyImageFile = React.useCallback(
-    (file: File | null) => {
-      if (!file) return;
-      clearBlobPreview();
-      const localImageUrl = URL.createObjectURL(file);
-      blobPreviewRef.current = localImageUrl;
-      setForm((prev) => ({
-        ...prev,
-        imageUrl: localImageUrl,
-      }));
-      setDragActive(false);
-    },
-    [clearBlobPreview],
-  );
-
-  const removeImage = React.useCallback(() => {
-    clearBlobPreview();
-    setForm((prev) => ({
-      ...prev,
-      imageUrl: "",
-    }));
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  }, [clearBlobPreview]);
-
   const clearFilters = () => {
     setSearchQuery("");
     setRoleFilter("all");
@@ -318,15 +280,76 @@ export default function AppUsersPage() {
   };
 
   const startCreate = () => {
-    resetForm();
-    setForm({
-      ...buildInitialForm(defaultTeam),
-      password: generateTemporaryPassword(),
+    setError(null);
+    setSuccess(null);
+    setCreateWizardOpen(true);
+  };
+
+  const handleCreateAccount = async (
+    account: AccountSetupForm,
+    profile: EmployeeProfileForm,
+  ) => {
+    setError(null);
+    setSuccess(null);
+
+    await withLoading("app-users-submit", LOADING_PRESETS.creatingAccount, async () => {
+      const body = {
+        email: account.email.trim().toLowerCase(),
+        name: account.name.trim(),
+        employeeId: account.employeeId.trim(),
+        appRole: account.appRole,
+        team: account.team,
+        password: account.password.trim(),
+        ...(account.imageUrl.trim() ? { imageUrl: account.imageUrl.trim() } : {}),
+        workEmail: profile.workEmail.trim() || account.email.trim().toLowerCase(),
+        phone: profile.phone.trim() || undefined,
+        location: profile.location.trim() || undefined,
+        joinedDate: profile.joinedDate.trim() || undefined,
+        notes: profile.notes.trim() || undefined,
+        bayNumber:
+          profile.bayNumber && profile.bayNumber !== "__unassigned__"
+            ? profile.bayNumber
+            : undefined,
+      };
+
+      const res = await fetch("/api/app-users", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        throw new Error(await parseApiError(res));
+      }
+
+      const result = (await res.json()) as AppUserMutationResponse;
+      await fetchUsers();
+      await refreshData();
+      router.refresh();
+      setSuccess("Employee account created successfully.");
+
+      if (result.emailDelivery?.sent) {
+        showToast({
+          variant: "success",
+          title: "Employee account created successfully",
+          description: "Login credentials email sent.",
+        });
+        return;
+      }
+
+      showToast({
+        variant: "warning",
+        title: "Employee created but email could not be sent",
+        description:
+          result.emailDelivery?.message ||
+          "Check the email configuration and resend the credentials manually.",
+      });
     });
-    setDialogOpen(true);
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    if (!editingId) return;
+
     event.preventDefault();
     setError(null);
     setSuccess(null);
@@ -336,38 +359,24 @@ export default function AppUsersPage() {
       return;
     }
 
-    if (!editingId && form.password.trim() && form.password.trim().length < 6) {
-      setError("Password must be at least 6 characters when provided.");
-      return;
-    }
-
     if (showTeamField && !form.team) {
       setError("Team is required for lead and employee roles.");
       return;
     }
 
-    const preset = editingId
-      ? LOADING_PRESETS.updatingAccount
-      : LOADING_PRESETS.creatingAccount;
-    const isEditing = !!editingId;
+    const preset = LOADING_PRESETS.updatingAccount;
 
     try {
       await withLoading("app-users-submit", preset, async () => {
-        const endpoint = editingId ? `/api/app-users/${editingId}` : "/api/app-users";
-        const method = editingId ? "PATCH" : "POST";
+        const endpoint = `/api/app-users/${editingId}`;
+        const method = "PATCH";
         const body = {
-          name: form.name,
-          employeeId: form.employeeId,
+          name: form.name.trim(),
           appRole: form.appRole,
           team: showTeamField ? form.team : undefined,
-          imageUrl: form.imageUrl || undefined,
-          ...(editingId
-            ? {}
-            : {
-                email: form.email.toLowerCase(),
-                password: form.password,
-              }),
-          ...(editingId && form.password ? { password: form.password } : {}),
+          ...(form.employeeId.trim() ? { employeeId: form.employeeId.trim() } : {}),
+          ...(form.imageUrl.trim() ? { imageUrl: form.imageUrl.trim() } : {}),
+          ...(form.password ? { password: form.password } : {}),
         };
 
         const res = await fetch(endpoint, {
@@ -380,37 +389,14 @@ export default function AppUsersPage() {
           throw new Error(await parseApiError(res));
         }
 
-        const result = (await res.json()) as AppUserMutationResponse;
+        await res.json();
         await fetchUsers();
         await refreshData();
         router.refresh();
 
         setDialogOpen(false);
         resetForm({ clearFeedback: false });
-
-        if (isEditing) {
-          setSuccess("Account updated successfully.");
-          return;
-        }
-
-        setSuccess("Employee account created successfully.");
-
-        if (result.emailDelivery?.sent) {
-          showToast({
-            variant: "success",
-            title: "Employee account created successfully",
-            description: "Login credentials email sent.",
-          });
-          return;
-        }
-
-        showToast({
-          variant: "warning",
-          title: "Employee created but email could not be sent",
-          description:
-            result.emailDelivery?.message ||
-            "Check the email configuration and resend the credentials manually.",
-        });
+        setSuccess("Account updated successfully.");
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to save account.");
@@ -446,7 +432,6 @@ export default function AppUsersPage() {
   };
 
   const startEdit = (userRecord: AppUserPublicDTO) => {
-    clearBlobPreview();
     setEditingId(userRecord.id);
     setForm({
       email: userRecord.email,
@@ -459,10 +444,6 @@ export default function AppUsersPage() {
     });
     setSuccess(null);
     setError(null);
-    setDragActive(false);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
     setDialogOpen(true);
   };
 
@@ -821,27 +802,31 @@ export default function AppUsersPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
+      <CreateAppUserWizardDialog
+        open={createWizardOpen}
+        onOpenChange={setCreateWizardOpen}
+        defaultTeam={defaultTeam}
+        teamNames={teamNames}
+        workspaceRoles={workspaceRoles}
+        users={users}
+        employees={employees}
+        submitting={submitting}
+        onSubmit={handleCreateAccount}
+      />
+
+      <Dialog open={dialogOpen && !!editingId} onOpenChange={handleDialogOpenChange}>
         <DialogContent className="max-h-[92vh] overflow-hidden border-border/70 bg-background/95 p-0 sm:max-w-3xl">
           <div className="flex max-h-[92vh] flex-col">
             <DialogHeader className="border-b border-border/60 px-6 py-5">
               <Badge
-                variant={editingId ? "warning" : "muted"}
-                className={cn(
-                  "w-fit rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em]",
-                  !editingId &&
-                    "border border-border/60 bg-background/80 text-muted-foreground",
-                )}
+                variant="warning"
+                className="w-fit rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em]"
               >
-                {editingId ? "Editing account" : "Create workspace account"}
+                Editing account
               </Badge>
-              <DialogTitle className="mt-3 text-xl">
-                {editingId ? "Edit account" : "Create account"}
-              </DialogTitle>
+              <DialogTitle className="mt-3 text-xl">Edit account</DialogTitle>
               <DialogDescription className="mt-1">
-                {editingId
-                  ? "Update account access, workspace role, and employee details."
-                  : "Create a new login account for workspace access and assign the right role."}
+                Update account access, workspace role, and employee details.
               </DialogDescription>
             </DialogHeader>
 
@@ -864,17 +849,12 @@ export default function AppUsersPage() {
                         id="email"
                         type="email"
                         value={form.email}
-                        onChange={(event) =>
-                          setForm((prev) => ({ ...prev, email: event.target.value }))
-                        }
-                        disabled={!!editingId}
+                        disabled
                         className="h-11 rounded-2xl border-border/70"
                       />
-                      {editingId && (
-                        <p className="text-xs text-muted-foreground">
-                          Email remains fixed after account creation.
-                        </p>
-                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Email remains fixed after account creation.
+                      </p>
                     </div>
 
                     <div className="space-y-2">
@@ -984,22 +964,6 @@ export default function AppUsersPage() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <Label htmlFor="password">Password</Label>
-                      {!editingId && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 rounded-xl text-xs"
-                          onClick={() =>
-                            setForm((prev) => ({
-                              ...prev,
-                              password: generateTemporaryPassword(),
-                            }))
-                          }
-                        >
-                          Generate password
-                        </Button>
-                      )}
                     </div>
                     <Input
                       id="password"
@@ -1008,18 +972,12 @@ export default function AppUsersPage() {
                       onChange={(event) =>
                         setForm((prev) => ({ ...prev, password: event.target.value }))
                       }
-                      placeholder={
-                        editingId
-                          ? "Leave blank to keep current password"
-                          : "Auto-generated if left empty"
-                      }
+                      placeholder="Leave blank to keep current password"
                       className="h-11 rounded-2xl border-border/70 font-mono text-sm"
                       autoComplete="new-password"
                     />
                     <p className="text-xs text-muted-foreground">
-                      {editingId
-                        ? "Only enter a new password if you want to replace the current one."
-                        : "A professional onboarding email with login email, temporary password, and secure login link is sent automatically after account creation."}
+                      Only enter a new password if you want to replace the current one.
                     </p>
                   </div>
                 </section>
@@ -1034,108 +992,24 @@ export default function AppUsersPage() {
                     </h3>
                   </div>
 
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    onDragOver={(event) => {
-                      event.preventDefault();
-                      setDragActive(true);
-                    }}
-                    onDragLeave={(event) => {
-                      event.preventDefault();
-                      setDragActive(false);
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      setDragActive(false);
-                      applyImageFile(event.dataTransfer.files?.[0] ?? null);
-                    }}
-                    className={cn(
-                      "rounded-[24px] border border-dashed p-4 transition-all",
-                      dragActive
-                        ? "border-primary bg-primary/5 shadow-sm"
-                        : "border-border/70 bg-muted/20 hover:border-primary/40 hover:bg-muted/35",
-                    )}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border/60 bg-background shadow-sm">
-                        {form.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- existing module stores raw image URL strings for account records
-                          <img
-                            src={form.imageUrl}
-                            alt="Employee preview"
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <ImagePlus className="h-6 w-6 text-muted-foreground" />
-                        )}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold">
-                          {form.imageUrl
-                            ? "Image selected and ready"
-                            : "Upload employee image"}
-                        </p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Drag and drop an image here or click to choose a file.
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          PNG, JPG, or JPEG preview supported.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-3">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(event) => {
-                        applyImageFile(event.target.files?.[0] ?? null);
-                        event.currentTarget.value = "";
-                      }}
-                    />
-
-                    <div className="text-xs text-muted-foreground">
-                      {form.imageUrl
-                        ? "Preview available in the account form."
-                        : "No image selected yet."}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="rounded-2xl border-border/70 bg-background/80"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <Upload className="h-4 w-4" />
-                        Choose image
-                      </Button>
-                      {form.imageUrl && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="rounded-2xl text-muted-foreground"
-                          onClick={removeImage}
-                        >
-                          <X className="h-4 w-4" />
-                          Remove
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+                  <AvatarUploadField
+                    value={form.imageUrl}
+                    previewName={form.name || form.email || "Account"}
+                    onChange={(value) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        imageUrl: value,
+                      }))
+                    }
+                    disabled={submitting}
+                  />
                 </section>
               </form>
             </div>
 
             <DialogFooter className="border-t border-border/60 bg-background/95 px-6 py-4 backdrop-blur sm:justify-between">
               <div className="text-xs leading-5 text-muted-foreground">
-                {editingId
-                  ? "Changes apply to the existing login account and linked workspace profile."
-                  : "Creating an account will also provision the linked employee access record."}
+                Changes apply to the existing login account and linked workspace profile.
               </div>
 
               <div className="flex items-center gap-2">
@@ -1145,7 +1019,7 @@ export default function AppUsersPage() {
                   className="rounded-2xl border-border/70 bg-background/80"
                   onClick={() => handleDialogOpenChange(false)}
                 >
-                  {editingId ? "Cancel Edit" : "Cancel"}
+                  Cancel Edit
                 </Button>
                 <Button
                   type="button"
@@ -1155,12 +1029,10 @@ export default function AppUsersPage() {
                 >
                   {submitting ? (
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  ) : editingId ? (
-                    <Save className="h-4 w-4" />
                   ) : (
-                    <Plus className="h-4 w-4" />
+                    <Save className="h-4 w-4" />
                   )}
-                  {editingId ? "Save Changes" : "Create Account"}
+                  Save Changes
                 </Button>
               </div>
             </DialogFooter>

@@ -2,7 +2,6 @@ import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { deleteAppUser, updateAppUser } from "@/lib/app-users";
-import { getDb } from "@/lib/mongodb";
 import {
   canAccessModuleAction,
   canManageModule,
@@ -78,24 +77,8 @@ export async function DELETE(_: Request, { params }: RouteParams) {
   }
 
   try {
-    // Delete app user
-    const deletedUser = await deleteAppUser(id);
-
-    // Delete employee/team member too
-    if (deletedUser?.employeeId) {
-      const db = await getDb();
-
-      await db
-        ?.collection("employees")
-        .deleteOne({
-          employeeId: deletedUser.employeeId,
-        });
-    }
-
-    return NextResponse.json({
-      success: true,
-    });
-
+    await deleteAppUser(id);
+    return NextResponse.json({ success: true });
   } catch (e) {
     return NextResponse.json(
       {

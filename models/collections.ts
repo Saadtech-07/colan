@@ -3,6 +3,7 @@
  */
 export const COLLECTIONS = {
   appUsers: "app_users",
+  appUserSeedSuppressions: "app_user_seed_suppressions",
   employees: "employees",
   employeeDetails: "employee_details",
   teams: "teams",

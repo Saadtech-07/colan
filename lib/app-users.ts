@@ -25,6 +25,7 @@ type SeedUser = {
   name: string;
   appRole: AppRole;
   team?: TeamName;
+  employeeId: string;
   imageUrl: string;
   isProfileCompleted?: boolean;
 };
@@ -35,6 +36,7 @@ const SEED_USERS: SeedUser[] = [
     password: "admin123",
     name: "Alex Morgan",
     appRole: "admin",
+    employeeId: "COL-9001",
     imageUrl: dicebearAvatarPng("admin"),
     isProfileCompleted: true,
   },
@@ -43,6 +45,7 @@ const SEED_USERS: SeedUser[] = [
     password: "manager123",
     name: "Sofia Nielsen",
     appRole: "manager",
+    employeeId: "COL-9002",
     imageUrl: dicebearAvatarPng("sofia-mgr"),
     isProfileCompleted: true,
   },
@@ -52,6 +55,7 @@ const SEED_USERS: SeedUser[] = [
     name: "Priya Sharma",
     appRole: "lead",
     team: "React Team",
+    employeeId: "COL-9003",
     imageUrl: dicebearAvatarPng("priya-lead"),
     isProfileCompleted: true,
   },
@@ -61,6 +65,7 @@ const SEED_USERS: SeedUser[] = [
     name: "Jamie Chen",
     appRole: "employee",
     team: "React Team",
+    employeeId: "COL-9004",
     imageUrl: dicebearAvatarPng("jamie"),
     isProfileCompleted: true,
   },
@@ -72,12 +77,52 @@ function normalizeProfileCompleted(value: boolean | undefined): boolean {
   return value ?? true;
 }
 
+async function isSeedSuppressed(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  email: string,
+): Promise<boolean> {
+  const suppressed = await db
+    .collection<{ email: string }>(COLLECTIONS.appUserSeedSuppressions)
+    .findOne({ email: email.toLowerCase().trim() });
+  return Boolean(suppressed);
+}
+
+async function suppressSeedUser(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  email: string,
+): Promise<void> {
+  const normalized = email.toLowerCase().trim();
+  if (!SEED_USERS.some((user) => user.email === normalized)) return;
+
+  const col = db.collection<{ email: string; suppressedAt: Date }>(
+    COLLECTIONS.appUserSeedSuppressions,
+  );
+  await col.createIndex({ email: 1 }, { unique: true });
+  await col.updateOne(
+    { email: normalized },
+    { $set: { email: normalized, suppressedAt: new Date() } },
+    { upsert: true },
+  );
+}
+
 async function upsertSeedUser(
   col: import("mongodb").Collection<AppUserDocument>,
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   u: SeedUser,
   rounds: number,
 ) {
-  if (await col.findOne({ email: u.email })) return;
+  const existing = await col.findOne({ email: u.email });
+  if (existing) {
+    if (!existing.employeeId?.trim()) {
+      await col.updateOne(
+        { _id: existing._id },
+        { $set: { employeeId: u.employeeId, updatedAt: new Date() } },
+      );
+    }
+    return;
+  }
+  if (await isSeedSuppressed(db, u.email)) return;
+
   await col.insertOne({
     _id: new ObjectId(),
     email: u.email,
@@ -85,7 +130,7 @@ async function upsertSeedUser(
     name: u.name,
     appRole: u.appRole,
     team: u.team,
-    employeeId: `COL-${Math.floor(Math.random() * 9000) + 1000}`,
+    employeeId: u.employeeId,
     imageUrl: u.imageUrl,
     isProfileCompleted: normalizeProfileCompleted(u.isProfileCompleted),
     updatedProfileAt: new Date(),
@@ -102,7 +147,7 @@ export async function ensureAppUsersSeed(
   await col.createIndex({ email: 1 }, { unique: true });
   const rounds = 10;
   for (const u of SEED_USERS) {
-    await upsertSeedUser(col, u, rounds);
+    await upsertSeedUser(col, db, u, rounds);
   }
   await col.updateMany(
     { isProfileCompleted: { $exists: false } },
@@ -116,8 +161,14 @@ export type AppUserCreateInput = {
   name: string;
   appRole: AppRole;
   employeeId: string;
-  team?: TeamName;
+  team: TeamName;
   imageUrl?: string;
+  workEmail?: string;
+  phone?: string;
+  location?: string;
+  joinedDate?: string;
+  notes?: string;
+  bayNumber?: string;
 };
 
 export type AppUserUpdateInput = {
@@ -177,10 +228,51 @@ export async function createAppUser(
   await ensureAppUsersSeed(db);
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   const email = input.email.toLowerCase().trim();
+  const employeeId = input.employeeId.trim();
   const existing = await col.findOne({ email });
   if (existing) throw new Error("An account with this email already exists.");
 
+  const employeeCol = db.collection(COLLECTIONS.employees);
+  const employeeIdTaken = await employeeCol.findOne({
+    employeeId: { $regex: new RegExp(`^${employeeId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+  });
+  if (employeeIdTaken) {
+    throw new Error("An employee with this ID already exists.");
+  }
+
+  const appUserIdTaken = await col.findOne({
+    employeeId: { $regex: new RegExp(`^${employeeId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
+  });
+  if (appUserIdTaken) {
+    throw new Error("An account with this employee ID already exists.");
+  }
+
+  const { isValidSeatId } = await import("@/lib/seating-layout");
+  const bayNumber = input.bayNumber?.trim() ?? "";
+  if (bayNumber) {
+    if (!isValidSeatId(bayNumber)) {
+      throw new Error(
+        `Invalid seat "${bayNumber}". Choose a seat from the office floor plan (e.g. A1, D3).`,
+      );
+    }
+    const seatTaken = await employeeCol.findOne({ bayNumber });
+    if (seatTaken) {
+      throw new Error(`Seat ${bayNumber} is already assigned to another employee.`);
+    }
+  }
+
   const passwordHash = await bcrypt.hash(input.password, 10);
+  const workEmail = (input.workEmail?.trim() || email).toLowerCase();
+  const joinedDate =
+    input.joinedDate?.trim() || new Date().toISOString().split("T")[0];
+  const directory = {
+    workEmail,
+    phone: input.phone?.trim() ?? "",
+    location: input.location?.trim() || "Unassigned",
+    joinedDate,
+    notes: input.notes?.trim() ?? "",
+  };
+
   const doc: AppUserDocument = {
     _id: new ObjectId(),
     email,
@@ -188,7 +280,7 @@ export async function createAppUser(
     name: input.name.trim(),
     appRole: input.appRole,
     team: input.team,
-    employeeId: input.employeeId,
+    employeeId,
     imageUrl: input.imageUrl ?? dicebearAvatarPng(email),
     isProfileCompleted: false,
     createdAt: new Date(),
@@ -197,41 +289,52 @@ export async function createAppUser(
 
   await col.insertOne(doc);
 
-/* CREATE TEAM MEMBER RECORD */
-
-await db.collection("employees").insertOne({
-  employeeId: input.employeeId,
-  email: email,
-  name: input.name.trim(),
-  
-
-  role:
+  const employeeRole =
     input.appRole === "admin"
       ? "Admin"
       : input.appRole === "manager"
-      ? "Manager"
-      : input.appRole === "lead"
-      ? "Team Lead"
-      : "Employee",
+        ? "Manager"
+        : input.appRole === "lead"
+          ? "Team Lead"
+          : "Employee";
 
-  team: input.team || "Unassigned",
+  const employeeObjectId = new ObjectId();
+  await employeeCol.insertOne({
+    _id: employeeObjectId,
+    employeeId,
+    email,
+    name: input.name.trim(),
+    role: employeeRole,
+    team: input.team,
+    imageUrl: input.imageUrl ?? dicebearAvatarPng(email),
+    bayNumber,
+    projectIds: [],
+    directory,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
 
-  imageUrl: input.imageUrl ?? dicebearAvatarPng(email),
+  await db.collection(COLLECTIONS.employeeDetails).updateOne(
+    { employeeRef: employeeObjectId },
+    {
+      $set: {
+        employeeRef: employeeObjectId,
+        workEmail: directory.workEmail,
+        phone: directory.phone || undefined,
+        location: directory.location || undefined,
+        joinedDate: directory.joinedDate || undefined,
+        notes: directory.notes || undefined,
+        updatedAt: new Date(),
+      },
+      $setOnInsert: {
+        _id: new ObjectId(),
+        createdAt: new Date(),
+      },
+    },
+    { upsert: true },
+  );
 
-  bayNumber: "",
-
-  projectIds: [],
-
-  directory: {
-    workEmail: email,
-    phone: "",
-    location: "Unassigned",
-    joinedDate: new Date().toISOString().split("T")[0],
-    notes: "",
-  },
-});
-
-return appUserDocToPublic(doc);
+  return appUserDocToPublic(doc);
 }
 
 export async function updateAppUser(  
@@ -255,7 +358,11 @@ export async function updateAppUser(
   if (input.name !== undefined) updates.name = input.name.trim();
   if (input.appRole !== undefined) updates.appRole = input.appRole;
   if (input.employeeId !== undefined) updates.employeeId = input.employeeId.trim();
-  if (input.imageUrl !== undefined) updates.imageUrl = input.imageUrl;
+  if (input.imageUrl !== undefined) {
+    updates.imageUrl = input.imageUrl.trim()
+      ? input.imageUrl.trim()
+      : dicebearAvatarPng(current.email);
+  }
   if (input.password) {
     updates.passwordHash = await bcrypt.hash(input.password, 10);
   }
@@ -395,9 +502,11 @@ export async function deleteAppUser(id: string) {
     _id: new ObjectId(id),
   });
 
-  // Delete from employees collection
+  await suppressSeedUser(db, user.email);
+
+  // Delete linked team member record when present.
   await db.collection("employees").deleteOne({
-    email: user.email,
+    $or: [{ email: user.email }, { "directory.workEmail": user.email }],
   });
 
   return user;

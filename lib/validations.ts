@@ -120,6 +120,22 @@ export const employeeCreateSchema = z.object({
 
 
 
+const optionalEmployeeIdSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().min(1).optional(),
+);
+
+export const appUserImageSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) =>
+      value === "" ||
+      /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value) ||
+      /^https?:\/\//.test(value),
+    "Use an image URL or upload an image file.",
+  );
+
 export const appUserCreateSchema = z.object({
 
   email: z.string().email(),
@@ -130,11 +146,23 @@ export const appUserCreateSchema = z.object({
 
   appRole: z.string().trim().min(1),
 
-  team: teamNameSchema.optional(),
+  team: teamNameSchema,
 
-  employeeId: z.string().min(1),
+  employeeId: z.string().trim().min(1),
 
-  imageUrl: z.string().url().optional(),
+  imageUrl: appUserImageSchema.optional(),
+
+  workEmail: z.union([z.string().email(), z.literal("")]).optional(),
+
+  phone: z.string().optional(),
+
+  location: z.string().optional(),
+
+  joinedDate: z.string().optional(),
+
+  notes: z.string().optional(),
+
+  bayNumber: z.string().optional(),
 
 });
 
@@ -150,22 +178,13 @@ export const appUserUpdateSchema = z.object({
 
   team: teamNameSchema.optional(),
 
-  employeeId: z.string().min(1).optional(),
+  employeeId: optionalEmployeeIdSchema,
 
-  imageUrl: z.union([z.string().url(), z.literal("")]).optional(),
+  imageUrl: appUserImageSchema.optional(),
 
 });
 
-const profileImageSchema = z
-  .string()
-  .trim()
-  .refine(
-    (value) =>
-      value === "" ||
-      /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value) ||
-      /^https?:\/\//.test(value),
-    "Use an image URL or upload an image file.",
-  );
+const profileImageSchema = appUserImageSchema;
 
 export const profileSettingsUpdateSchema = z
   .object({

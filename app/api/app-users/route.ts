@@ -8,7 +8,6 @@ import {
   canManageModule,
   canViewModule,
   normalizeAppRole,
-  roleNeedsTeam,
 } from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { sendAccountCreatedEmail } from "@/services/email-service";
@@ -59,11 +58,8 @@ export async function POST(req: Request) {
   }
 
   const payload = parsed.data;
-  if (roleNeedsTeam(payload.appRole) && !payload.team) {
-    return NextResponse.json(
-      { error: "Team is required for lead and employee roles." },
-      { status: 400 },
-    );
+  if (!payload.team?.trim()) {
+    return NextResponse.json({ error: "Team is required." }, { status: 400 });
   }
 
   try {
@@ -73,8 +69,19 @@ export async function POST(req: Request) {
         : generateTemporaryPassword();
 
     const created = await createAppUser({
-      ...payload,
+      email: payload.email,
       password: temporaryPassword,
+      name: payload.name,
+      appRole: payload.appRole,
+      team: payload.team,
+      employeeId: payload.employeeId,
+      imageUrl: payload.imageUrl,
+      workEmail: payload.workEmail,
+      phone: payload.phone,
+      location: payload.location,
+      joinedDate: payload.joinedDate,
+      notes: payload.notes,
+      bayNumber: payload.bayNumber,
     });
     const loginUrl = resolveLoginUrl(new URL(req.url).origin);
     const emailDelivery =
