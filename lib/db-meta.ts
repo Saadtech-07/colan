@@ -5,6 +5,7 @@ import type { DataLayerSummary } from "@/types/data-layer";
 
 const COLLECTION_LABELS = {
   [COLLECTIONS.appUsers]: "App users (login)",
+  [COLLECTIONS.appUserSeedSuppressions]: "App user seed suppressions",
   [COLLECTIONS.employees]: "Employees",
   [COLLECTIONS.employeeDetails]: "Employee details",
   [COLLECTIONS.teams]: "Teams",
