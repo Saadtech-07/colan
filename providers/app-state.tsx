@@ -142,9 +142,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setProfileAvatarUrl(undefined);
       return;
     }
-    if (pathname === "/profile-settings") return;
+
     void refreshProfileAvatar();
-  }, [pathname, refreshProfileAvatar, session?.user?.email, sessionStatus]);
+
+    const refresh = () => {
+      void refreshProfileAvatar();
+    };
+    window.addEventListener("focus", refresh);
+    const interval = window.setInterval(refresh, 30_000);
+
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.clearInterval(interval);
+    };
+  }, [refreshProfileAvatar, session?.user?.email, sessionStatus]);
 
   const user = React.useMemo<AuthUser | null>(() => {
     if (!session?.user) return null;

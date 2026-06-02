@@ -19,7 +19,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
 import { Label } from "@/components/ui/label";
-import { normalizeAppRole } from "@/lib/permissions";
 import { parseApiError, useAppState } from "@/providers/app-state";
 
 type ProfileSettingsResponse = {
@@ -73,31 +72,6 @@ function passwordStrength(password: string): { label: string; tone: string } | n
   return { label: "Strong password", tone: "text-emerald-600" };
 }
 
-function sessionDiffersFromProfile(
-  sessionUser: {
-    name?: string | null;
-    appRole?: string;
-    team?: string;
-    isProfileCompleted?: boolean;
-  } | undefined,
-  profile: Pick<
-    ProfileSettingsResponse,
-    "name" | "appRole" | "team" | "isProfileCompleted"
-  >,
-): boolean {
-  if (!sessionUser) return true;
-
-  const sessionComplete = sessionUser.isProfileCompleted !== false;
-  const profileComplete = profile.isProfileCompleted !== false;
-
-  return (
-    profile.name !== (sessionUser.name ?? "") ||
-    normalizeAppRole(profile.appRole) !== normalizeAppRole(sessionUser.appRole) ||
-    (profile.team ?? undefined) !== (sessionUser.team ?? undefined) ||
-    profileComplete !== sessionComplete
-  );
-}
-
 export default function ProfileSettingsPage() {
   const router = useRouter();
   const { data: session, status, update } = useSession();
@@ -143,13 +117,16 @@ export default function ProfileSettingsPage() {
       if (!res.ok) throw new Error(await parseApiError(res));
       const nextProfile = (await res.json()) as ProfileSettingsResponse;
       setProfile(nextProfile);
-      setForm({
-        name: nextProfile.name,
-        imageUrl: nextProfile.imageUrl,
-        currentPassword: "",
-        newPassword: "",
-        confirmNewPassword: "",
-      });
+      setForm((prev) => ({
+        name: prev.name === (profile?.name ?? "") ? nextProfile.name : prev.name,
+        imageUrl:
+          !prev.imageUrl || prev.imageUrl === profile?.imageUrl
+            ? nextProfile.imageUrl
+            : prev.imageUrl,
+        currentPassword: prev.currentPassword,
+        newPassword: prev.newPassword,
+        confirmNewPassword: prev.confirmNewPassword,
+      }));
       loadedForEmailRef.current = email;
     } catch (nextError) {
       loadedForEmailRef.current = null;
@@ -158,7 +135,37 @@ export default function ProfileSettingsPage() {
       setLoading(false);
       loadInFlightRef.current = false;
     }
-  }, []);
+  }, [profile?.imageUrl, profile?.name]);
+
+  const refreshProfileFromServer = React.useCallback(async () => {
+    const email = session?.user?.email?.trim().toLowerCase() ?? "";
+    if (!email || saving) return;
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
+    try {
+      const res = await fetch("/api/profile-settings", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const nextProfile = (await res.json()) as ProfileSettingsResponse;
+      setProfile(nextProfile);
+      setForm((prev) => ({
+        name: prev.name === (profile?.name ?? "") ? nextProfile.name : prev.name,
+        imageUrl:
+          !prev.imageUrl || prev.imageUrl === profile?.imageUrl
+            ? nextProfile.imageUrl
+            : prev.imageUrl,
+        currentPassword: prev.currentPassword,
+        newPassword: prev.newPassword,
+        confirmNewPassword: prev.confirmNewPassword,
+      }));
+    } catch {
+      // Ignore background refresh errors.
+    } finally {
+      loadInFlightRef.current = false;
+    }
+  }, [profile?.imageUrl, profile?.name, saving, session?.user?.email]);
 
   React.useEffect(() => {
     if (status === "unauthenticated") {
@@ -176,6 +183,21 @@ export default function ProfileSettingsPage() {
 
     void loadProfile(email);
   }, [loadProfile, session?.user?.email, status]);
+
+  React.useEffect(() => {
+    if (status !== "authenticated") return;
+
+    const refresh = () => {
+      void refreshProfileFromServer();
+    };
+    window.addEventListener("focus", refresh);
+    const interval = window.setInterval(refresh, 30_000);
+
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.clearInterval(interval);
+    };
+  }, [refreshProfileFromServer, status]);
 
   const handleReset = () => {
     if (!profile) return;
@@ -260,15 +282,12 @@ export default function ProfileSettingsPage() {
       });
       if (fileInputRef.current) fileInputRef.current.value = "";
 
-      if (sessionDiffersFromProfile(session?.user, updated)) {
-        // Never put uploaded base64 avatars in the JWT cookie — it exceeds header limits on Vercel.
-        await update({
-          name: updated.name,
-          appRole: updated.appRole,
-          team: updated.team,
-          isProfileCompleted: updated.isProfileCompleted,
-        });
-      }
+      await update({
+        name: updated.name,
+        appRole: updated.appRole,
+        team: updated.team,
+        isProfileCompleted: updated.isProfileCompleted,
+      });
       await refreshProfileAvatar();
 
       if (wasOnboarding) {
@@ -277,9 +296,10 @@ export default function ProfileSettingsPage() {
           title: "Profile setup completed",
           description: "Your profile has been saved. Redirecting to dashboard...",
         });
+        router.refresh();
         window.setTimeout(() => {
-          router.replace("/dashboard");
-        }, 700);
+          window.location.assign("/dashboard");
+        }, 400);
         return;
       }
 
