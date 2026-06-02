@@ -20,6 +20,10 @@ import {
 } from "lucide-react";
 import { AvatarUploadField } from "@/components/features/avatar-upload-field";
 import {
+  ConfirmDeleteDialog,
+  type ConfirmDeleteTarget,
+} from "@/components/features/confirm-delete-dialog";
+import {
   CreateAppUserWizardDialog,
   type AccountSetupForm,
   type EmployeeProfileForm,
@@ -138,6 +142,7 @@ export default function AppUsersPage() {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [createWizardOpen, setCreateWizardOpen] = React.useState(false);
+  const [deleteTarget, setDeleteTarget] = React.useState<ConfirmDeleteTarget | null>(null);
   const [form, setForm] = React.useState<AppUserFormState>(() =>
     buildInitialForm(FALLBACK_TEAM),
   );
@@ -403,8 +408,19 @@ export default function AppUsersPage() {
     }
   };
 
-  const handleDelete = async (id: string, email: string) => {
-    if (!confirm(`Delete account ${email}? This cannot be undone.`)) return;
+  const deleting = isLoadingKey("app-users-delete");
+
+  const requestDelete = (record: AppUserPublicDTO) => {
+    setDeleteTarget({
+      id: record.id,
+      email: record.email,
+      name: record.name,
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const { id } = deleteTarget;
     setError(null);
     setSuccess(null);
 
@@ -421,6 +437,7 @@ export default function AppUsersPage() {
         await refreshData();
         router.refresh();
         setSuccess("Account removed.");
+        setDeleteTarget(null);
         if (editingId === id) {
           setDialogOpen(false);
           resetForm({ clearFeedback: false });
@@ -781,7 +798,7 @@ export default function AppUsersPage() {
                           variant="ghost"
                           size="icon"
                           className="h-10 w-10 rounded-full bg-background/80 text-destructive transition hover:bg-destructive/10 hover:text-destructive"
-                          onClick={() => handleDelete(record.id, record.email)}
+                          onClick={() => requestDelete(record)}
                           disabled={isCurrentUser}
                           aria-label={`Delete ${record.email}`}
                           title={
@@ -801,6 +818,16 @@ export default function AppUsersPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDeleteDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        target={deleteTarget}
+        onConfirm={confirmDelete}
+        loading={deleting}
+      />
 
       <CreateAppUserWizardDialog
         open={createWizardOpen}
