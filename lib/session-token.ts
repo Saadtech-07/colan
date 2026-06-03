@@ -1,3 +1,5 @@
+import { isUploadedProfileImage } from "@/lib/profile-image";
+
 /** Keep JWT/session cookies small — Vercel rejects oversized request headers. */
 export const SESSION_IMAGE_MAX_LENGTH = 512;
 
@@ -7,6 +9,7 @@ export function isSessionSafeImageUrl(value?: string | null): value is string {
   if (!trimmed) return false;
   if (trimmed.startsWith("data:")) return false;
   if (trimmed.length > SESSION_IMAGE_MAX_LENGTH) return false;
+  if (!isUploadedProfileImage(trimmed)) return false;
   return true;
 }
 

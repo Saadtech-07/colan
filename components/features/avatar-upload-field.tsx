@@ -4,6 +4,7 @@ import * as React from "react";
 import { ImagePlus, Loader2, Trash2, UploadCloud } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { profileNameInitial } from "@/lib/profile-image";
 import {
   IMAGE_UPLOAD_ACCEPT,
   readFileAsDataUrl,
@@ -20,15 +21,7 @@ type Props = {
 };
 
 function initials(name: string) {
-  return (
-    name
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => part[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase() || "?"
-  );
+  return profileNameInitial(name);
 }
 
 export function AvatarUploadField({

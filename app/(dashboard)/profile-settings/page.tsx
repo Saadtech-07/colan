@@ -19,6 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
 import { Label } from "@/components/ui/label";
+import { profileNameInitial } from "@/lib/profile-image";
 import { parseApiError, useAppState } from "@/providers/app-state";
 
 type ProfileSettingsResponse = {
@@ -401,12 +402,7 @@ export default function ProfileSettingsPage() {
                     <Avatar className="h-20 w-20 ring-4 ring-muted">
                       <AvatarImage src={form.imageUrl || profile?.imageUrl} alt={previewName} />
                       <AvatarFallback className="text-lg font-semibold">
-                        {previewName
-                          .split(" ")
-                          .map((part) => part[0])
-                          .join("")
-                          .slice(0, 2)
-                          .toUpperCase()}
+                        {profileNameInitial(previewName, profile?.email)}
                       </AvatarFallback>
                     </Avatar>
                     <div className="flex flex-wrap gap-2">

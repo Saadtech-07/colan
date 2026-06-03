@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useSidebar } from "@/components/layout/sidebar-context";
+import { profileNameInitial } from "@/lib/profile-image";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
 
@@ -157,11 +158,7 @@ export function AppHeader() {
               <Avatar className="h-8 w-8">
                 <AvatarImage src={user?.avatarUrl} alt={user?.name} />
                 <AvatarFallback className="text-xs font-medium">
-                  {user?.name
-                    ?.split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .slice(0, 2) ?? "?"}
+                  {profileNameInitial(user?.name, user?.email)}
                 </AvatarFallback>
               </Avatar>
               <span className="hidden max-w-[120px] truncate text-sm font-medium sm:inline">

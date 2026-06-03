@@ -58,6 +58,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { profileNameInitial } from "@/lib/profile-image";
+import { useClientPagination } from "@/lib/client-pagination";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { cn } from "@/lib/utils";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
@@ -86,6 +89,7 @@ type AppUserMutationResponse = AppUserPublicDTO & {
 };
 
 const FALLBACK_TEAM = "React Team" as TeamName;
+const APP_USERS_PAGE_SIZE = 4;
 
 function buildInitialForm(defaultTeam: TeamName): AppUserFormState {
   return buildDefaultAppUserForm(defaultTeam);
@@ -104,13 +108,7 @@ function findLinkedEmployeeId(
 }
 
 function getInitials(name: string, email: string) {
-  const source = name.trim() || email.trim();
-  if (!source) return "AU";
-  const parts = source.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+  return profileNameInitial(name, email);
 }
 
 function profileStatusMeta(isProfileCompleted: boolean) {
@@ -208,6 +206,20 @@ export default function AppUsersPage() {
         .includes(query);
     });
   }, [getRoleLabel, roleFilter, searchQuery, teamFilter, users]);
+
+  const {
+    page,
+    setPage,
+    pageItems: paginatedUsers,
+    totalPages,
+    totalItems: paginatedTotal,
+    rangeStart,
+    rangeEnd,
+  } = useClientPagination(filteredUsers, APP_USERS_PAGE_SIZE, [
+    searchQuery,
+    roleFilter,
+    teamFilter,
+  ]);
 
   const summary = React.useMemo(() => {
     const completedProfiles = users.filter((record) => record.isProfileCompleted).length;
@@ -658,7 +670,11 @@ export default function AppUsersPage() {
               </div>
               <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground">
                 <Users className="h-3.5 w-3.5" />
-                Showing {filteredUsers.length} of {users.length}
+                {paginatedTotal === 0
+                  ? `Showing 0 of ${users.length}`
+                  : totalPages > 1
+                    ? `Showing ${rangeStart}–${rangeEnd} of ${paginatedTotal} (${users.length} total)`
+                    : `Showing ${paginatedTotal} of ${users.length}`}
               </div>
             </div>
 
@@ -744,7 +760,7 @@ export default function AppUsersPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredUsers.map((record) => {
+              {paginatedUsers.map((record) => {
                 const status = profileStatusMeta(record.isProfileCompleted);
                 const isCurrentUser = record.email === user?.email;
                 const isEditing = editingId === record.id && dialogOpen;
@@ -863,6 +879,14 @@ export default function AppUsersPage() {
                   </article>
                 );
               })}
+              <ListPagination
+                page={page}
+                totalPages={totalPages}
+                totalItems={paginatedTotal}
+                rangeStart={rangeStart}
+                rangeEnd={rangeEnd}
+                onPageChange={setPage}
+              />
             </div>
           )}
         </CardContent>

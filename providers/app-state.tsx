@@ -4,7 +4,6 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { buildAccessContext, normalizeAppRole, type AccessContext } from "@/lib/permissions";
-import { dicebearAvatarPng } from "@/lib/mock-data";
 import { hydrateRoleRegistry } from "@/lib/role-registry";
 import { sanitizeSessionImageUrl } from "@/lib/session-token";
 import type { TeamDTO, WorkspaceRole } from "@/models";
@@ -35,6 +34,8 @@ type AppStateContextValue = {
   addEmployee: (input: Omit<Employee, "id">) => Promise<void>;
   addProject: (input: Omit<Project, "id" | "slug">) => Promise<Project>;
   addWorkspaceTeam: (name: string) => Promise<void>;
+  updateWorkspaceTeam: (id: string, name: string) => Promise<TeamDTO>;
+  deleteWorkspaceTeam: (id: string) => Promise<void>;
   addGalleryItem: (input: Omit<GalleryImage, "id">) => Promise<void>;
   assignEmployeeToBay: (bayId: string, employeeId: string | null) => Promise<void>;
 };
@@ -168,10 +169,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       email,
       appRole: normalizeAppRole(u.appRole),
       team: u.team,
-      avatarUrl:
-        profileAvatarUrl ??
-        sessionAvatar ??
-        (email ? dicebearAvatarPng(email) : undefined),
+      avatarUrl: profileAvatarUrl ?? sessionAvatar,
       isProfileCompleted: u.isProfileCompleted !== false,
     };
   }, [profileAvatarUrl, session?.user]);
@@ -342,6 +340,32 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const updateWorkspaceTeam = React.useCallback(async (id: string, name: string) => {
+    const res = await fetch(`/api/teams/${id}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error(await parseApiError(res));
+    const updated = (await res.json()) as TeamDTO;
+    setWorkspaceTeams((prev) =>
+      prev
+        .map((team) => (team.id === id ? updated : team))
+        .sort((a, b) => a.displayOrder - b.displayOrder),
+    );
+    return updated;
+  }, []);
+
+  const deleteWorkspaceTeam = React.useCallback(async (id: string) => {
+    const res = await fetch(`/api/teams/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+    if (!res.ok) throw new Error(await parseApiError(res));
+    setWorkspaceTeams((prev) => prev.filter((team) => team.id !== id));
+  }, []);
+
   const addProject = React.useCallback(async (input: Omit<Project, "id" | "slug">) => {
     const res = await fetch("/api/projects", {
       method: "POST",
@@ -408,6 +432,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       addEmployee,
       addProject,
       addWorkspaceTeam,
+      updateWorkspaceTeam,
+      deleteWorkspaceTeam,
       addGalleryItem,
       assignEmployeeToBay,
     }),
@@ -433,6 +459,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       addEmployee,
       addProject,
       addWorkspaceTeam,
+      updateWorkspaceTeam,
+      deleteWorkspaceTeam,
       addGalleryItem,
       assignEmployeeToBay,
     ],

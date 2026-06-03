@@ -35,6 +35,10 @@ export const teamCreateSchema = z.object({
 
 });
 
+export const teamUpdateSchema = z.object({
+  name: teamNameSchema,
+});
+
 
 
 const modulePermissionSchema = z.object({
@@ -115,7 +119,7 @@ export const employeeCreateSchema = z.object({
 
   bayNumber: z.string().optional().default(""),
 
-  imageUrl: z.string().min(1),
+  imageUrl: z.string().optional().default(""),
 
 });
 

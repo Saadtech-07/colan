@@ -1,7 +1,6 @@
 import bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
-import { dicebearAvatarPng } from "@/lib/mock-data";
 import { normalizeAppRole, roleNeedsEmployeeIdentity, roleNeedsTeam } from "@/lib/permissions";
 import {
   COLLECTIONS,
@@ -42,7 +41,7 @@ const SEED_USERS: SeedUser[] = [
     name: "Alex Morgan",
     appRole: "admin",
     employeeId: "COL-9001",
-    imageUrl: dicebearAvatarPng("admin"),
+    imageUrl: "",
     isProfileCompleted: true,
   },
   {
@@ -51,7 +50,7 @@ const SEED_USERS: SeedUser[] = [
     name: "Sofia Nielsen",
     appRole: "manager",
     employeeId: "COL-9002",
-    imageUrl: dicebearAvatarPng("sofia-mgr"),
+    imageUrl: "",
     isProfileCompleted: true,
   },
   {
@@ -61,7 +60,7 @@ const SEED_USERS: SeedUser[] = [
     appRole: "lead",
     team: "React Team",
     employeeId: "COL-9003",
-    imageUrl: dicebearAvatarPng("priya-lead"),
+    imageUrl: "",
     isProfileCompleted: true,
   },
   {
@@ -71,7 +70,7 @@ const SEED_USERS: SeedUser[] = [
     appRole: "employee",
     team: "React Team",
     employeeId: "COL-9004",
-    imageUrl: dicebearAvatarPng("jamie"),
+    imageUrl: "",
     isProfileCompleted: true,
   },
 ];
@@ -384,7 +383,7 @@ export async function createAppUser(
     appRole: input.appRole,
     ...(team ? { team } : {}),
     employeeId,
-    imageUrl: input.imageUrl ?? dicebearAvatarPng(email),
+    imageUrl: input.imageUrl?.trim() ?? "",
     isProfileCompleted: false,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -408,7 +407,7 @@ export async function createAppUser(
     name: input.name.trim(),
     role: employeeRole,
     team,
-    imageUrl: input.imageUrl ?? dicebearAvatarPng(email),
+    imageUrl: input.imageUrl?.trim() ?? "",
     bayNumber,
     projectIds: [],
     directory,
@@ -460,9 +459,7 @@ export async function updateAppUser(
   if (input.name !== undefined) updates.name = input.name.trim();
   if (input.appRole !== undefined) updates.appRole = input.appRole;
   if (input.imageUrl !== undefined) {
-    updates.imageUrl = input.imageUrl.trim()
-      ? input.imageUrl.trim()
-      : dicebearAvatarPng(current.email);
+    updates.imageUrl = input.imageUrl.trim();
   }
   if (input.password) {
     updates.passwordHash = await bcrypt.hash(input.password, 10);
@@ -503,8 +500,7 @@ export async function updateAppUser(
     input.employeeId?.trim() || current.employeeId?.trim() || "";
   const nextName = input.name?.trim() ?? current.name;
   const nextTeam = input.team ?? current.team ?? "Unassigned";
-  const nextImageUrl =
-    input.imageUrl ?? current.imageUrl ?? dicebearAvatarPng(current.email);
+  const nextImageUrl = input.imageUrl ?? current.imageUrl ?? "";
   const nextWorkEmail = (input.workEmail?.trim() || current.email).toLowerCase();
   const nextPhone = input.phone?.trim() ?? "";
   const nextLocation = input.location?.trim() ?? "";
@@ -830,7 +826,7 @@ export async function completeCurrentAppUserProfile(
   const trimmedName = input.name.trim();
   if (!trimmedName) throw new Error("Full name is required.");
 
-  const nextImageUrl = input.imageUrl?.trim() ? input.imageUrl.trim() : dicebearAvatarPng(email);
+  const nextImageUrl = input.imageUrl?.trim() ?? "";
   const wantsPasswordChange = Boolean(input.newPassword);
 
   const isFirstLoginSetup = !normalizeProfileCompleted(current.isProfileCompleted);

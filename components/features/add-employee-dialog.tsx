@@ -77,9 +77,7 @@ export function AddEmployeeDialog({
         team,
         role,
         bayNumber,
-        imageUrl:
-          imageUrl.trim() ||
-          `https://api.dicebear.com/7.x/avataaars/png?seed=${encodeURIComponent(name)}&size=128`,
+        imageUrl: imageUrl.trim(),
       });
       resetForm();
       setOpen(false);

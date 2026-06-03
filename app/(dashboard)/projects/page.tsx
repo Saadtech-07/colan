@@ -29,6 +29,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AddProjectDialog } from "@/components/features/add-project-dialog";
 import { AddTeamDialog } from "@/components/features/add-team-dialog";
+import { TeamActionsMenu } from "@/components/features/team-actions-menu";
 import { ProjectStatusSelect } from "@/components/features/project-status-select";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import {
@@ -43,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
 import type { Project, ProjectStatus, TeamName } from "@/types";
+import type { TeamDTO } from "@/models";
 
 const ALL_TAB = "All";
 
@@ -94,31 +96,64 @@ export default function ProjectsPage() {
     access,
     user,
     teamNames,
+    workspaceTeams,
     isAdmin,
     employees,
     refreshData,
+    updateWorkspaceTeam,
+    deleteWorkspaceTeam,
   } = useAppState();
   const { withLoading } = useGlobalLoading();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
   const [statusError, setStatusError] = React.useState<string | null>(null);
+  const [teamActionError, setTeamActionError] = React.useState<string | null>(null);
   const tabRailRef = React.useRef<HTMLDivElement>(null);
   const today = React.useMemo(() => new Date(), []);
 
+  const isBroadViewer = access?.seesAllTeams ?? false;
+  const isAssignedProjectsOnly = !isBroadViewer && !access?.canManageProjects;
+
+  const currentEmployee = React.useMemo(() => {
+    const email = user?.email?.toLowerCase();
+    if (!email) return null;
+    return (
+      employees.find(
+        (employee) =>
+          employee.email?.toLowerCase() === email ||
+          employee.directory?.workEmail?.toLowerCase() === email,
+      ) ?? null
+    );
+  }, [employees, user?.email]);
+
+  const scopedProjects = React.useMemo(() => {
+    if (!isAssignedProjectsOnly) return projects;
+    if (!currentEmployee) return [];
+    return projects.filter((project) => project.memberIds.includes(currentEmployee.id));
+  }, [currentEmployee, isAssignedProjectsOnly, projects]);
+
   const teamsToShow: TeamName[] =
-    access?.seesAllTeams || !user?.team ? teamNames : [user.team];
+    isBroadViewer || !user?.team ? teamNames : [user.team];
+
+  React.useEffect(() => {
+    if (!isBroadViewer && user?.team && tab === ALL_TAB) {
+      setTab(user.team);
+    }
+  }, [isBroadViewer, tab, user?.team]);
 
   const filtered =
     tab === ALL_TAB
-      ? projects
-      : projects.filter((p) => projectBelongsToTeam(p, tab as TeamName));
+      ? scopedProjects
+      : scopedProjects.filter((p) => projectBelongsToTeam(p, tab as TeamName));
 
   const byTeam = teamsToShow.reduce(
     (acc, team) => {
-      acc[team] = projects.filter((p) => projectBelongsToTeam(p, team));
+      acc[team] = scopedProjects.filter((p) => projectBelongsToTeam(p, team));
       return acc;
     },
     {} as Record<TeamName, Project[]>,
   );
+
+  const activeTeamTab = !isBroadViewer && user?.team ? user.team : tab;
 
   const updateProjectStatus = React.useCallback(
     async (project: Project, nextStatus: ProjectStatus) => {
@@ -139,8 +174,36 @@ export default function ProjectsPage() {
     [refreshData],
   );
 
+  const handleRenameTeam = React.useCallback(
+    async (team: TeamDTO, nextName: string) => {
+      setTeamActionError(null);
+      const updated = await updateWorkspaceTeam(team.id, nextName);
+      await refreshData();
+      if (tab === team.name) {
+        setTab(updated.name);
+      }
+    },
+    [refreshData, tab, updateWorkspaceTeam],
+  );
+
+  const handleDeleteTeam = React.useCallback(
+    async (team: TeamDTO) => {
+      setTeamActionError(null);
+      await deleteWorkspaceTeam(team.id);
+      await refreshData();
+      if (tab === team.name) {
+        setTab(ALL_TAB);
+      }
+    },
+    [deleteWorkspaceTeam, refreshData, tab],
+  );
+
   return (
-    <Tabs value={tab} onValueChange={setTab} className="space-y-6">
+    <Tabs
+      value={activeTeamTab}
+      onValueChange={isBroadViewer ? setTab : () => undefined}
+      className="space-y-6"
+    >
       <section className="overflow-hidden rounded-[28px] border border-border/70 bg-background/75 p-5 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-6">
         <div className="space-y-5">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
@@ -178,54 +241,62 @@ export default function ProjectsPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="hidden h-10 w-10 shrink-0 rounded-2xl border-border/70 bg-background/80 shadow-sm sm:inline-flex"
-              onClick={() => tabRailRef.current?.scrollBy({ left: -220, behavior: "smooth" })}
-              aria-label="Scroll team filters left"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
+          {isBroadViewer ? (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="hidden h-10 w-10 shrink-0 rounded-2xl border-border/70 bg-background/80 shadow-sm sm:inline-flex"
+                onClick={() => tabRailRef.current?.scrollBy({ left: -220, behavior: "smooth" })}
+                aria-label="Scroll team filters left"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
 
-            <div
-              ref={tabRailRef}
-              className="min-w-0 flex-1 overflow-x-auto scroll-smooth"
-            >
-              <TabsList className="inline-flex h-11 min-w-max flex-nowrap items-center gap-1 rounded-2xl border border-border/70 bg-muted/40 p-1 shadow-sm">
-                <TabsTrigger
-                  value={ALL_TAB}
-                  className="rounded-xl px-4 data-[state=active]:shadow-sm"
-                >
-                  All teams
-                </TabsTrigger>
-                {teamsToShow.map((team) => (
+              <div
+                ref={tabRailRef}
+                className="min-w-0 flex-1 overflow-x-auto scroll-smooth"
+              >
+                <TabsList className="inline-flex h-11 min-w-max flex-nowrap items-center gap-1 rounded-2xl border border-border/70 bg-muted/40 p-1 shadow-sm">
                   <TabsTrigger
-                    key={team}
-                    value={team}
+                    value={ALL_TAB}
                     className="rounded-xl px-4 data-[state=active]:shadow-sm"
                   >
-                    {teamTabLabel(team)}
+                    All teams
                   </TabsTrigger>
-                ))}
-              </TabsList>
-            </div>
+                  {teamsToShow.map((team) => (
+                    <TabsTrigger
+                      key={team}
+                      value={team}
+                      className="rounded-xl px-4 data-[state=active]:shadow-sm"
+                    >
+                      {teamTabLabel(team)}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </div>
 
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="hidden h-10 w-10 shrink-0 rounded-2xl border-border/70 bg-background/80 shadow-sm sm:inline-flex"
-              onClick={() => tabRailRef.current?.scrollBy({ left: 220, behavior: "smooth" })}
-              aria-label="Scroll team filters right"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="hidden h-10 w-10 shrink-0 rounded-2xl border-border/70 bg-background/80 shadow-sm sm:inline-flex"
+                onClick={() => tabRailRef.current?.scrollBy({ left: 220, behavior: "smooth" })}
+                aria-label="Scroll team filters right"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : null}
         </div>
       </section>
+
+      {teamActionError && (
+        <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-sm">
+          {teamActionError}
+        </div>
+      )}
 
       {statusError && (
         <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-sm">
@@ -233,28 +304,48 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      <TabsContent value={tab} className="mt-0">
-        {tab === ALL_TAB ? (
+      <TabsContent value={activeTeamTab} className="mt-0">
+        {isBroadViewer && tab === ALL_TAB ? (
           <div className="grid gap-6 xl:grid-cols-2">
             {teamsToShow.map((team) => (
               <TeamProjectSection
                 key={team}
                 team={team}
+                teamRecord={workspaceTeams.find((record) => record.name === team) ?? null}
                 items={byTeam[team]}
                 employees={employees}
                 canEditStatus={!!access?.canManageProjects}
+                canManageTeam={isAdmin}
+                emptyMessage="No projects for this team yet."
                 onStatusChange={updateProjectStatus}
+                onRenameTeam={handleRenameTeam}
+                onDeleteTeam={handleDeleteTeam}
+                onTeamActionError={setTeamActionError}
                 today={today}
               />
             ))}
           </div>
         ) : (
           <TeamProjectSection
-            team={tab as TeamName}
+            team={(isBroadViewer ? tab : user?.team) as TeamName}
+            teamRecord={
+              workspaceTeams.find(
+                (record) => record.name === (isBroadViewer ? tab : user?.team),
+              ) ?? null
+            }
             items={filtered}
             employees={employees}
             canEditStatus={!!access?.canManageProjects}
+            canManageTeam={isAdmin}
+            emptyMessage={
+              isAssignedProjectsOnly
+                ? "No projects assigned to you yet."
+                : "No projects for this team yet."
+            }
             onStatusChange={updateProjectStatus}
+            onRenameTeam={handleRenameTeam}
+            onDeleteTeam={handleDeleteTeam}
+            onTeamActionError={setTeamActionError}
             today={today}
           />
         )}
@@ -265,17 +356,29 @@ export default function ProjectsPage() {
 
 function TeamProjectSection({
   team,
+  teamRecord,
   items,
   employees,
   canEditStatus,
+  canManageTeam,
   onStatusChange,
+  onRenameTeam,
+  onDeleteTeam,
+  onTeamActionError,
+  emptyMessage,
   today,
 }: {
   team: TeamName;
+  teamRecord: TeamDTO | null;
   items: Project[];
   employees: ReturnType<typeof useAppState>["employees"];
   canEditStatus: boolean;
+  canManageTeam: boolean;
+  emptyMessage: string;
   onStatusChange: (project: Project, status: ProjectStatus) => Promise<void>;
+  onRenameTeam: (team: TeamDTO, nextName: string) => Promise<void>;
+  onDeleteTeam: (team: TeamDTO) => Promise<void>;
+  onTeamActionError: (message: string | null) => void;
   today: Date;
 }) {
   const completion = teamCompletionPercentage(items);
@@ -295,8 +398,34 @@ function TeamProjectSection({
               </CardDescription>
             </div>
           </div>
-          <div className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
-            {teamTabLabel(team)}
+          <div className="flex items-center gap-2">
+            {canManageTeam && teamRecord ? (
+              <TeamActionsMenu
+                team={teamRecord}
+                onRename={async (record, nextName) => {
+                  onTeamActionError(null);
+                  try {
+                    await onRenameTeam(record, nextName);
+                  } catch (error) {
+                    const message =
+                      error instanceof Error ? error.message : "Could not update team.";
+                    onTeamActionError(message);
+                    throw error;
+                  }
+                }}
+                onDelete={async (record) => {
+                  onTeamActionError(null);
+                  try {
+                    await onDeleteTeam(record);
+                  } catch (error) {
+                    const message =
+                      error instanceof Error ? error.message : "Could not delete team.";
+                    onTeamActionError(message);
+                    throw error;
+                  }
+                }}
+              />
+            ) : null}
           </div>
         </div>
       </CardHeader>
@@ -305,6 +434,7 @@ function TeamProjectSection({
           items={items}
           employees={employees}
           canEditStatus={canEditStatus}
+          emptyMessage={emptyMessage}
           onStatusChange={onStatusChange}
           today={today}
         />
@@ -317,12 +447,14 @@ function ProjectLinkList({
   items,
   employees,
   canEditStatus,
+  emptyMessage,
   onStatusChange,
   today,
 }: {
   items: Project[];
   employees: ReturnType<typeof useAppState>["employees"];
   canEditStatus: boolean;
+  emptyMessage: string;
   onStatusChange: (project: Project, status: ProjectStatus) => Promise<void>;
   today: Date;
 }) {
@@ -330,10 +462,12 @@ function ProjectLinkList({
     return (
       <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 py-12 text-center">
         <FolderKanban className="mx-auto mb-3 h-8 w-8 text-muted-foreground/60" />
-        <p className="font-medium text-foreground">No projects for this team yet.</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Create a project to populate this workspace section.
-        </p>
+        <p className="font-medium text-foreground">{emptyMessage}</p>
+        {canEditStatus ? (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Create a project to populate this workspace section.
+          </p>
+        ) : null}
       </div>
     );
   }

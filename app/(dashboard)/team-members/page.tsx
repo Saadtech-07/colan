@@ -42,20 +42,16 @@ import {
   type EmployeeWorkspaceStatus,
   workforceAnalytics,
 } from "@/lib/team-members-ui";
+import { profileNameInitial } from "@/lib/profile-image";
+import { useClientPagination } from "@/lib/client-pagination";
+import { ListPagination } from "@/components/ui/list-pagination";
 import { cn } from "@/lib/utils";
 
 const ALL_TAB = "All";
+const TEAM_MEMBERS_PAGE_SIZE = 6;
 
 function getInitials(name: string) {
-  return (
-    name
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => part[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase() || "?"
-  );
+  return profileNameInitial(name);
 }
 
 function joinDateLabel(date?: string) {
@@ -114,6 +110,16 @@ export default function TeamMembersPage() {
       return matchesSearch && matchesRole;
     });
   }, [roleTab, search, teamScopedEmployees, workspaceRoles]);
+
+  const {
+    page,
+    setPage,
+    pageItems: paginatedEmployees,
+    totalPages,
+    totalItems: paginatedTotal,
+    rangeStart,
+    rangeEnd,
+  } = useClientPagination(filteredEmployees, TEAM_MEMBERS_PAGE_SIZE, [search, tab, roleTab]);
 
   const analytics = React.useMemo(
     () => workforceAnalytics(filteredEmployees, projects),
@@ -282,12 +288,16 @@ export default function TeamMembersPage() {
             </p>
           </div>
           <Badge variant="outline" className="rounded-full border-border/70 bg-background/80 px-3 py-1">
-            Showing {filteredEmployees.length} member{filteredEmployees.length === 1 ? "" : "s"}
+            {paginatedTotal === 0
+              ? "No members"
+              : totalPages > 1
+                ? `Showing ${rangeStart}–${rangeEnd} of ${paginatedTotal}`
+                : `Showing ${paginatedTotal} member${paginatedTotal === 1 ? "" : "s"}`}
           </Badge>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-        {filteredEmployees.map((employee) => {
+        {paginatedEmployees.map((employee) => {
           const profileHref = employeeProfilePath(employee);
           const activeProjects = employeeActiveProjects(employee, projects);
           const workspace = employeeWorkspaceStatus(employee);
@@ -374,6 +384,16 @@ export default function TeamMembersPage() {
           );
         })}
         </div>
+
+        <ListPagination
+          page={page}
+          totalPages={totalPages}
+          totalItems={paginatedTotal}
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          onPageChange={setPage}
+          className="px-1"
+        />
       </section>
 
       {filteredEmployees.length === 0 && (
