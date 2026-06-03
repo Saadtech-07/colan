@@ -60,6 +60,27 @@ function toDetail(project: Project, allEmployees: Employee[]): ProjectDetail {
   };
 }
 
+/** Ensure metadata fields exist on legacy project documents. */
+async function backfillProjectMetadata(db: Db) {
+  const col = db.collection<ProjectDocument>(COLLECTIONS.projects);
+  const now = new Date();
+
+  await col.updateMany(
+    { clientName: { $exists: false } },
+    { $set: { clientName: "", updatedAt: now } },
+  );
+
+  await col.updateMany(
+    { projectManagerId: { $exists: false } },
+    { $set: { projectManagerId: "", updatedAt: now } },
+  );
+
+  await col.updateMany(
+    { description: { $exists: false } },
+    { $set: { description: "", updatedAt: now } },
+  );
+}
+
 /** Assign unique slugs before the unique index on `slug` is created. */
 async function backfillProjectSlugs(db: Db) {
   const pr = db.collection<ProjectDocument>(COLLECTIONS.projects);
@@ -188,6 +209,7 @@ async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>
   }
 
   await backfillProjectSlugs(db);
+  await backfillProjectMetadata(db);
   await repairProjectMemberIds(db);
 
   const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
@@ -630,6 +652,9 @@ export async function createProject(
       input.slug ?? uniqueProjectSlug(input.name, existing);
     const row: Project = {
       ...input,
+      clientName: input.clientName ?? "",
+      projectManagerId: input.projectManagerId ?? "",
+      description: input.description ?? "",
       memberIds,
       slug,
       id: `p-${Date.now()}`,
@@ -651,13 +676,13 @@ export async function createProject(
     _id,
     slug,
     name: input.name,
-    clientName: input.clientName,
-    projectManagerId: input.projectManagerId,
+    clientName: input.clientName ?? "",
+    projectManagerId: input.projectManagerId ?? "",
     teams: input.teams,
     assignedDate: input.assignedDate,
     lastDate: input.lastDate,
     status: input.status,
-    description: input.description,
+    description: input.description ?? "",
     memberIds,
     updatedAt: new Date(),
   };

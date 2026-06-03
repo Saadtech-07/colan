@@ -236,6 +236,10 @@ export const projectCreateSchema = z.object({
 
   name: z.string().min(1),
 
+  clientName: z.string().min(1),
+
+  projectManagerId: z.string().min(1),
+
   teams: z.array(teamNameSchema).min(1),
 
   assignedDate: z.string().min(1),
@@ -245,10 +249,6 @@ export const projectCreateSchema = z.object({
   status: z.enum(projectStatuses),
 
   description: z.string().optional(),
-
-  clientName: z.string().min(1).optional(),
-
-  projectManagerId: z.string().min(1).optional(),
 
   memberIds: z.array(z.string()).optional(),
 

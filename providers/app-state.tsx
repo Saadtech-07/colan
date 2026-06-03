@@ -33,7 +33,7 @@ type AppStateContextValue = {
   refreshData: () => Promise<void>;
   refreshProfileAvatar: () => Promise<void>;
   addEmployee: (input: Omit<Employee, "id">) => Promise<void>;
-  addProject: (input: Omit<Project, "id" | "slug">) => Promise<void>;
+  addProject: (input: Omit<Project, "id" | "slug">) => Promise<Project>;
   addWorkspaceTeam: (name: string) => Promise<void>;
   addGalleryItem: (input: Omit<GalleryImage, "id">) => Promise<void>;
   assignEmployeeToBay: (bayId: string, employeeId: string | null) => Promise<void>;
@@ -352,6 +352,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     if (!res.ok) throw new Error(await parseApiError(res));
     const created = (await res.json()) as Project;
     setProjects((prev) => [...prev, created]);
+    return created;
   }, []);
 
   const addGalleryItem = React.useCallback(

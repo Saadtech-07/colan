@@ -164,13 +164,13 @@ export default function ProjectsPage() {
                 {access?.canManageProjects && (
                   <AddProjectDialog
                     teamOptions={teamNames}
-                    onCreate={async (input) => {
-                      await withLoading(
+                    onCreate={async (input) =>
+                      withLoading(
                         "project-create",
                         LOADING_PRESETS.creatingProject,
                         () => addProject(input),
-                      );
-                    }}
+                      )
+                    }
                     lockedTeam={access.role === "lead" ? user?.team : undefined}
                   />
                 )}
