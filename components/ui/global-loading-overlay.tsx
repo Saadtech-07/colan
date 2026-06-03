@@ -14,6 +14,7 @@ export type GlobalLoadingOverlayProps = {
 export function GlobalLoadingOverlay({
   open,
   title,
+  description,
   className,
 }: GlobalLoadingOverlayProps) {
   if (!open) return null;
@@ -28,10 +29,11 @@ export function GlobalLoadingOverlay({
       aria-live="polite"
       role="status"
       aria-labelledby="global-loading-title"
+      aria-describedby={description ? "global-loading-description" : undefined}
     >
       <div className="animate-in fade-in-0 zoom-in-95 duration-200">
         <div id="global-loading-title">
-          <LoadingIndicator title={title} />
+          <LoadingIndicator title={title} description={description} />
         </div>
       </div>
     </div>

@@ -5,10 +5,11 @@ import { cn } from "@/lib/utils";
 
 export type LoadingIndicatorProps = {
   title: string;
+  description?: string;
   className?: string;
 };
 
-export function LoadingIndicator({ title, className }: LoadingIndicatorProps) {
+export function LoadingIndicator({ title, description, className }: LoadingIndicatorProps) {
   return (
     <div
       className={cn("flex flex-col items-center justify-center gap-5 text-center", className)}
@@ -33,7 +34,17 @@ export function LoadingIndicator({ title, className }: LoadingIndicatorProps) {
         />
       </svg>
 
-      <p className="text-base font-semibold tracking-tight text-foreground">{title}</p>
+      <div className="space-y-1">
+        <p className="text-base font-semibold tracking-tight text-foreground">{title}</p>
+        {description ? (
+          <p
+            id="global-loading-description"
+            className="max-w-xs text-sm text-muted-foreground"
+          >
+            {description}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
