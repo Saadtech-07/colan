@@ -1,15 +1,14 @@
 "use client";
 
 import * as React from "react";
+import { Loader2, Plus } from "lucide-react";
 import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Loader2,
-  MapPin,
-  Plus,
-} from "lucide-react";
-import { AvatarUploadField } from "@/components/features/avatar-upload-field";
+  AppUserAccountFormFields,
+  UNASSIGNED_SEAT,
+  applyAppUserRole,
+  buildDefaultAppUserForm,
+  type AppUserAccountFormValues,
+} from "@/components/features/app-user-account-form-fields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,55 +19,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { ALL_SEAT_IDS } from "@/lib/seating-layout";
-import { seatOccupancyMap } from "@/lib/seating-utils";
-import { generateTemporaryPassword } from "@/lib/password-utils";
 import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
-import { cn } from "@/lib/utils";
 import type { AppRole, Employee, TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
 import type { WorkspaceRole } from "@/models";
 
-const UNASSIGNED_SEAT = "__unassigned__";
+export type AccountSetupForm = AppUserAccountFormValues;
 
-export type AccountSetupForm = {
-  email: string;
-  name: string;
-  employeeId: string;
-  appRole: AppRole;
-  team: TeamName;
-  password: string;
-  imageUrl: string;
-};
-
-export type EmployeeProfileForm = {
-  workEmail: string;
-  phone: string;
-  location: string;
-  joinedDate: string;
-  notes: string;
-  bayNumber: string;
-};
-
-export type CreateAppUserWizardResult = AppUserPublicDTO & {
-  emailDelivery?: {
-    attempted: boolean;
-    sent: boolean;
-    provider: "nodemailer";
-    message?: string;
-    id?: string;
-  };
-};
+export type EmployeeProfileForm = never;
 
 type Props = {
   open: boolean;
@@ -79,106 +37,11 @@ type Props = {
   users: AppUserPublicDTO[];
   employees: Employee[];
   submitting: boolean;
-  onSubmit: (
-    account: AccountSetupForm,
-    profile: EmployeeProfileForm,
-  ) => Promise<void>;
+  onSubmit: (account: AppUserAccountFormValues) => Promise<void>;
 };
 
-function buildAccountForm(defaultTeam: TeamName): AccountSetupForm {
-  return {
-    email: "",
-    name: "",
-    employeeId: "",
-    appRole: "employee",
-    team: defaultTeam,
-    password: generateTemporaryPassword(),
-    imageUrl: "",
-  };
-}
-
-function buildProfileForm(accountEmail: string): EmployeeProfileForm {
-  return {
-    workEmail: accountEmail,
-    phone: "",
-    location: "",
-    joinedDate: new Date().toISOString().split("T")[0],
-    notes: "",
-    bayNumber: UNASSIGNED_SEAT,
-  };
-}
-
-function WizardSteps({ step }: { step: 1 | 2 }) {
-  const steps = [
-    { number: 1, label: "Account Setup" },
-    { number: 2, label: "Employee Details" },
-  ] as const;
-
-  return (
-    <div className="flex items-center gap-2">
-      {steps.map((item, index) => {
-        const isActive = step === item.number;
-        const isComplete = step > item.number;
-
-        return (
-          <React.Fragment key={item.number}>
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <div
-                className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold transition-colors",
-                  isComplete && "border-primary bg-primary text-primary-foreground",
-                  isActive && "border-primary bg-primary/10 text-primary",
-                  !isActive && !isComplete && "border-border/70 bg-muted/30 text-muted-foreground",
-                )}
-              >
-                {isComplete ? <Check className="h-4 w-4" /> : item.number}
-              </div>
-              <div className="min-w-0">
-                <p
-                  className={cn(
-                    "truncate text-xs font-semibold",
-                    isActive || isComplete ? "text-foreground" : "text-muted-foreground",
-                  )}
-                >
-                  Step {item.number}
-                </p>
-                <p className="truncate text-[11px] text-muted-foreground">{item.label}</p>
-              </div>
-            </div>
-            {index < steps.length - 1 && (
-              <div
-                className={cn(
-                  "hidden h-px w-8 shrink-0 sm:block",
-                  step > item.number ? "bg-primary" : "bg-border/70",
-                )}
-              />
-            )}
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-}
-
-function applyAccountRole(
-  prev: AccountSetupForm,
-  appRole: AppRole,
-  defaultTeam: TeamName,
-): AccountSetupForm {
-  if (!roleNeedsEmployeeIdentity(appRole)) {
-    return {
-      ...prev,
-      appRole,
-      employeeId: "",
-      team: defaultTeam,
-    };
-  }
-
-  return { ...prev, appRole };
-}
-
-function validateAccountStep(
-  account: AccountSetupForm,
+function validateCreateForm(
+  account: AppUserAccountFormValues,
   users: AppUserPublicDTO[],
   employees: Employee[],
 ): string | null {
@@ -228,72 +91,46 @@ export function CreateAppUserWizardDialog({
   submitting,
   onSubmit,
 }: Props) {
-  const [step, setStep] = React.useState<1 | 2>(1);
   const [error, setError] = React.useState<string | null>(null);
-  const [account, setAccount] = React.useState<AccountSetupForm>(() =>
-    buildAccountForm(defaultTeam),
+  const [account, setAccount] = React.useState<AppUserAccountFormValues>(() =>
+    buildDefaultAppUserForm(defaultTeam),
   );
-  const [profile, setProfile] = React.useState<EmployeeProfileForm>(() => buildProfileForm(""));
 
-  const occupancy = React.useMemo(() => seatOccupancyMap(employees), [employees]);
-  const vacantSeats = React.useMemo(
-    () => ALL_SEAT_IDS.filter((id) => !occupancy.has(id)),
-    [occupancy],
-  );
-  const needsEmployeeIdentity = roleNeedsEmployeeIdentity(account.appRole);
-
-  const resetWizard = React.useCallback(() => {
-    setStep(1);
+  const resetForm = React.useCallback(() => {
     setError(null);
-    setAccount(buildAccountForm(defaultTeam));
-    setProfile(buildProfileForm(""));
+    setAccount(buildDefaultAppUserForm(defaultTeam));
   }, [defaultTeam]);
 
   React.useEffect(() => {
     if (!open) return;
-    resetWizard();
-  }, [open, resetWizard]);
+    resetForm();
+  }, [open, resetForm]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen && !submitting) {
-      resetWizard();
+      resetForm();
     }
     onOpenChange(nextOpen);
   };
 
-  const handleContinue = () => {
+  const patchAccount = (patch: Partial<AppUserAccountFormValues>) => {
+    setAccount((prev) => ({ ...prev, ...patch }));
+  };
+
+  const handleCreate = async () => {
     setError(null);
-    const validationError = validateAccountStep(account, users, employees);
+    const validationError = validateCreateForm(account, users, employees);
     if (validationError) {
       setError(validationError);
       return;
     }
 
-    if (!needsEmployeeIdentity) {
-      void handleCreate();
-      return;
-    }
-
-    setProfile((prev) => ({
-      ...buildProfileForm(account.email.trim().toLowerCase()),
-      phone: prev.phone,
-      location: prev.location,
-      joinedDate: prev.joinedDate || new Date().toISOString().split("T")[0],
-      notes: prev.notes,
-      bayNumber: prev.bayNumber,
-    }));
-    setStep(2);
-  };
-
-  const handleBack = () => {
-    setError(null);
-    setStep(1);
-  };
-
-  const handleCreate = async () => {
-    setError(null);
     try {
-      await onSubmit(account, profile);
+      await onSubmit({
+        ...account,
+        email: account.email.trim().toLowerCase(),
+        workEmail: account.workEmail.trim() || account.email.trim().toLowerCase(),
+      });
       handleOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to create account.");
@@ -302,422 +139,73 @@ export function CreateAppUserWizardDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-hidden border-border/70 bg-background/95 p-0 sm:max-w-3xl">
-        <div className="flex max-h-[92vh] flex-col">
-          <DialogHeader className="space-y-4 border-b border-border/60 px-6 py-5">
-            <div className="space-y-3">
-              <Badge
-                variant="muted"
-                className="w-fit rounded-full border border-border/60 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground"
-              >
-                New workspace account
-              </Badge>
-              <div>
-                <DialogTitle className="text-xl">Create account</DialogTitle>
-                <DialogDescription className="mt-1">
-                  {step === 1
-                    ? "Set up login credentials and workspace access."
-                    : "Complete employee profile and optional seat assignment."}
-                </DialogDescription>
-              </div>
-            </div>
-            <WizardSteps step={step} />
-          </DialogHeader>
-
-          <div className="flex-1 overflow-y-auto px-6 py-5">
-            {error && (
-              <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                {error}
-              </div>
-            )}
-
-            {step === 1 ? (
-              <div className="space-y-6">
-                <section className="space-y-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Step 1
-                    </p>
-                    <h3 className="mt-1 text-base font-semibold tracking-tight">
-                      Account details
-                    </h3>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor="wizard-email">Email *</Label>
-                      <Input
-                        id="wizard-email"
-                        type="email"
-                        value={account.email}
-                        onChange={(event) =>
-                          setAccount((prev) => ({ ...prev, email: event.target.value }))
-                        }
-                        className="h-11 rounded-2xl border-border/70"
-                        placeholder="name@colan.io"
-                      />
-                    </div>
-
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor="wizard-name">Full name *</Label>
-                      <Input
-                        id="wizard-name"
-                        value={account.name}
-                        onChange={(event) =>
-                          setAccount((prev) => ({ ...prev, name: event.target.value }))
-                        }
-                        className="h-11 rounded-2xl border-border/70"
-                        placeholder="Full name"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="wizard-employee-id">
-                        Employee ID
-                        {needsEmployeeIdentity ? (
-                          <span className="ml-0.5 text-destructive" aria-hidden="true">
-                            *
-                          </span>
-                        ) : null}
-                      </Label>
-                      <Input
-                        id="wizard-employee-id"
-                        value={account.employeeId}
-                        onChange={(event) =>
-                          setAccount((prev) => ({ ...prev, employeeId: event.target.value }))
-                        }
-                        placeholder={
-                          needsEmployeeIdentity ? "COL-1001" : "Not required for this role"
-                        }
-                        disabled={!needsEmployeeIdentity}
-                        className="h-11 rounded-2xl border-border/70 disabled:cursor-not-allowed disabled:opacity-60"
-                      />
-                      {!needsEmployeeIdentity ? (
-                        <p className="text-xs text-muted-foreground">
-                          Organization-level roles do not require an employee ID.
-                        </p>
-                      ) : null}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>
-                        Role *
-                      </Label>
-                      <Select
-                        value={account.appRole}
-                        onValueChange={(value) =>
-                          setAccount((prev) =>
-                            applyAccountRole(prev, value as AppRole, defaultTeam),
-                          )
-                        }
-                      >
-                        <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
-                          <SelectValue>
-                            {workspaceRoles.find((role) => role.key === account.appRole)?.name ??
-                              account.appRole}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent className="rounded-2xl border-border/60">
-                          {workspaceRoles.map((role) => (
-                            <SelectItem key={role.key} value={role.key}>
-                              {role.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label>
-                        Team
-                        {needsEmployeeIdentity ? (
-                          <span className="ml-0.5 text-destructive" aria-hidden="true">
-                            *
-                          </span>
-                        ) : null}
-                      </Label>
-                      <Select
-                        value={account.team}
-                        onValueChange={(value) =>
-                          setAccount((prev) => ({ ...prev, team: value as TeamName }))
-                        }
-                        disabled={!needsEmployeeIdentity}
-                      >
-                        <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85 disabled:cursor-not-allowed disabled:opacity-60">
-                          <SelectValue>
-                            {needsEmployeeIdentity
-                              ? account.team
-                              : "Not required for this role"}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent className="rounded-2xl border-border/60">
-                          {teamNames.map((team) => (
-                            <SelectItem key={team} value={team}>
-                              {team}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {!needsEmployeeIdentity ? (
-                        <p className="text-xs text-muted-foreground">
-                          Organization-level roles are not tied to a delivery team.
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                </section>
-
-                <section className="space-y-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                        Security
-                      </p>
-                      <h3 className="mt-1 text-base font-semibold tracking-tight">Password *</h3>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 rounded-xl text-xs"
-                      onClick={() =>
-                        setAccount((prev) => ({
-                          ...prev,
-                          password: generateTemporaryPassword(),
-                        }))
-                      }
-                    >
-                      Generate password
-                    </Button>
-                  </div>
-                  <Input
-                    type="text"
-                    value={account.password}
-                    onChange={(event) =>
-                      setAccount((prev) => ({ ...prev, password: event.target.value }))
-                    }
-                    className="h-11 rounded-2xl border-border/70 font-mono text-sm"
-                    autoComplete="new-password"
-                  />
-                </section>
-
-                <section className="space-y-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Profile image
-                    </p>
-                    <h3 className="mt-1 text-base font-semibold tracking-tight">
-                      Upload profile image
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">Optional</p>
-                  </div>
-                  <AvatarUploadField
-                    value={account.imageUrl}
-                    previewName={account.name || account.email || "New account"}
-                    onChange={(value) =>
-                      setAccount((prev) => ({
-                        ...prev,
-                        imageUrl: value,
-                      }))
-                    }
-                    disabled={submitting}
-                  />
-                </section>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <section className="space-y-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Step 2
-                    </p>
-                    <h3 className="mt-1 text-base font-semibold tracking-tight">
-                      Personal & workspace details
-                    </h3>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor="wizard-work-email">Work email</Label>
-                      <Input
-                        id="wizard-work-email"
-                        type="email"
-                        value={profile.workEmail}
-                        onChange={(event) =>
-                          setProfile((prev) => ({ ...prev, workEmail: event.target.value }))
-                        }
-                        className="h-11 rounded-2xl border-border/70"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="wizard-phone">Phone number</Label>
-                      <Input
-                        id="wizard-phone"
-                        value={profile.phone}
-                        onChange={(event) =>
-                          setProfile((prev) => ({ ...prev, phone: event.target.value }))
-                        }
-                        className="h-11 rounded-2xl border-border/70"
-                        placeholder="+1-555-0100"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="wizard-location">Location</Label>
-                      <Input
-                        id="wizard-location"
-                        value={profile.location}
-                        onChange={(event) =>
-                          setProfile((prev) => ({ ...prev, location: event.target.value }))
-                        }
-                        className="h-11 rounded-2xl border-border/70"
-                        placeholder="Chennai HQ"
-                      />
-                    </div>
-
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor="wizard-joined-date">Joined date</Label>
-                      <Input
-                        id="wizard-joined-date"
-                        type="date"
-                        value={profile.joinedDate}
-                        onChange={(event) =>
-                          setProfile((prev) => ({ ...prev, joinedDate: event.target.value }))
-                        }
-                        className="h-11 rounded-2xl border-border/70"
-                      />
-                    </div>
-
-                    <div className="space-y-2 sm:col-span-2">
-                      <Label htmlFor="wizard-notes">Notes</Label>
-                      <Textarea
-                        id="wizard-notes"
-                        value={profile.notes}
-                        onChange={(event) =>
-                          setProfile((prev) => ({ ...prev, notes: event.target.value }))
-                        }
-                        className="min-h-[100px] rounded-2xl border-border/70"
-                        placeholder="Onboarding notes, access context, or workspace remarks."
-                      />
-                    </div>
-                  </div>
-                </section>
-
-                <section className="space-y-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Seating
-                    </p>
-                    <h3 className="mt-1 text-base font-semibold tracking-tight">
-                      Office seat assignment
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Only available seats from the current floor plan are shown.
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Office seat</Label>
-                    <Select
-                      value={profile.bayNumber}
-                      onValueChange={(value) =>
-                        setProfile((prev) => ({ ...prev, bayNumber: value }))
-                      }
-                    >
-                      <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
-                        <SelectValue placeholder="Select a seat" />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-72 rounded-2xl border-border/60">
-                        <SelectItem value={UNASSIGNED_SEAT}>No seat assigned</SelectItem>
-                        {vacantSeats.map((seatId) => (
-                          <SelectItem key={seatId} value={seatId}>
-                            Seat {seatId}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <MapPin className="h-3.5 w-3.5" />
-                      {vacantSeats.length} seats available · {occupancy.size} occupied
-                    </p>
-                  </div>
-                </section>
-              </div>
-            )}
+      <DialogContent className="flex max-h-[92vh] w-[min(100vw-2rem,56rem)] max-w-none flex-col overflow-hidden border-border/70 bg-background/95 p-0 shadow-2xl backdrop-blur-xl sm:rounded-[28px]">
+        <DialogHeader className="shrink-0 space-y-3 border-b border-border/60 px-6 py-5">
+          <Badge
+            variant="muted"
+            className="w-fit rounded-full border border-border/60 bg-background/80 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground"
+          >
+            New workspace account
+          </Badge>
+          <div>
+            <DialogTitle className="text-xl">Create account</DialogTitle>
+            <DialogDescription className="mt-1">
+              Set up login access and complete all employee account details in one place.
+            </DialogDescription>
           </div>
+        </DialogHeader>
 
-          <DialogFooter className="border-t border-border/60 bg-background/95 px-6 py-4 backdrop-blur sm:justify-between">
-            <div className="text-xs leading-5 text-muted-foreground">
-              {step === 1
-                ? "Account credentials are saved locally until you finish step 2."
-                : "Creating the account will provision the linked employee workspace record."}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          {error ? (
+            <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
             </div>
+          ) : null}
 
-            <div className="flex items-center gap-2">
-              {step === 1 ? (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-2xl border-border/70 bg-background/80"
-                    onClick={() => handleOpenChange(false)}
-                    disabled={submitting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    className="h-11 rounded-2xl px-5 shadow-sm"
-                    onClick={() => (needsEmployeeIdentity ? handleContinue() : void handleCreate())}
-                    disabled={submitting}
-                  >
-                    {needsEmployeeIdentity ? (
-                      <>
-                        Save & Continue
-                        <ArrowRight className="h-4 w-4" />
-                      </>
-                    ) : submitting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    ) : (
-                      <>
-                        <Plus className="h-4 w-4" />
-                        Create Account
-                      </>
-                    )}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-2xl border-border/70 bg-background/80"
-                    onClick={handleBack}
-                    disabled={submitting}
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Back
-                  </Button>
-                  <Button
-                    type="button"
-                    className="h-11 rounded-2xl px-5 shadow-sm"
-                    onClick={() => void handleCreate()}
-                    disabled={submitting}
-                  >
-                    {submitting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    ) : (
-                      <Plus className="h-4 w-4" />
-                    )}
-                    Create Account
-                  </Button>
-                </>
-              )}
-            </div>
-          </DialogFooter>
+          <AppUserAccountFormFields
+            values={account}
+            onChange={patchAccount}
+            mode="create"
+            workspaceRoles={workspaceRoles}
+            teamNames={teamNames}
+            defaultTeam={defaultTeam}
+            employees={employees}
+            disabled={submitting}
+          />
         </div>
+
+        <DialogFooter className="shrink-0 border-t border-border/60 bg-background/95 px-6 py-4 backdrop-blur sm:justify-between">
+          <p className="text-xs leading-5 text-muted-foreground">
+            Account details sync to the linked team member profile automatically.
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="rounded-2xl border-border/70 bg-background/80"
+              onClick={() => handleOpenChange(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="h-11 rounded-2xl px-5 shadow-sm"
+              onClick={() => void handleCreate()}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+              Create Account
+            </Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
+export { UNASSIGNED_SEAT, applyAppUserRole, buildDefaultAppUserForm };

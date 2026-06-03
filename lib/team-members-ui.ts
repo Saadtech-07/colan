@@ -2,7 +2,37 @@ import { canAssignEmployeeProjects } from "@/lib/permissions";
 import { getProjectsForEmployee } from "@/lib/project-assignments";
 import { isValidSeatId } from "@/lib/seating-layout";
 import type { AccessContext } from "@/lib/permissions";
+import type { WorkspaceRole } from "@/models";
 import type { Employee, EmployeeDetail, Project } from "@/types";
+
+const LEGACY_ROLE_LABELS: Record<string, string[]> = {
+  lead: ["Team Lead", "Project Lead"],
+};
+
+export function buildTeamMemberRoleFilterOptions(workspaceRoles: WorkspaceRole[]) {
+  return [
+    { value: "all", label: "All" },
+    ...workspaceRoles.map((role) => ({
+      value: role.key,
+      label: role.name,
+    })),
+  ];
+}
+
+export function employeeMatchesRoleFilter(
+  employee: Pick<Employee, "role">,
+  roleFilterKey: string,
+  workspaceRoles: WorkspaceRole[],
+) {
+  if (roleFilterKey === "all") return true;
+
+  const role = workspaceRoles.find((item) => item.key === roleFilterKey);
+  if (!role) return false;
+  if (employee.role === role.name) return true;
+
+  const legacyLabels = LEGACY_ROLE_LABELS[roleFilterKey];
+  return legacyLabels?.includes(employee.role) ?? false;
+}
 
 export type WorkforceAccess = {
   canManageEmployees: boolean;

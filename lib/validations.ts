@@ -189,6 +189,16 @@ export const appUserUpdateSchema = z.object({
 
   imageUrl: appUserImageSchema.optional(),
 
+  workEmail: z.union([z.string().email(), z.literal("")]).optional(),
+
+  phone: z.string().optional(),
+
+  location: z.string().optional(),
+
+  joinedDate: z.string().optional(),
+
+  bayNumber: z.string().optional(),
+
 });
 
 const profileImageSchema = appUserImageSchema;

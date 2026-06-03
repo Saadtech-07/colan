@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Building2,
   CircleCheckBig,
@@ -18,15 +18,19 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { AvatarUploadField } from "@/components/features/avatar-upload-field";
 import {
   ConfirmDeleteDialog,
   type ConfirmDeleteTarget,
 } from "@/components/features/confirm-delete-dialog";
 import {
+  AppUserAccountFormFields,
+  type AppUserAccountFormValues,
+} from "@/components/features/app-user-account-form-fields";
+import {
   CreateAppUserWizardDialog,
+  UNASSIGNED_SEAT,
+  buildDefaultAppUserForm,
   type AccountSetupForm,
-  type EmployeeProfileForm,
 } from "@/components/features/create-app-user-wizard-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -47,7 +51,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -60,18 +63,11 @@ import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
 import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
+import { resolveAppUserFromQuery } from "@/lib/app-user-navigation";
 import type { AppRole, TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
 
-type AppUserFormState = {
-  email: string;
-  name: string;
-  password: string;
-  employeeId: string;
-  appRole: AppRole;
-  team: TeamName;
-  imageUrl: string;
-};
+type AppUserFormState = AppUserAccountFormValues;
 
 type CreateAccountToast = {
   variant: "success" | "warning";
@@ -91,33 +87,20 @@ type AppUserMutationResponse = AppUserPublicDTO & {
 
 const FALLBACK_TEAM = "React Team" as TeamName;
 
-function applyRoleToForm(
-  prev: AppUserFormState,
-  appRole: AppRole,
-  defaultTeam: TeamName,
-): AppUserFormState {
-  if (!roleNeedsEmployeeIdentity(appRole)) {
-    return {
-      ...prev,
-      appRole,
-      employeeId: "",
-      team: defaultTeam,
-    };
-  }
-
-  return { ...prev, appRole };
+function buildInitialForm(defaultTeam: TeamName): AppUserFormState {
+  return buildDefaultAppUserForm(defaultTeam);
 }
 
-function buildInitialForm(defaultTeam: TeamName): AppUserFormState {
-  return {
-    email: "",
-    name: "",
-    password: "",
-    employeeId: "",
-    appRole: "employee",
-    team: defaultTeam,
-    imageUrl: "",
-  };
+function findLinkedEmployeeId(
+  userRecord: AppUserPublicDTO,
+  employees: ReturnType<typeof useAppState>["employees"],
+) {
+  const email = userRecord.email.toLowerCase();
+  return employees.find(
+    (employee) =>
+      employee.directory?.workEmail?.toLowerCase() === email ||
+      employee.employeeId.toLowerCase() === userRecord.employeeId?.toLowerCase(),
+  )?.id;
 }
 
 function getInitials(name: string, email: string) {
@@ -146,6 +129,7 @@ function profileStatusMeta(isProfileCompleted: boolean) {
 
 export default function AppUsersPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isAdmin, user, refreshData, teamNames, workspaceRoles, employees } = useAppState();
   const { withLoading, isLoadingKey } = useGlobalLoading();
 
@@ -159,6 +143,9 @@ export default function AppUsersPage() {
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [createWizardOpen, setCreateWizardOpen] = React.useState(false);
+  const [editingEmployeeId, setEditingEmployeeId] = React.useState<string | undefined>(
+    undefined,
+  );
   const [deleteTarget, setDeleteTarget] = React.useState<ConfirmDeleteTarget | null>(null);
   const [form, setForm] = React.useState<AppUserFormState>(() =>
     buildInitialForm(FALLBACK_TEAM),
@@ -169,6 +156,7 @@ export default function AppUsersPage() {
 
   const formRef = React.useRef<HTMLFormElement | null>(null);
   const toastTimerRef = React.useRef<number | null>(null);
+  const openedFromQueryRef = React.useRef(false);
 
   const submitting = isLoadingKey("app-users-submit");
   const showEmployeeIdentityFields = roleNeedsEmployeeIdentity(form.appRole);
@@ -279,6 +267,7 @@ export default function AppUsersPage() {
   const resetForm = React.useCallback(
     (opts?: { clearFeedback?: boolean }) => {
       setEditingId(null);
+      setEditingEmployeeId(undefined);
       setForm(buildInitialForm(defaultTeam));
       if (opts?.clearFeedback !== false) {
         setSuccess(null);
@@ -307,10 +296,7 @@ export default function AppUsersPage() {
     setCreateWizardOpen(true);
   };
 
-  const handleCreateAccount = async (
-    account: AccountSetupForm,
-    profile: EmployeeProfileForm,
-  ) => {
+  const handleCreateAccount = async (account: AccountSetupForm) => {
     setError(null);
     setSuccess(null);
 
@@ -327,14 +313,13 @@ export default function AppUsersPage() {
           : {}),
         password: account.password.trim(),
         ...(account.imageUrl.trim() ? { imageUrl: account.imageUrl.trim() } : {}),
-        workEmail: profile.workEmail.trim() || account.email.trim().toLowerCase(),
-        phone: profile.phone.trim() || undefined,
-        location: profile.location.trim() || undefined,
-        joinedDate: profile.joinedDate.trim() || undefined,
-        notes: profile.notes.trim() || undefined,
+        workEmail: account.workEmail.trim() || account.email.trim().toLowerCase(),
+        phone: account.phone.trim() || undefined,
+        location: account.location.trim() || undefined,
+        joinedDate: account.joinedDate.trim() || undefined,
         bayNumber:
-          profile.bayNumber && profile.bayNumber !== "__unassigned__"
-            ? profile.bayNumber
+          account.bayNumber && account.bayNumber !== UNASSIGNED_SEAT
+            ? account.bayNumber
             : undefined,
       };
 
@@ -409,8 +394,16 @@ export default function AppUsersPage() {
             ? {
                 team: form.team,
                 employeeId: form.employeeId.trim(),
+                bayNumber:
+                  form.bayNumber && form.bayNumber !== UNASSIGNED_SEAT
+                    ? form.bayNumber
+                    : UNASSIGNED_SEAT,
               }
             : {}),
+          workEmail: form.workEmail.trim() || form.email.trim(),
+          phone: form.phone.trim() || undefined,
+          location: form.location.trim() || undefined,
+          joinedDate: form.joinedDate.trim() || undefined,
           ...(form.imageUrl.trim() ? { imageUrl: form.imageUrl.trim() } : {}),
           ...(form.password ? { password: form.password } : {}),
         };
@@ -479,21 +472,46 @@ export default function AppUsersPage() {
     }
   };
 
-  const startEdit = (userRecord: AppUserPublicDTO) => {
-    setEditingId(userRecord.id);
-    setForm({
-      email: userRecord.email,
-      name: userRecord.name,
-      password: "",
-      employeeId: userRecord.employeeId ?? "",
-      appRole: userRecord.appRole,
-      team: userRecord.team ?? defaultTeam,
-      imageUrl: userRecord.imageUrl ?? "",
-    });
-    setSuccess(null);
-    setError(null);
-    setDialogOpen(true);
-  };
+  const startEdit = React.useCallback(
+    (userRecord: AppUserPublicDTO) => {
+      setEditingId(userRecord.id);
+      setEditingEmployeeId(findLinkedEmployeeId(userRecord, employees));
+      setForm({
+        email: userRecord.email,
+        name: userRecord.name,
+        password: "",
+        employeeId: userRecord.employeeId ?? "",
+        appRole: userRecord.appRole,
+        team: userRecord.team ?? defaultTeam,
+        workEmail: userRecord.workEmail ?? userRecord.email,
+        phone: userRecord.phone ?? "",
+        location: userRecord.location ?? "",
+        joinedDate: userRecord.joinedDate ?? new Date().toISOString().split("T")[0],
+        bayNumber: userRecord.bayNumber?.trim() || UNASSIGNED_SEAT,
+        imageUrl: userRecord.imageUrl ?? "",
+      });
+      setSuccess(null);
+      setError(null);
+      setDialogOpen(true);
+    },
+    [defaultTeam, employees],
+  );
+
+  React.useEffect(() => {
+    if (!isAdmin || loading || openedFromQueryRef.current) return;
+
+    const editId = searchParams.get("edit");
+    const employeeId = searchParams.get("employeeId");
+    if (!editId && !employeeId) return;
+    if (users.length === 0) return;
+
+    const target = resolveAppUserFromQuery(users, employees, { editId, employeeId });
+    if (!target) return;
+
+    openedFromQueryRef.current = true;
+    startEdit(target);
+    router.replace("/app-users", { scroll: false });
+  }, [employees, isAdmin, loading, router, searchParams, startEdit, users]);
 
   if (!isAdmin) {
     return (
@@ -873,7 +891,7 @@ export default function AppUsersPage() {
       />
 
       <Dialog open={dialogOpen && !!editingId} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="max-h-[92vh] overflow-hidden border-border/70 bg-background/95 p-0 sm:max-w-3xl">
+        <DialogContent className="max-h-[92vh] overflow-hidden border-border/70 bg-background/95 p-0 sm:max-w-[56rem]">
           <div className="flex max-h-[92vh] flex-col">
             <DialogHeader className="border-b border-border/60 px-6 py-5">
               <Badge
@@ -889,208 +907,18 @@ export default function AppUsersPage() {
             </DialogHeader>
 
             <div className="flex-1 overflow-y-auto px-6 py-5">
-              <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
-                <section className="space-y-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Identity
-                    </p>
-                    <h3 className="mt-1 text-base font-semibold tracking-tight">
-                      Account details
-                    </h3>
-                  </div>
-
-                  <div className="grid gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={form.email}
-                        disabled
-                        className="h-11 rounded-2xl border-border/70"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Email remains fixed after account creation.
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Name</Label>
-                      <Input
-                        id="name"
-                        value={form.name}
-                        onChange={(event) =>
-                          setForm((prev) => ({ ...prev, name: event.target.value }))
-                        }
-                        className="h-11 rounded-2xl border-border/70"
-                        placeholder="Full name"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="employee-id">
-                        Employee ID
-                        {showEmployeeIdentityFields ? (
-                          <span className="ml-0.5 text-destructive" aria-hidden="true">
-                            *
-                          </span>
-                        ) : null}
-                      </Label>
-                      <Input
-                        id="employee-id"
-                        value={form.employeeId}
-                        onChange={(event) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            employeeId: event.target.value,
-                          }))
-                        }
-                        placeholder={
-                          showEmployeeIdentityFields ? "COL-1001" : "Not required for this role"
-                        }
-                        disabled={!showEmployeeIdentityFields}
-                        className="h-11 rounded-2xl border-border/70 disabled:cursor-not-allowed disabled:opacity-60"
-                      />
-                      {!showEmployeeIdentityFields ? (
-                        <p className="text-xs text-muted-foreground">
-                          Organization-level roles do not require an employee ID.
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                </section>
-
-                <section className="space-y-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Access
-                    </p>
-                    <h3 className="mt-1 text-base font-semibold tracking-tight">
-                      Role and team
-                    </h3>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Role</Label>
-                      <Select
-                        value={form.appRole}
-                        onValueChange={(value) =>
-                          setForm((prev) =>
-                            applyRoleToForm(prev, value as AppRole, defaultTeam),
-                          )
-                        }
-                      >
-                        <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
-                          <SelectValue>
-                            {workspaceRoles.find((role) => role.key === form.appRole)?.name ??
-                              form.appRole}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent className="rounded-2xl border-border/60">
-                          {workspaceRoles.map((role) => (
-                            <SelectItem key={role.key} value={role.key}>
-                              {role.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>
-                        Team
-                        {showEmployeeIdentityFields ? (
-                          <span className="ml-0.5 text-destructive" aria-hidden="true">
-                            *
-                          </span>
-                        ) : null}
-                      </Label>
-                      <Select
-                        value={form.team}
-                        onValueChange={(value) =>
-                          setForm((prev) => ({ ...prev, team: value as TeamName }))
-                        }
-                        disabled={!showEmployeeIdentityFields}
-                      >
-                        <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85 disabled:cursor-not-allowed disabled:opacity-60">
-                          <SelectValue>
-                            {showEmployeeIdentityFields
-                              ? form.team
-                              : "Not required for this role"}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent className="rounded-2xl border-border/60">
-                          {teamNames.map((team) => (
-                            <SelectItem key={team} value={team}>
-                              {team}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {!showEmployeeIdentityFields ? (
-                        <p className="text-xs text-muted-foreground">
-                          Organization-level roles are not tied to a delivery team.
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-                </section>
-
-                <section className="space-y-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Security
-                    </p>
-                    <h3 className="mt-1 text-base font-semibold tracking-tight">
-                      Password
-                    </h3>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <Label htmlFor="password">Password</Label>
-                    </div>
-                    <Input
-                      id="password"
-                      type="text"
-                      value={form.password}
-                      onChange={(event) =>
-                        setForm((prev) => ({ ...prev, password: event.target.value }))
-                      }
-                      placeholder="Leave blank to keep current password"
-                      className="h-11 rounded-2xl border-border/70 font-mono text-sm"
-                      autoComplete="new-password"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Only enter a new password if you want to replace the current one.
-                    </p>
-                  </div>
-                </section>
-
-                <section className="space-y-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Employee image
-                    </p>
-                    <h3 className="mt-1 text-base font-semibold tracking-tight">
-                      Upload and preview
-                    </h3>
-                  </div>
-
-                  <AvatarUploadField
-                    value={form.imageUrl}
-                    previewName={form.name || form.email || "Account"}
-                    onChange={(value) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        imageUrl: value,
-                      }))
-                    }
-                    disabled={submitting}
-                  />
-                </section>
+              <form ref={formRef} onSubmit={handleSubmit}>
+                <AppUserAccountFormFields
+                  mode="edit"
+                  values={form}
+                  onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+                  workspaceRoles={workspaceRoles}
+                  teamNames={teamNames}
+                  defaultTeam={defaultTeam}
+                  employees={employees}
+                  editingEmployeeId={editingEmployeeId}
+                  disabled={submitting}
+                />
               </form>
             </div>
 

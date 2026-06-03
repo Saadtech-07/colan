@@ -13,6 +13,13 @@ export type EmployeeDocument = {
   role: CompanyRole;
   bayNumber: string;
   imageUrl: string;
+  email?: string;
+  directory?: {
+    workEmail?: string;
+    phone?: string;
+    location?: string;
+    joinedDate?: string;
+  };
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -26,6 +33,7 @@ export function employeeDocToDTO(doc: EmployeeDocument): Employee {
     role: doc.role,
     bayNumber: doc.bayNumber,
     imageUrl: doc.imageUrl,
+    email: doc.email?.trim() || undefined,
   };
 }
 

@@ -183,6 +183,11 @@ export type AppUserUpdateInput = {
   team?: TeamName;
   employeeId?: string;
   imageUrl?: string;
+  workEmail?: string;
+  phone?: string;
+  location?: string;
+  joinedDate?: string;
+  bayNumber?: string;
 };
 
 export type AppUserProfileDTO = {
@@ -222,7 +227,53 @@ export async function listAppUsers(): Promise<ReturnType<typeof appUserDocToPubl
   await ensureAppUsersSeed(db);
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   const docs = await col.find({}).sort({ email: 1 }).toArray();
-  return docs.map(appUserDocToPublic);
+  const users = docs.map(appUserDocToPublic);
+  return enrichAppUsersWithEmployeeProfiles(users, db);
+}
+
+async function enrichAppUsersWithEmployeeProfiles(
+  users: ReturnType<typeof appUserDocToPublic>[],
+  db: Awaited<ReturnType<typeof getDb>>,
+): Promise<ReturnType<typeof appUserDocToPublic>[]> {
+  if (!users.length || !db) return users;
+
+  const emails = users.map((user) => user.email.toLowerCase());
+  const employeeCol = db.collection(COLLECTIONS.employees);
+  const rows = await employeeCol
+    .find({
+      $or: [{ email: { $in: emails } }, { "directory.workEmail": { $in: emails } }],
+    })
+    .toArray();
+
+  const byEmail = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    const loginEmail = typeof row.email === "string" ? row.email.toLowerCase() : "";
+    const workEmail =
+      typeof row.directory?.workEmail === "string"
+        ? row.directory.workEmail.toLowerCase()
+        : "";
+    if (loginEmail) byEmail.set(loginEmail, row);
+    if (workEmail) byEmail.set(workEmail, row);
+  }
+
+  return users.map((user) => {
+    const employee = byEmail.get(user.email.toLowerCase());
+    if (!employee) return user;
+    const directory = (employee.directory ?? {}) as {
+      workEmail?: string;
+      phone?: string;
+      location?: string;
+      joinedDate?: string;
+    };
+    return {
+      ...user,
+      workEmail: directory.workEmail ?? user.email,
+      phone: directory.phone ?? "",
+      location: directory.location ?? "",
+      joinedDate: directory.joinedDate ?? "",
+      bayNumber: typeof employee.bayNumber === "string" ? employee.bayNumber : "",
+    };
+  });
 }
 
 export async function getAppUserPublicById(
@@ -345,14 +396,9 @@ export async function createAppUser(
     return appUserDocToPublic(doc);
   }
 
+  const roleRegistry = await ensureRoleRegistry();
   const employeeRole =
-    input.appRole === "admin"
-      ? "Admin"
-      : input.appRole === "manager"
-        ? "Manager"
-        : input.appRole === "lead"
-          ? "Team Lead"
-          : "Employee";
+    roleRegistry.get(normalizeAppRole(input.appRole))?.name ?? "Employee";
 
   const employeeObjectId = new ObjectId();
   await employeeCol.insertOne({
@@ -459,15 +505,43 @@ export async function updateAppUser(
   const nextTeam = input.team ?? current.team ?? "Unassigned";
   const nextImageUrl =
     input.imageUrl ?? current.imageUrl ?? dicebearAvatarPng(current.email);
+  const nextWorkEmail = (input.workEmail?.trim() || current.email).toLowerCase();
+  const nextPhone = input.phone?.trim() ?? "";
+  const nextLocation = input.location?.trim() ?? "";
+  const nextJoinedDate =
+    input.joinedDate?.trim() || new Date().toISOString().split("T")[0];
 
+  const employeeCol = db.collection(COLLECTIONS.employees);
+  const existingEmployee = await employeeCol.findOne({
+    $or: [{ email: current.email }, { "directory.workEmail": current.email }],
+  });
+
+  let nextBayNumber = existingEmployee?.bayNumber ?? "";
+  if (input.bayNumber !== undefined) {
+    const trimmedBay = input.bayNumber.trim();
+    if (!trimmedBay || trimmedBay === "__unassigned__") {
+      nextBayNumber = "";
+    } else {
+      const { isValidSeatId } = await import("@/lib/seating-layout");
+      if (!isValidSeatId(trimmedBay)) {
+        throw new Error(
+          `Invalid seat "${trimmedBay}". Choose a seat from the office floor plan (e.g. A1, D3).`,
+        );
+      }
+      const seatTaken = await employeeCol.findOne({
+        bayNumber: trimmedBay,
+        $nor: [{ email: current.email }, { "directory.workEmail": current.email }],
+      });
+      if (seatTaken) {
+        throw new Error(`Seat ${trimmedBay} is already assigned to another employee.`);
+      }
+      nextBayNumber = trimmedBay;
+    }
+  }
+
+  const roleRegistry = await ensureRoleRegistry();
   const employeeRole =
-    nextRole === "admin"
-      ? "Admin"
-      : nextRole === "manager"
-        ? "Manager"
-        : nextRole === "lead"
-          ? "Team Lead"
-          : "Employee";
+    roleRegistry.get(normalizeAppRole(nextRole))?.name ?? "Employee";
 
   const employeeSet = {
     employeeId: nextEmployeeId,
@@ -476,7 +550,12 @@ export async function updateAppUser(
     team: nextTeam,
     imageUrl: nextImageUrl,
     email: current.email,
-    "directory.workEmail": current.email,
+    bayNumber: nextBayNumber,
+    "directory.workEmail": nextWorkEmail,
+    "directory.phone": nextPhone,
+    "directory.location": nextLocation || "Unassigned",
+    "directory.joinedDate": nextJoinedDate,
+    updatedAt: new Date(),
   };
 
   const employeeFilter = {
@@ -495,14 +574,13 @@ export async function updateAppUser(
       role: employeeRole,
       team: nextTeam,
       imageUrl: nextImageUrl,
-      bayNumber: "",
+      bayNumber: nextBayNumber,
       projectIds: [],
       directory: {
-        workEmail: current.email,
-        phone: "",
-        location: "Unassigned",
-        joinedDate: new Date().toISOString().split("T")[0],
-        notes: "",
+        workEmail: nextWorkEmail,
+        phone: nextPhone,
+        location: nextLocation || "Unassigned",
+        joinedDate: nextJoinedDate,
       },
       createdAt: new Date(),
       updatedAt: new Date(),

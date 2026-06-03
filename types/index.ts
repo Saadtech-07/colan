@@ -39,6 +39,8 @@ export interface Employee {
   role: CompanyRole;
   bayNumber: string;
   imageUrl: string;
+  /** Login email from the linked app user account. */
+  email?: string;
   directory?: EmployeeDirectoryInfo;
 }
 

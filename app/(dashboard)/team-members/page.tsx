@@ -31,9 +31,11 @@ import { employeeProfilePath } from "@/lib/employee-slug";
 import { useAppState } from "@/providers/app-state";
 import { teamTabLabel } from "@/lib/team-utils";
 import {
+  buildTeamMemberRoleFilterOptions,
   buildWorkforceAccess,
   employeeActiveProjects,
   employeeAssignedProjects,
+  employeeMatchesRoleFilter,
   employeeWorkspaceStatus,
   formatCsvValue,
   hasAssignedWorkspaceSeat,
@@ -43,14 +45,6 @@ import {
 import { cn } from "@/lib/utils";
 
 const ALL_TAB = "All";
-
-const ROLE_TABS = [
-  { key: "all", label: "All" },
-  { key: "Team Lead", label: "Leads" },
-  { key: "Manager", label: "Managers" },
-  { key: "Employee", label: "Employees" },
-  { key: "Intern", label: "Interns" },
-] as const;
 
 function getInitials(name: string) {
   return (
@@ -76,7 +70,7 @@ function joinDateLabel(date?: string) {
 }
 
 export default function TeamMembersPage() {
-  const { employees, projects, access, teamNames } = useAppState();
+  const { employees, projects, access, teamNames, workspaceRoles } = useAppState();
   const [tab, setTab] = React.useState<string>(ALL_TAB);
   const [roleTab, setRoleTab] = React.useState<string>("all");
   const [search, setSearch] = React.useState("");
@@ -85,6 +79,18 @@ export default function TeamMembersPage() {
     () => buildWorkforceAccess(access),
     [access],
   );
+
+  const roleFilterOptions = React.useMemo(
+    () => buildTeamMemberRoleFilterOptions(workspaceRoles),
+    [workspaceRoles],
+  );
+
+  React.useEffect(() => {
+    if (roleTab === "all") return;
+    if (!roleFilterOptions.some((option) => option.value === roleTab)) {
+      setRoleTab("all");
+    }
+  }, [roleFilterOptions, roleTab]);
 
   const teamScopedEmployees = React.useMemo(
     () => (tab === ALL_TAB ? employees : employees.filter((employee) => employee.team === tab)),
@@ -103,11 +109,11 @@ export default function TeamMembersPage() {
         employee.role.toLowerCase().includes(query) ||
         employee.directory?.workEmail?.toLowerCase().includes(query);
 
-      const matchesRole = roleTab === "all" || employee.role === roleTab;
+      const matchesRole = employeeMatchesRoleFilter(employee, roleTab, workspaceRoles);
 
       return matchesSearch && matchesRole;
     });
-  }, [roleTab, search, teamScopedEmployees]);
+  }, [roleTab, search, teamScopedEmployees, workspaceRoles]);
 
   const analytics = React.useMemo(
     () => workforceAnalytics(filteredEmployees, projects),
@@ -259,10 +265,7 @@ export default function TeamMembersPage() {
               label="Role"
               value={roleTab}
               onValueChange={setRoleTab}
-              options={ROLE_TABS.map((role) => ({
-                value: role.key,
-                label: role.label,
-              }))}
+              options={roleFilterOptions}
             />
           </div>
         </div>

@@ -246,6 +246,27 @@ function detailsToDirectory(
   };
 }
 
+function mergeEmployeeDirectory(
+  row: EmployeeDocument,
+  detailDoc?: EmployeeDetailsDocument,
+): EmployeeDirectoryInfo | undefined {
+  const fromCollection = detailDoc
+    ? detailsToDirectory(employeeDetailsDocToDTO(detailDoc))
+    : {};
+  const embedded = row.directory ?? {};
+  const merged: EmployeeDirectoryInfo = {
+    workEmail: fromCollection.workEmail ?? embedded.workEmail,
+    phone: fromCollection.phone ?? embedded.phone,
+    location: fromCollection.location ?? embedded.location,
+    joinedDate: fromCollection.joinedDate ?? embedded.joinedDate,
+    notes: fromCollection.notes,
+  };
+  const hasValue = Object.values(merged).some(
+    (value) => typeof value === "string" && value.trim().length > 0,
+  );
+  return hasValue ? merged : undefined;
+}
+
 export async function listEmployees(): Promise<Employee[]> {
   const db = await getDb();
   if (!db) return memoryStore.employees.map((e) => ({ ...e }));
@@ -264,8 +285,8 @@ export async function listEmployees(): Promise<Employee[]> {
   return rows.map((d) => {
     const base = employeeDocToDTO(d);
     const doc = byRef.get(base.id);
-    if (!doc) return base;
-    return { ...base, directory: detailsToDirectory(employeeDetailsDocToDTO(doc)) };
+    const directory = mergeEmployeeDirectory(d, doc);
+    return directory ? { ...base, directory } : base;
   });
 }
 
@@ -488,9 +509,8 @@ export async function updateEmployee(
   const base = employeeDocToDTO(row);
   const detCol = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
   const detailDoc = await detCol.findOne({ employeeRef: oid });
-  const updated = detailDoc
-    ? { ...base, directory: detailsToDirectory(employeeDetailsDocToDTO(detailDoc)) }
-    : base;
+  const directory = mergeEmployeeDirectory(row, detailDoc ?? undefined);
+  const updated = directory ? { ...base, directory } : base;
 
   const workEmail = (
     updated.directory?.workEmail ??

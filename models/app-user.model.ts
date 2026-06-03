@@ -33,6 +33,11 @@ export type AppUserPublicDTO = {
   imageUrl: string;
   isProfileCompleted: boolean;
   updatedProfileAt?: string;
+  workEmail?: string;
+  phone?: string;
+  location?: string;
+  joinedDate?: string;
+  bayNumber?: string;
 };
 
 export function appUserDocToPublic(doc: AppUserDocument): AppUserPublicDTO {
