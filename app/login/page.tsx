@@ -182,6 +182,7 @@ function LoginPageContent() {
                     onChange={(e) => setEmail(e.target.value)}
                     autoComplete="email"
                     required
+                    placeholder="Enter your Email"
                     className="h-12 rounded-xl border-slate-200 bg-white/80"
                   />
                 </div>
@@ -217,7 +218,7 @@ function LoginPageContent() {
                   disabled={pending}
                   className="h-12 w-full rounded-xl text-sm font-semibold shadow-lg transition-transform hover:scale-[1.01]"
                 >
-                  {pending ? "Signing in…" : "Sign in"}
+                  {pending ? "Logging in...." : "Log in"}
 
                   {!pending && (
                     <ArrowRight className="ml-2 h-4 w-4" />
