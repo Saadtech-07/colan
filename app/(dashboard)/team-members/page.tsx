@@ -50,10 +50,6 @@ import { cn } from "@/lib/utils";
 const ALL_TAB = "All";
 const TEAM_MEMBERS_PAGE_SIZE = 6;
 
-function getInitials(name: string) {
-  return profileNameInitial(name);
-}
-
 function joinDateLabel(date?: string) {
   if (!date) return "Join date unavailable";
   const parsed = new Date(`${date}T00:00:00`);
@@ -313,7 +309,7 @@ export default function TeamMembersPage() {
                 <div className="flex items-start gap-4">
                   <Avatar className="h-14 w-14 ring-2 ring-muted transition-transform duration-200 group-hover:scale-105">
                     <AvatarImage src={employee.imageUrl} alt={employee.name} />
-                    <AvatarFallback>{getInitials(employee.name)}</AvatarFallback>
+                    <AvatarFallback>{profileNameInitial(employee.name)}</AvatarFallback>
                   </Avatar>
 
                   <div className="min-w-0 flex-1 space-y-2">

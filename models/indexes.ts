@@ -123,4 +123,12 @@ export async function ensureColanModelIndexes(db: Db): Promise<void> {
   });
 
   await db.collection<GalleryImageDocument>(COLLECTIONS.gallery).createIndex({ uploadedAt: -1 });
+
+  await db
+    .collection(COLLECTIONS.passwordResetTokens)
+    .createIndex({ tokenHash: 1 }, { unique: true });
+  await db
+    .collection(COLLECTIONS.passwordResetTokens)
+    .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  await db.collection(COLLECTIONS.passwordResetTokens).createIndex({ email: 1 });
 }

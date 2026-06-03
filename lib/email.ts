@@ -37,3 +37,9 @@ export function resolveLoginUrl(requestOrigin?: string): string | null {
   const baseUrl = resolveAppBaseUrl(requestOrigin);
   return baseUrl ? `${baseUrl}/login` : null;
 }
+
+export function resolvePasswordResetUrl(token: string, requestOrigin?: string): string | null {
+  const baseUrl = resolveAppBaseUrl(requestOrigin);
+  if (!baseUrl) return null;
+  return `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+}

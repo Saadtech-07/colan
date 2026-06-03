@@ -34,6 +34,7 @@ import {
   YAxis,
 } from "recharts";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { profileInitials } from "@/lib/profile-image";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -137,18 +138,6 @@ function endOfWindow(date: Date, daysAhead: number) {
   const next = startOfDay(date);
   next.setDate(next.getDate() + daysAhead);
   return next;
-}
-
-function getInitials(name: string) {
-  return (
-    name
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => part[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase() || "?"
-  );
 }
 
 function isProjectDelayed(project: Project, today: Date) {
@@ -1079,7 +1068,7 @@ function TeamSpotlightCard({
                 <div key={employee.id} className="flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-2.5 py-2">
                   <Avatar className="h-8 w-8 ring-1 ring-border/60">
                     <AvatarImage src={employee.imageUrl} alt={employee.name} />
-                    <AvatarFallback>{getInitials(employee.name)}</AvatarFallback>
+                    <AvatarFallback>{profileInitials(employee.name)}</AvatarFallback>
                   </Avatar>
                   <div className="max-w-[120px]">
                     <p className="truncate text-xs font-semibold text-foreground">{employee.name}</p>
@@ -1140,7 +1129,7 @@ function TeamProjectCard({
             {employees.slice(0, 4).map((employee) => (
               <Avatar key={employee.id} className="h-9 w-9 border-2 border-background ring-0">
                 <AvatarImage src={employee.imageUrl} alt={employee.name} />
-                <AvatarFallback>{getInitials(employee.name)}</AvatarFallback>
+                <AvatarFallback>{profileInitials(employee.name)}</AvatarFallback>
               </Avatar>
             ))}
             {employees.length > 4 && (

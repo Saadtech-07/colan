@@ -20,10 +20,6 @@ type Props = {
   className?: string;
 };
 
-function initials(name: string) {
-  return profileNameInitial(name);
-}
-
 export function AvatarUploadField({
   value,
   previewName,
@@ -94,7 +90,7 @@ export function AvatarUploadField({
           <Avatar className="h-20 w-20 ring-2 ring-border/70">
             <AvatarImage src={value} alt={previewName} />
             <AvatarFallback className="text-lg font-semibold">
-              {initials(previewName)}
+              {profileNameInitial(previewName)}
             </AvatarFallback>
           </Avatar>
 

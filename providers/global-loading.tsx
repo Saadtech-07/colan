@@ -107,7 +107,7 @@ function GlobalLoadingProviderInner({ children }: { children: React.ReactNode })
 
   return (
     <GlobalLoadingContext.Provider value={value}>
-      <GlobalLoadingOverlay open={syncing} title={title} description={description} />
+      <GlobalLoadingOverlay open={syncing} title={title} />
       {children}
     </GlobalLoadingContext.Provider>
   );

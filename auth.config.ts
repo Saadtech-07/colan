@@ -32,10 +32,12 @@ export const authConfig = {
       const isAuthenticated = !!auth?.user;
       const isProfileCompleted = auth?.user?.isProfileCompleted !== false;
       const isLoginPage = path === "/login";
+      const isForgotPasswordPage = path === "/forgot-password";
+      const isResetPasswordPage = path === "/reset-password";
       const isProfileSettingsPage = path === "/profile-settings";
 
       if (!isAuthenticated) {
-        return isLoginPage;
+        return isLoginPage || isForgotPasswordPage || isResetPasswordPage;
       }
 
       if (!isProfileCompleted) {

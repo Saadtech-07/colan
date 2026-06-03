@@ -9,14 +9,6 @@ export function filterProjectsByEmployeeTeam(
   return projects.filter((p) => projectBelongsToTeam(p, employee.team));
 }
 
-/** @deprecated Use filterProjectsByEmployeeTeam — alias for assignment UIs. */
-export function projectsForEmployeeTeam(
-  employee: Pick<Employee, "team">,
-  projects: Project[],
-): Project[] {
-  return filterProjectsByEmployeeTeam(employee, projects);
-}
-
 export function assertProjectsMatchEmployeeTeam(
   employeeTeam: TeamName,
   projectIds: string[],

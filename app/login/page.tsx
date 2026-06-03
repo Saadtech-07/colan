@@ -2,42 +2,35 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
-
 import { ArrowRight, Sparkles } from "lucide-react";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
-
 import { Button } from "@/components/ui/button";
-
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
-
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-
 import { Label } from "@/components/ui/label";
-
-// select removed — login uses email + password only
-
-// badge/team types not needed for simple login
-import colanlogo from '../image/colanlogo.png'
 import colanlogo2 from "../image/colanlogo2.png";
-export default function LoginPage() {
-  const router = useRouter();
 
+function LoginSuccessBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get("reset") !== "success") return null;
+
+  return (
+    <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
+      Password updated successfully. Sign in with your new password.
+    </div>
+  );
+}
+
+function LoginPageContent() {
+  const router = useRouter();
   const { data: session, status } = useSession();
 
-  const [email, setEmail] = React.useState("admin@colan.io");
-  const [password, setPassword] = React.useState("admin123");
-
-  const [error, setError] =
-    React.useState<string | null>(null);
-
-  const [pending, setPending] =
-    React.useState(false);
-
+  const [email, setEmail] = React.useState("");
+  const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const [pending, setPending] = React.useState(false);
   React.useEffect(() => {
     if (status === "authenticated") {
       router.replace(session?.user?.isProfileCompleted === false ? "/profile-settings" : "/dashboard");
@@ -176,6 +169,8 @@ export default function LoginPage() {
                   </div>
                 )}
 
+                <LoginSuccessBanner />
+
                 {/* Email */}
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
@@ -193,7 +188,15 @@ export default function LoginPage() {
 
                 {/* Password */}
                 <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                  <div className="flex items-center justify-between gap-3">
+                    <Label htmlFor="password">Password</Label>
+                    <Link
+                      href="/forgot-password"
+                      className="text-sm font-medium text-primary hover:underline"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
 
                   <Input
                     id="password"
@@ -237,5 +240,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <LoginPageContent />
+    </React.Suspense>
   );
 }

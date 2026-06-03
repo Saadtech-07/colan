@@ -45,20 +45,9 @@ import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
 import type { Project, ProjectStatus, TeamName } from "@/types";
 import type { TeamDTO } from "@/models";
+import { profileInitials } from "@/lib/profile-image";
 
 const ALL_TAB = "All";
-
-function getInitials(name: string) {
-  return (
-    name
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => part[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase() || "?"
-  );
-}
 
 function renderTeamIcon(team: string, className?: string) {
   const normalized = team.toLowerCase();
@@ -598,7 +587,7 @@ function MemberAvatarStack({
         {members.slice(0, 3).map((member) => (
           <Avatar key={member.id} className="h-8 w-8 border-2 border-background ring-0">
             <AvatarImage src={member.imageUrl} alt={member.name} />
-            <AvatarFallback>{getInitials(member.name)}</AvatarFallback>
+            <AvatarFallback>{profileInitials(member.name)}</AvatarFallback>
           </Avatar>
         ))}
       </div>

@@ -107,10 +107,6 @@ function findLinkedEmployeeId(
   )?.id;
 }
 
-function getInitials(name: string, email: string) {
-  return profileNameInitial(name, email);
-}
-
 function profileStatusMeta(isProfileCompleted: boolean) {
   if (isProfileCompleted) {
     return {
@@ -778,7 +774,7 @@ export default function AppUsersPage() {
                         <Avatar className="h-14 w-14 rounded-2xl ring-0">
                           <AvatarImage src={record.imageUrl} alt={record.name} />
                           <AvatarFallback className="rounded-2xl text-sm font-semibold">
-                            {getInitials(record.name, record.email)}
+                            {profileNameInitial(record.name, record.email)}
                           </AvatarFallback>
                         </Avatar>
 

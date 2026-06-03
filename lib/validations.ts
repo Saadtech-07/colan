@@ -374,6 +374,26 @@ export const employeeProjectsUpdateSchema = z.object({
 
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address."),
+});
+
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().trim().min(1, "Reset link is invalid."),
+    password: z.string().min(6, "Password must be at least 6 characters."),
+    confirmPassword: z.string().min(6, "Confirm your new password."),
+  })
+  .superRefine((value, ctx) => {
+    if (value.password !== value.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmPassword"],
+        message: "Passwords do not match.",
+      });
+    }
+  });
+
 
 
 export function parseRolePermissionsInput(

@@ -1,10 +1,5 @@
 import type { Employee, GalleryImage, Project } from "@/types";
 
-/** PNG works reliably in img and avatars; remote SVG often fails to paint. */
-export function dicebearAvatarPng(seed: string) {
-  return `https://api.dicebear.com/7.x/avataaars/png?seed=${encodeURIComponent(seed)}&size=128`;
-}
-
 export const MOCK_EMPLOYEES: Employee[] = [
   {
     id: "1",
@@ -13,7 +8,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "React Team",
     role: "Team Lead",
     bayNumber: "A5",
-    imageUrl: dicebearAvatarPng("priya"),
+    imageUrl: "",
   },
   {
     id: "2",
@@ -22,7 +17,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "Next.js Team",
     role: "Employee",
     bayNumber: "B7",
-    imageUrl: dicebearAvatarPng("james"),
+    imageUrl: "",
   },
   {
     id: "3",
@@ -31,7 +26,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "Node Team",
     role: "Manager",
     bayNumber: "C10",
-    imageUrl: dicebearAvatarPng("maria"),
+    imageUrl: "",
   },
   {
     id: "4",
@@ -40,7 +35,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "UI/UX Team",
     role: "Team Lead",
     bayNumber: "D3",
-    imageUrl: dicebearAvatarPng("alex"),
+    imageUrl: "",
   },
   {
     id: "5",
@@ -49,7 +44,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "Testing Team",
     role: "Employee",
     bayNumber: "F8",
-    imageUrl: dicebearAvatarPng("sofia"),
+    imageUrl: "",
   },
   {
     id: "6",
@@ -58,7 +53,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "DevOps Team",
     role: "Employee",
     bayNumber: "G12",
-    imageUrl: dicebearAvatarPng("david"),
+    imageUrl: "",
   },
   {
     id: "7",
@@ -67,7 +62,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "React Team",
     role: "Intern",
     bayNumber: "A20",
-    imageUrl: dicebearAvatarPng("emily"),
+    imageUrl: "",
   },
   {
     id: "8",
@@ -76,7 +71,7 @@ export const MOCK_EMPLOYEES: Employee[] = [
     team: "Next.js Team",
     role: "Team Lead",
     bayNumber: "E6",
-    imageUrl: dicebearAvatarPng("ryan"),
+    imageUrl: "",
   },
 ];
 
@@ -152,63 +147,46 @@ export const MOCK_PROJECTS: Project[] = [
   },
 ];
 
-const gallery = (id: number, title: string) =>
+const gallery = (id: number) =>
   `https://picsum.photos/seed/colan${id}/800/${500 + (id % 3) * 100}`;
 
 export const MOCK_GALLERY: GalleryImage[] = [
   {
     id: "g1",
-    url: gallery(1, "Town hall"),
+    url: gallery(1),
     title: "Q1 Town Hall",
     caption: "Leadership keynote",
     uploadedAt: "2026-04-02",
   },
   {
     id: "g2",
-    url: gallery(2, "Hackathon"),
+    url: gallery(2),
     title: "Internal Hackathon",
     uploadedAt: "2026-03-18",
   },
   {
     id: "g3",
-    url: gallery(3, "Team lunch"),
+    url: gallery(3),
     title: "Engineering Lunch",
     caption: "Next.js Team",
     uploadedAt: "2026-03-05",
   },
   {
     id: "g4",
-    url: gallery(4, "Workshop"),
+    url: gallery(4),
     title: "Design Workshop",
     uploadedAt: "2026-02-22",
   },
   {
     id: "g5",
-    url: gallery(5, "Offsite"),
+    url: gallery(5),
     title: "Leadership Offsite",
     uploadedAt: "2026-01-12",
   },
   {
     id: "g6",
-    url: gallery(6, "Celebration"),
+    url: gallery(6),
     title: "Ship Week Celebration",
     uploadedAt: "2025-12-20",
   },
 ];
-
-export function projectStats(projects: Project[]) {
-  const inProgress = projects.filter((p) => p.status === "In Progress").length;
-  const completed = projects.filter((p) => p.status === "Completed").length;
-  const yetToStart = projects.filter((p) => p.status === "Yet To Start").length;
-  return { inProgress, completed, yetToStart, total: projects.length };
-}
-
-export function monthlyProjectTrend() {
-  return [
-    { month: "Jan", started: 2, completed: 1 },
-    { month: "Feb", started: 3, completed: 2 },
-    { month: "Mar", started: 4, completed: 3 },
-    { month: "Apr", started: 5, completed: 2 },
-    { month: "May", started: 3, completed: 4 },
-  ];
-}

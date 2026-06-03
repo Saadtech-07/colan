@@ -3,7 +3,7 @@ import { getProjectsForEmployee } from "@/lib/project-assignments";
 import { isValidSeatId } from "@/lib/seating-layout";
 import type { AccessContext } from "@/lib/permissions";
 import type { WorkspaceRole } from "@/models";
-import type { Employee, EmployeeDetail, Project } from "@/types";
+import type { Employee, Project, TeamName } from "@/types";
 
 const LEGACY_ROLE_LABELS: Record<string, string[]> = {
   lead: ["Team Lead", "Project Lead"],
@@ -80,15 +80,6 @@ export function employeeActiveProjects(employee: Pick<Employee, "id" | "team">, 
   );
 }
 
-export function employeeCompletedProjects(
-  employee: Pick<Employee, "id" | "team">,
-  projects: Project[],
-) {
-  return employeeAssignedProjects(employee, projects).filter(
-    (project) => project.status === "Completed",
-  );
-}
-
 export function employeeWorkloadPercent(
   employee: Pick<Employee, "id" | "team" | "role">,
   projects: Project[],
@@ -122,16 +113,6 @@ export function employeeAvailabilityState(
     label: "Available",
     toneClass: "border-transparent bg-emerald-500/12 text-emerald-700 dark:text-emerald-300",
   };
-}
-
-export function employeeCompletionRate(
-  employee: Pick<Employee, "id" | "team">,
-  projects: Project[],
-) {
-  const assigned = employeeAssignedProjects(employee, projects);
-  if (assigned.length === 0) return 0;
-  const completed = assigned.filter((project) => project.status === "Completed").length;
-  return Math.round((completed / assigned.length) * 100);
 }
 
 export type EmployeeWorkspaceStatus = {
@@ -195,58 +176,6 @@ export function workforceAnalytics(employees: Employee[], projects: Project[]): 
     availableEmployees,
     activeProjectsAssigned,
   };
-}
-
-export function employeeActivityFeed(
-  employee: EmployeeDetail,
-  projects: Project[],
-) {
-  const assigned = employeeAssignedProjects(employee, projects);
-  const items = [
-    ...assigned.map((project) => ({
-      id: `project-${project.id}`,
-      title:
-        project.status === "Completed"
-          ? `Completed work in ${project.name}`
-          : `Assigned to ${project.name}`,
-      description:
-        project.status === "Completed"
-          ? "Delivery milestone closed in the current portfolio."
-          : "Active assignment visible in the current workspace.",
-      date: project.status === "Completed" ? project.lastDate : project.assignedDate,
-      tone:
-        project.status === "Completed"
-          ? ("success" as const)
-          : project.status === "In Progress"
-            ? ("default" as const)
-            : ("warning" as const),
-    })),
-  ];
-
-  if (employee.directory?.joinedDate) {
-    items.push({
-      id: `joined-${employee.id}`,
-      title: "Joined the workspace",
-      description: `Employee profile created for ${employee.team}.`,
-      date: employee.directory.joinedDate,
-      tone: "default" as const,
-    });
-  }
-
-  if (hasAssignedWorkspaceSeat(employee)) {
-    const bay = normalizeEmployeeBayNumber(employee.bayNumber);
-    items.push({
-      id: `seat-${employee.id}`,
-      title: "Workspace seat assigned",
-      description: `Current workspace seat: Seat ${bay}.`,
-      date: employee.directory?.joinedDate ?? new Date().toISOString().slice(0, 10),
-      tone: "default" as const,
-    });
-  }
-
-  return items
-    .sort((a, b) => (a.date < b.date ? 1 : -1))
-    .slice(0, 8);
 }
 
 export function formatCsvValue(value: string | number | undefined) {

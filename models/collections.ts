@@ -13,6 +13,7 @@ export const COLLECTIONS = {
   teamMembers: "team_members",
   projects: "projects",
   gallery: "gallery",
+  passwordResetTokens: "password_reset_tokens",
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
