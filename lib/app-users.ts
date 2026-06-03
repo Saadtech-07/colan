@@ -2,13 +2,18 @@ import bcrypt from "bcryptjs";
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { dicebearAvatarPng } from "@/lib/mock-data";
-import { normalizeAppRole, roleNeedsTeam } from "@/lib/permissions";
+import { normalizeAppRole, roleNeedsEmployeeIdentity, roleNeedsTeam } from "@/lib/permissions";
 import {
   COLLECTIONS,
   appUserDocToPublic,
   type AppUserDocument,
 } from "@/models";
 import type { AppRole, TeamName } from "@/types";
+import {
+  isProjectManagerAppRole,
+} from "@/lib/project-managers";
+import type { ProjectManagerSummary } from "@/types";
+import { ensureRoleRegistry } from "@/lib/role-registry.server";
 
 export type VerifiedAppUser = {
   email: string;
@@ -160,8 +165,8 @@ export type AppUserCreateInput = {
   password: string;
   name: string;
   appRole: AppRole;
-  employeeId: string;
-  team: TeamName;
+  team?: TeamName;
+  employeeId?: string;
   imageUrl?: string;
   workEmail?: string;
   phone?: string;
@@ -220,6 +225,32 @@ export async function listAppUsers(): Promise<ReturnType<typeof appUserDocToPubl
   return docs.map(appUserDocToPublic);
 }
 
+export async function getAppUserPublicById(
+  id: string,
+): Promise<ReturnType<typeof appUserDocToPublic> | null> {
+  const db = await getDb();
+  if (!db || !ObjectId.isValid(id)) return null;
+  await ensureAppUsersSeed(db);
+  const doc = await db
+    .collection<AppUserDocument>(COLLECTIONS.appUsers)
+    .findOne({ _id: new ObjectId(id) });
+  return doc ? appUserDocToPublic(doc) : null;
+}
+
+export async function listProjectManagerAccounts(): Promise<ProjectManagerSummary[]> {
+  await ensureRoleRegistry();
+  const users = await listAppUsers();
+  return users
+    .filter((user) => isProjectManagerAppRole(user.appRole))
+    .map((user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      imageUrl: user.imageUrl,
+      appRole: user.appRole,
+    }));
+}
+
 export async function createAppUser(
   input: AppUserCreateInput,
 ): Promise<ReturnType<typeof appUserDocToPublic>> {
@@ -228,28 +259,49 @@ export async function createAppUser(
   await ensureAppUsersSeed(db);
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   const email = input.email.toLowerCase().trim();
-  const employeeId = input.employeeId.trim();
+  const needsEmployeeIdentity = roleNeedsEmployeeIdentity(input.appRole);
+  const employeeId = needsEmployeeIdentity ? input.employeeId?.trim() ?? "" : "";
+  const team = needsEmployeeIdentity ? input.team : undefined;
+
+  if (needsEmployeeIdentity) {
+    if (!employeeId) throw new Error("Employee ID is required for this role.");
+    if (!team) throw new Error("Team is required for this role.");
+  }
+
   const existing = await col.findOne({ email });
   if (existing) throw new Error("An account with this email already exists.");
 
   const employeeCol = db.collection(COLLECTIONS.employees);
-  const employeeIdTaken = await employeeCol.findOne({
-    employeeId: { $regex: new RegExp(`^${employeeId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-  });
-  if (employeeIdTaken) {
-    throw new Error("An employee with this ID already exists.");
-  }
 
-  const appUserIdTaken = await col.findOne({
-    employeeId: { $regex: new RegExp(`^${employeeId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-  });
-  if (appUserIdTaken) {
-    throw new Error("An account with this employee ID already exists.");
+  if (needsEmployeeIdentity) {
+    const employeeIdTaken = await employeeCol.findOne({
+      employeeId: {
+        $regex: new RegExp(
+          `^${employeeId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+          "i",
+        ),
+      },
+    });
+    if (employeeIdTaken) {
+      throw new Error("An employee with this ID already exists.");
+    }
+
+    const appUserIdTaken = await col.findOne({
+      employeeId: {
+        $regex: new RegExp(
+          `^${employeeId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+          "i",
+        ),
+      },
+    });
+    if (appUserIdTaken) {
+      throw new Error("An account with this employee ID already exists.");
+    }
   }
 
   const { isValidSeatId } = await import("@/lib/seating-layout");
-  const bayNumber = input.bayNumber?.trim() ?? "";
-  if (bayNumber) {
+  const bayNumber = needsEmployeeIdentity ? input.bayNumber?.trim() ?? "" : "";
+  if (needsEmployeeIdentity && bayNumber) {
     if (!isValidSeatId(bayNumber)) {
       throw new Error(
         `Invalid seat "${bayNumber}". Choose a seat from the office floor plan (e.g. A1, D3).`,
@@ -279,7 +331,7 @@ export async function createAppUser(
     passwordHash,
     name: input.name.trim(),
     appRole: input.appRole,
-    team: input.team,
+    ...(team ? { team } : {}),
     employeeId,
     imageUrl: input.imageUrl ?? dicebearAvatarPng(email),
     isProfileCompleted: false,
@@ -288,6 +340,10 @@ export async function createAppUser(
   };
 
   await col.insertOne(doc);
+
+  if (!needsEmployeeIdentity) {
+    return appUserDocToPublic(doc);
+  }
 
   const employeeRole =
     input.appRole === "admin"
@@ -305,7 +361,7 @@ export async function createAppUser(
     email,
     name: input.name.trim(),
     role: employeeRole,
-    team: input.team,
+    team,
     imageUrl: input.imageUrl ?? dicebearAvatarPng(email),
     bayNumber,
     projectIds: [],
@@ -357,7 +413,6 @@ export async function updateAppUser(
 
   if (input.name !== undefined) updates.name = input.name.trim();
   if (input.appRole !== undefined) updates.appRole = input.appRole;
-  if (input.employeeId !== undefined) updates.employeeId = input.employeeId.trim();
   if (input.imageUrl !== undefined) {
     updates.imageUrl = input.imageUrl.trim()
       ? input.imageUrl.trim()
@@ -371,6 +426,11 @@ export async function updateAppUser(
     if (input.team !== undefined) updates.team = input.team;
   } else {
     unset.team = "";
+    updates.employeeId = "";
+  }
+
+  if (roleNeedsEmployeeIdentity(nextRole) && input.employeeId !== undefined) {
+    updates.employeeId = input.employeeId.trim();
   }
 
   const updateDoc: { $set: Partial<AppUserDocument>; $unset?: Record<string, ""> } = {
@@ -386,7 +446,15 @@ export async function updateAppUser(
 
   if (!result) throw new Error("User not found.");
 
-  const nextEmployeeId = input.employeeId?.trim() ?? current.employeeId;
+  if (!roleNeedsEmployeeIdentity(nextRole)) {
+    await db.collection("employees").deleteOne({
+      $or: [{ email: current.email }, { "directory.workEmail": current.email }],
+    });
+    return appUserDocToPublic(result);
+  }
+
+  const nextEmployeeId =
+    input.employeeId?.trim() || current.employeeId?.trim() || "";
   const nextName = input.name?.trim() ?? current.name;
   const nextTeam = input.team ?? current.team ?? "Unassigned";
   const nextImageUrl =

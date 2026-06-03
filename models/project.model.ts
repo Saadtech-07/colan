@@ -9,6 +9,8 @@ export type ProjectDocument = {
   _id: ObjectId;
   slug: string;
   name: string;
+  clientName?: string;
+  projectManagerId?: string;
   /** @deprecated Legacy single team; prefer `teams`. */
   team?: TeamName;
   teams?: TeamName[];
@@ -34,6 +36,8 @@ export function projectDocToDTO(doc: ProjectDocument): Project {
     id: doc._id.toHexString(),
     slug,
     name: doc.name,
+    clientName: doc.clientName,
+    projectManagerId: doc.projectManagerId,
     teams: normalizeProjectTeams(doc),
     assignedDate: doc.assignedDate,
     lastDate: doc.lastDate,

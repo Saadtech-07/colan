@@ -34,7 +34,7 @@ export function TeamMultiSelect({
   return (
     <div
       className={cn(
-        "max-h-48 space-y-1 overflow-y-auto rounded-lg border border-input bg-background/50 p-2",
+        "max-h-52 space-y-1.5 overflow-y-auto rounded-xl border border-border/70 bg-muted/10 p-2 pr-1.5",
         (disabled || lockedTeam) && "opacity-90",
       )}
     >
@@ -47,24 +47,24 @@ export function TeamMultiSelect({
             disabled={disabled || !!lockedTeam}
             onClick={() => toggle(team)}
             className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+              "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               selected
-                ? "bg-primary/10 text-foreground"
-                : "text-muted-foreground hover:bg-muted/80 hover:text-foreground",
+                ? "border-primary/30 bg-primary/[0.07] text-foreground shadow-sm"
+                : "border-transparent bg-background/60 text-muted-foreground hover:border-border/70 hover:bg-background hover:text-foreground hover:shadow-sm",
               (disabled || lockedTeam) && "cursor-default",
             )}
           >
             <span
               className={cn(
-                "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors",
                 selected
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "border-muted-foreground/40",
+                  : "border-muted-foreground/35 bg-background",
               )}
             >
-              {selected && <Check className="h-3 w-3" />}
+              {selected && <Check className="h-3 w-3" strokeWidth={3} />}
             </span>
-            <span className="truncate">{team}</span>
+            <span className="truncate font-medium">{team}</span>
           </button>
         );
       })}

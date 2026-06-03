@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
 
 import { COMPANY_ROLES } from "@/lib/constants";
 
@@ -136,35 +137,41 @@ export const appUserImageSchema = z
     "Use an image URL or upload an image file.",
   );
 
-export const appUserCreateSchema = z.object({
+export const appUserCreateSchema = z
+  .object({
+    email: z.string().email(),
+    password: z.union([z.string().min(6), z.literal("")]).optional(),
+    name: z.string().min(1),
+    appRole: z.string().trim().min(1),
+    team: z.union([teamNameSchema, z.literal("")]).optional(),
+    employeeId: z.union([z.string().trim().min(1), z.literal("")]).optional(),
+    imageUrl: appUserImageSchema.optional(),
+    workEmail: z.union([z.string().email(), z.literal("")]).optional(),
+    phone: z.string().optional(),
+    location: z.string().optional(),
+    joinedDate: z.string().optional(),
+    notes: z.string().optional(),
+    bayNumber: z.string().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!roleNeedsEmployeeIdentity(value.appRole)) return;
 
-  email: z.string().email(),
+    if (!value.employeeId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["employeeId"],
+        message: "Employee ID is required for this role.",
+      });
+    }
 
-  password: z.union([z.string().min(6), z.literal("")]).optional(),
-
-  name: z.string().min(1),
-
-  appRole: z.string().trim().min(1),
-
-  team: teamNameSchema,
-
-  employeeId: z.string().trim().min(1),
-
-  imageUrl: appUserImageSchema.optional(),
-
-  workEmail: z.union([z.string().email(), z.literal("")]).optional(),
-
-  phone: z.string().optional(),
-
-  location: z.string().optional(),
-
-  joinedDate: z.string().optional(),
-
-  notes: z.string().optional(),
-
-  bayNumber: z.string().optional(),
-
-});
+    if (!value.team?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["team"],
+        message: "Team is required for this role.",
+      });
+    }
+  });
 
 
 
@@ -239,6 +246,10 @@ export const projectCreateSchema = z.object({
 
   description: z.string().optional(),
 
+  clientName: z.string().min(1).optional(),
+
+  projectManagerId: z.string().min(1).optional(),
+
   memberIds: z.array(z.string()).optional(),
 
 });
@@ -258,6 +269,10 @@ export const projectUpdateSchema = z.object({
   status: z.enum(projectStatuses).optional(),
 
   description: z.string().optional(),
+
+  clientName: z.string().min(1).optional(),
+
+  projectManagerId: z.string().min(1).optional(),
 
   memberIds: z.array(z.string()).optional(),
 

@@ -59,7 +59,7 @@ import { cn } from "@/lib/utils";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
-import { roleNeedsTeam } from "@/lib/permissions";
+import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
 import type { AppRole, TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
 
@@ -90,6 +90,23 @@ type AppUserMutationResponse = AppUserPublicDTO & {
 };
 
 const FALLBACK_TEAM = "React Team" as TeamName;
+
+function applyRoleToForm(
+  prev: AppUserFormState,
+  appRole: AppRole,
+  defaultTeam: TeamName,
+): AppUserFormState {
+  if (!roleNeedsEmployeeIdentity(appRole)) {
+    return {
+      ...prev,
+      appRole,
+      employeeId: "",
+      team: defaultTeam,
+    };
+  }
+
+  return { ...prev, appRole };
+}
 
 function buildInitialForm(defaultTeam: TeamName): AppUserFormState {
   return {
@@ -154,7 +171,7 @@ export default function AppUsersPage() {
   const toastTimerRef = React.useRef<number | null>(null);
 
   const submitting = isLoadingKey("app-users-submit");
-  const showTeamField = roleNeedsTeam(form.appRole);
+  const showEmployeeIdentityFields = roleNeedsEmployeeIdentity(form.appRole);
 
   const roleNameMap = React.useMemo(
     () => new Map(workspaceRoles.map((role) => [role.key, role.name])),
@@ -301,9 +318,13 @@ export default function AppUsersPage() {
       const body = {
         email: account.email.trim().toLowerCase(),
         name: account.name.trim(),
-        employeeId: account.employeeId.trim(),
         appRole: account.appRole,
-        team: account.team,
+        ...(roleNeedsEmployeeIdentity(account.appRole)
+          ? {
+              employeeId: account.employeeId.trim(),
+              team: account.team,
+            }
+          : {}),
         password: account.password.trim(),
         ...(account.imageUrl.trim() ? { imageUrl: account.imageUrl.trim() } : {}),
         workEmail: profile.workEmail.trim() || account.email.trim().toLowerCase(),
@@ -364,9 +385,15 @@ export default function AppUsersPage() {
       return;
     }
 
-    if (showTeamField && !form.team) {
-      setError("Team is required for lead and employee roles.");
-      return;
+    if (showEmployeeIdentityFields) {
+      if (!form.employeeId.trim()) {
+        setError("Employee ID is required for this role.");
+        return;
+      }
+      if (!form.team) {
+        setError("Team is required for this role.");
+        return;
+      }
     }
 
     const preset = LOADING_PRESETS.updatingAccount;
@@ -378,8 +405,12 @@ export default function AppUsersPage() {
         const body = {
           name: form.name.trim(),
           appRole: form.appRole,
-          team: showTeamField ? form.team : undefined,
-          ...(form.employeeId.trim() ? { employeeId: form.employeeId.trim() } : {}),
+          ...(showEmployeeIdentityFields
+            ? {
+                team: form.team,
+                employeeId: form.employeeId.trim(),
+              }
+            : {}),
           ...(form.imageUrl.trim() ? { imageUrl: form.imageUrl.trim() } : {}),
           ...(form.password ? { password: form.password } : {}),
         };
@@ -898,7 +929,14 @@ export default function AppUsersPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="employee-id">Employee ID</Label>
+                      <Label htmlFor="employee-id">
+                        Employee ID
+                        {showEmployeeIdentityFields ? (
+                          <span className="ml-0.5 text-destructive" aria-hidden="true">
+                            *
+                          </span>
+                        ) : null}
+                      </Label>
                       <Input
                         id="employee-id"
                         value={form.employeeId}
@@ -908,9 +946,17 @@ export default function AppUsersPage() {
                             employeeId: event.target.value,
                           }))
                         }
-                        placeholder="COL-1001"
-                        className="h-11 rounded-2xl border-border/70"
+                        placeholder={
+                          showEmployeeIdentityFields ? "COL-1001" : "Not required for this role"
+                        }
+                        disabled={!showEmployeeIdentityFields}
+                        className="h-11 rounded-2xl border-border/70 disabled:cursor-not-allowed disabled:opacity-60"
                       />
+                      {!showEmployeeIdentityFields ? (
+                        <p className="text-xs text-muted-foreground">
+                          Organization-level roles do not require an employee ID.
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 </section>
@@ -931,10 +977,9 @@ export default function AppUsersPage() {
                       <Select
                         value={form.appRole}
                         onValueChange={(value) =>
-                          setForm((prev) => ({
-                            ...prev,
-                            appRole: value as AppRole,
-                          }))
+                          setForm((prev) =>
+                            applyRoleToForm(prev, value as AppRole, defaultTeam),
+                          )
                         }
                       >
                         <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
@@ -953,28 +998,43 @@ export default function AppUsersPage() {
                       </Select>
                     </div>
 
-                    {showTeamField && (
-                      <div className="space-y-2">
-                        <Label>Team</Label>
-                        <Select
-                          value={form.team}
-                          onValueChange={(value) =>
-                            setForm((prev) => ({ ...prev, team: value as TeamName }))
-                          }
-                        >
-                          <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
-                            <SelectValue>{form.team}</SelectValue>
-                          </SelectTrigger>
-                          <SelectContent className="rounded-2xl border-border/60">
-                            {teamNames.map((team) => (
-                              <SelectItem key={team} value={team}>
-                                {team}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
+                    <div className="space-y-2">
+                      <Label>
+                        Team
+                        {showEmployeeIdentityFields ? (
+                          <span className="ml-0.5 text-destructive" aria-hidden="true">
+                            *
+                          </span>
+                        ) : null}
+                      </Label>
+                      <Select
+                        value={form.team}
+                        onValueChange={(value) =>
+                          setForm((prev) => ({ ...prev, team: value as TeamName }))
+                        }
+                        disabled={!showEmployeeIdentityFields}
+                      >
+                        <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85 disabled:cursor-not-allowed disabled:opacity-60">
+                          <SelectValue>
+                            {showEmployeeIdentityFields
+                              ? form.team
+                              : "Not required for this role"}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent className="rounded-2xl border-border/60">
+                          {teamNames.map((team) => (
+                            <SelectItem key={team} value={team}>
+                              {team}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {!showEmployeeIdentityFields ? (
+                        <p className="text-xs text-muted-foreground">
+                          Organization-level roles are not tied to a delivery team.
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                 </section>
 

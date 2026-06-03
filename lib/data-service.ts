@@ -34,12 +34,13 @@ import {
   type GalleryImageDocument,
   type ProjectDocument,
 } from "@/models";
+import { ensureAppUsersSeed, getAppUserPublicById } from "@/lib/app-users";
+import { isProjectManagerAppRole } from "@/lib/project-managers";
 import {
   MOCK_EMPLOYEES,
   MOCK_GALLERY,
   MOCK_PROJECTS,
 } from "@/lib/mock-data";
-import { ensureAppUsersSeed } from "@/lib/app-users";
 
 function resolveMembers(memberIds: string[], all: Employee[]): Employee[] {
   if (memberIds.length === 0) return [];
@@ -595,7 +596,27 @@ export async function getProjectDetailBySlug(
   const project = await getProjectBySlug(slug);
   if (!project) return null;
   const employees = await listEmployees();
-  return toDetail(project, employees);
+  const detail = toDetail(project, employees);
+
+  if (!project.projectManagerId) {
+    return { ...detail, projectManager: null };
+  }
+
+  const account = await getAppUserPublicById(project.projectManagerId);
+  if (account && isProjectManagerAppRole(account.appRole)) {
+    return {
+      ...detail,
+      projectManager: {
+        id: account.id,
+        name: account.name,
+        email: account.email,
+        imageUrl: account.imageUrl,
+        appRole: account.appRole,
+      },
+    };
+  }
+
+  return { ...detail, projectManager: null };
 }
 
 export async function createProject(
@@ -630,6 +651,8 @@ export async function createProject(
     _id,
     slug,
     name: input.name,
+    clientName: input.clientName,
+    projectManagerId: input.projectManagerId,
     teams: input.teams,
     assignedDate: input.assignedDate,
     lastDate: input.lastDate,
@@ -648,6 +671,8 @@ export async function updateProjectBySlug(
     Pick<
       Project,
       | "name"
+      | "clientName"
+      | "projectManagerId"
       | "teams"
       | "assignedDate"
       | "lastDate"

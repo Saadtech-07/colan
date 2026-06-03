@@ -387,7 +387,7 @@ export default function ProfileSettingsPage() {
           </CardHeader>
           <CardContent>
             {loading ? (
-              <LoadingIndicator title="Loading Profile Settings" className="min-h-[320px]" />
+              <LoadingIndicator title="Loading profile settings" className="min-h-[320px]" />
             ) : (
               <form onSubmit={handleSubmit} className="space-y-6">
                 {error && (

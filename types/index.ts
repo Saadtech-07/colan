@@ -51,6 +51,10 @@ export interface Project {
   id: string;
   slug: string;
   name: string;
+  /** Client or account this project is delivered for. */
+  clientName?: string;
+  /** App user document id of the assigned project manager. */
+  projectManagerId?: string;
   /** Squads this project is assigned to (one or more). */
   teams: TeamName[];
   assignedDate: string;
@@ -61,8 +65,17 @@ export interface Project {
   memberIds: string[];
 }
 
+export type ProjectManagerSummary = {
+  id: string;
+  name: string;
+  email: string;
+  imageUrl: string;
+  appRole: AppRole;
+};
+
 export type ProjectDetail = Project & {
   members: Employee[];
+  projectManager?: ProjectManagerSummary | null;
 };
 
 export interface GalleryImage {

@@ -126,10 +126,21 @@ export function getRoleDefinition(roleKey: AppRole): RoleDefinition {
   return workspaceRoleToDefinition(role);
 }
 
+const SQUAD_CONTRIBUTOR_ROLE_KEYS = new Set([
+  "employee",
+  "lead",
+  "co-lead",
+  "co_lead",
+  "colead",
+]);
+
+/** Squad contributors need an employee ID and team assignment. */
+export function roleNeedsEmployeeIdentity(roleKey: AppRole): boolean {
+  return SQUAD_CONTRIBUTOR_ROLE_KEYS.has(normalizeAppRole(roleKey).toLowerCase());
+}
+
 export function roleNeedsTeam(roleKey: AppRole): boolean {
-  const role = getRoleFromRegistry(roleKey);
-  if (!role) return roleKey === "lead" || roleKey === "employee";
-  return role.teamScopedProjects || roleKey === "lead" || roleKey === "employee";
+  return roleNeedsEmployeeIdentity(roleKey);
 }
 
 export function hasPermission(roleKey: AppRole, permission: Permission): boolean {

@@ -122,7 +122,6 @@ export default function ProjectDetailPage() {
     </div>
   );
 }
-
 function ProjectWorkspaceHero({
   project,
   canEdit,
@@ -273,3 +272,4 @@ function HeroMetricCard({
     </Card>
   );
 }
+

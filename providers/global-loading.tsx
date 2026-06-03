@@ -4,6 +4,7 @@ import * as React from "react";
 import { GlobalLoadingOverlay } from "@/components/ui/global-loading-overlay";
 import {
   LOADING_KEY_PRIORITY,
+  LOADING_PRESETS,
   type LoadingPreset,
 } from "@/lib/loading-presets";
 import { useAppState } from "@/providers/app-state";
@@ -106,7 +107,7 @@ function GlobalLoadingProviderInner({ children }: { children: React.ReactNode })
 
   return (
     <GlobalLoadingContext.Provider value={value}>
-      <GlobalLoadingOverlay open={syncing} title={title} description={description} />
+      <GlobalLoadingOverlay open={syncing} title={title} />
       {children}
     </GlobalLoadingContext.Provider>
   );
@@ -124,11 +125,7 @@ function WorkspaceSyncBridge() {
 
   React.useEffect(() => {
     if (isInitialSync) {
-      showLoading("workspace-sync", {
-        title: "Syncing Workspace",
-        description:
-          "Updating employees, projects, seating and workspace data...",
-      });
+      showLoading("workspace-sync", LOADING_PRESETS.syncWorkspace);
     } else {
       hideLoading("workspace-sync");
     }
@@ -145,10 +142,7 @@ function SessionLoadingBridge() {
 
   React.useEffect(() => {
     if (isBootstrappingSession) {
-      showLoading("session", {
-        title: "Loading Workspace",
-        description: "Preparing your admin dashboard session...",
-      });
+      showLoading("session", LOADING_PRESETS.session);
     } else {
       hideLoading("session");
     }

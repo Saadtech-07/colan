@@ -33,6 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ALL_SEAT_IDS } from "@/lib/seating-layout";
 import { seatOccupancyMap } from "@/lib/seating-utils";
 import { generateTemporaryPassword } from "@/lib/password-utils";
+import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { AppRole, Employee, TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
@@ -159,12 +160,30 @@ function WizardSteps({ step }: { step: 1 | 2 }) {
   );
 }
 
+function applyAccountRole(
+  prev: AccountSetupForm,
+  appRole: AppRole,
+  defaultTeam: TeamName,
+): AccountSetupForm {
+  if (!roleNeedsEmployeeIdentity(appRole)) {
+    return {
+      ...prev,
+      appRole,
+      employeeId: "",
+      team: defaultTeam,
+    };
+  }
+
+  return { ...prev, appRole };
+}
+
 function validateAccountStep(
   account: AccountSetupForm,
   users: AppUserPublicDTO[],
   employees: Employee[],
 ): string | null {
   const email = account.email.trim().toLowerCase();
+  const needsIdentity = roleNeedsEmployeeIdentity(account.appRole);
   const employeeId = account.employeeId.trim();
 
   if (!email) return "Email is required.";
@@ -175,17 +194,20 @@ function validateAccountStep(
 
   if (!account.name.trim()) return "Full name is required.";
 
-  if (!employeeId) return "Employee ID is required.";
-  const employeeIdLower = employeeId.toLowerCase();
-  if (
-    users.some((user) => user.employeeId?.trim().toLowerCase() === employeeIdLower) ||
-    employees.some((employee) => employee.employeeId.trim().toLowerCase() === employeeIdLower)
-  ) {
-    return "This employee ID is already in use.";
+  if (needsIdentity) {
+    if (!employeeId) return "Employee ID is required.";
+    const employeeIdLower = employeeId.toLowerCase();
+    if (
+      users.some((user) => user.employeeId?.trim().toLowerCase() === employeeIdLower) ||
+      employees.some((employee) => employee.employeeId.trim().toLowerCase() === employeeIdLower)
+    ) {
+      return "This employee ID is already in use.";
+    }
+
+    if (!account.team.trim()) return "Team is required.";
   }
 
   if (!account.appRole.trim()) return "Role is required.";
-  if (!account.team.trim()) return "Team is required.";
 
   if (!account.password.trim()) return "Password is required.";
   if (account.password.trim().length < 6) {
@@ -218,6 +240,7 @@ export function CreateAppUserWizardDialog({
     () => ALL_SEAT_IDS.filter((id) => !occupancy.has(id)),
     [occupancy],
   );
+  const needsEmployeeIdentity = roleNeedsEmployeeIdentity(account.appRole);
 
   const resetWizard = React.useCallback(() => {
     setStep(1);
@@ -243,6 +266,11 @@ export function CreateAppUserWizardDialog({
     const validationError = validateAccountStep(account, users, employees);
     if (validationError) {
       setError(validationError);
+      return;
+    }
+
+    if (!needsEmployeeIdentity) {
+      void handleCreate();
       return;
     }
 
@@ -344,24 +372,43 @@ export function CreateAppUserWizardDialog({
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="wizard-employee-id">Employee ID *</Label>
+                      <Label htmlFor="wizard-employee-id">
+                        Employee ID
+                        {needsEmployeeIdentity ? (
+                          <span className="ml-0.5 text-destructive" aria-hidden="true">
+                            *
+                          </span>
+                        ) : null}
+                      </Label>
                       <Input
                         id="wizard-employee-id"
                         value={account.employeeId}
                         onChange={(event) =>
                           setAccount((prev) => ({ ...prev, employeeId: event.target.value }))
                         }
-                        className="h-11 rounded-2xl border-border/70"
-                        placeholder="COL-1001"
+                        placeholder={
+                          needsEmployeeIdentity ? "COL-1001" : "Not required for this role"
+                        }
+                        disabled={!needsEmployeeIdentity}
+                        className="h-11 rounded-2xl border-border/70 disabled:cursor-not-allowed disabled:opacity-60"
                       />
+                      {!needsEmployeeIdentity ? (
+                        <p className="text-xs text-muted-foreground">
+                          Organization-level roles do not require an employee ID.
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Role *</Label>
+                      <Label>
+                        Role *
+                      </Label>
                       <Select
                         value={account.appRole}
                         onValueChange={(value) =>
-                          setAccount((prev) => ({ ...prev, appRole: value as AppRole }))
+                          setAccount((prev) =>
+                            applyAccountRole(prev, value as AppRole, defaultTeam),
+                          )
                         }
                       >
                         <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
@@ -381,15 +428,27 @@ export function CreateAppUserWizardDialog({
                     </div>
 
                     <div className="space-y-2 sm:col-span-2">
-                      <Label>Team *</Label>
+                      <Label>
+                        Team
+                        {needsEmployeeIdentity ? (
+                          <span className="ml-0.5 text-destructive" aria-hidden="true">
+                            *
+                          </span>
+                        ) : null}
+                      </Label>
                       <Select
                         value={account.team}
                         onValueChange={(value) =>
                           setAccount((prev) => ({ ...prev, team: value as TeamName }))
                         }
+                        disabled={!needsEmployeeIdentity}
                       >
-                        <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
-                          <SelectValue>{account.team}</SelectValue>
+                        <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85 disabled:cursor-not-allowed disabled:opacity-60">
+                          <SelectValue>
+                            {needsEmployeeIdentity
+                              ? account.team
+                              : "Not required for this role"}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent className="rounded-2xl border-border/60">
                           {teamNames.map((team) => (
@@ -399,6 +458,11 @@ export function CreateAppUserWizardDialog({
                           ))}
                         </SelectContent>
                       </Select>
+                      {!needsEmployeeIdentity ? (
+                        <p className="text-xs text-muted-foreground">
+                          Organization-level roles are not tied to a delivery team.
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 </section>
@@ -605,11 +669,22 @@ export function CreateAppUserWizardDialog({
                   <Button
                     type="button"
                     className="h-11 rounded-2xl px-5 shadow-sm"
-                    onClick={handleContinue}
+                    onClick={() => (needsEmployeeIdentity ? handleContinue() : void handleCreate())}
                     disabled={submitting}
                   >
-                    Save & Continue
-                    <ArrowRight className="h-4 w-4" />
+                    {needsEmployeeIdentity ? (
+                      <>
+                        Save & Continue
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    ) : submitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4" />
+                        Create Account
+                      </>
+                    )}
                   </Button>
                 </>
               ) : (

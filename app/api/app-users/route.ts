@@ -8,6 +8,7 @@ import {
   canManageModule,
   canViewModule,
   normalizeAppRole,
+  roleNeedsEmployeeIdentity,
 } from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { sendAccountCreatedEmail } from "@/services/email-service";
@@ -58,9 +59,6 @@ export async function POST(req: Request) {
   }
 
   const payload = parsed.data;
-  if (!payload.team?.trim()) {
-    return NextResponse.json({ error: "Team is required." }, { status: 400 });
-  }
 
   try {
     const temporaryPassword =
@@ -73,8 +71,12 @@ export async function POST(req: Request) {
       password: temporaryPassword,
       name: payload.name,
       appRole: payload.appRole,
-      team: payload.team,
-      employeeId: payload.employeeId,
+      ...(roleNeedsEmployeeIdentity(payload.appRole)
+        ? {
+            team: payload.team as NonNullable<typeof payload.team>,
+            employeeId: payload.employeeId ?? "",
+          }
+        : {}),
       imageUrl: payload.imageUrl,
       workEmail: payload.workEmail,
       phone: payload.phone,
