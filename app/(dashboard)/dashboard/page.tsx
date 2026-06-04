@@ -46,8 +46,11 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { getProjectsForEmployee } from "@/lib/project-assignments";
-import { projectProgressPercent } from "@/lib/project-ui";
+import {
+  projectProgressPercent,
+} from "@/lib/project-ui";
 import { teamTabLabel } from "@/lib/team-utils";
+import { resolveWorkspaceRoleLabel } from "@/lib/workspace-label";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
 import type { AuthUser, Employee, Project, TeamName } from "@/types";
@@ -587,7 +590,7 @@ export default function DashboardPage() {
     [scopedProjects, teamsInScope],
   );
 
-  const roleLabel = access?.definition.label ?? user?.appRole ?? "Workspace";
+  const roleLabel = resolveWorkspaceRoleLabel(user?.appRole, dataLoading);
   const workspaceSubtitle =
     dashboardScope === "company"
       ? "Here's your workspace performance overview."
@@ -937,9 +940,14 @@ export default function DashboardPage() {
             </Card>
           </section>
 
-          <section className="space-y-4">
+          <section className="space-y-5">
             <SectionHeader
               title={dashboardScope === "personal" ? "Assigned projects" : "Team-based projects"}
+              description={
+                dashboardScope === "personal"
+                  ? "Projects currently assigned to your profile."
+                  : "Projects grouped by squad for a quick overview of team delivery work."
+              }
             />
 
             {dashboardScope === "personal" ? (
@@ -1003,9 +1011,14 @@ function AlertStrip({
   );
 }
 
-function SectionHeader({ title }: { title: string }) {
+function SectionHeader({ title, description }: { title: string; description?: string }) {
   return (
-    <h2 className="text-lg font-bold tracking-tight text-foreground sm:text-xl">{title}</h2>
+    <div className="space-y-1">
+      <h2 className="text-lg font-bold tracking-tight text-foreground sm:text-xl">{title}</h2>
+      {description ? (
+        <p className="max-w-3xl text-sm text-muted-foreground">{description}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -1095,6 +1108,74 @@ function SpotlightMetric({ title, value }: { title: string; value: string }) {
   );
 }
 
+function TeamProjectRow({
+  project,
+  ownerTeam,
+  today,
+}: {
+  project: Project;
+  ownerTeam: TeamName;
+  today: Date;
+}) {
+  const status = projectStatusBadge(project, today);
+  const progress = projectProgressPercent(project, today);
+  const crossTeams = project.teams.filter((projectTeam) => projectTeam !== ownerTeam);
+
+  return (
+    <Link
+      href={`/projects/${project.slug}`}
+      className="group block rounded-xl border border-border/60 bg-background/80 p-4 transition-colors hover:border-primary/20 hover:bg-background"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
+              {project.name}
+            </p>
+            <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {formatShortDate(project.assignedDate)} – {formatShortDate(project.lastDate)}
+          </p>
+          {crossTeams.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {crossTeams.map((projectTeam) => (
+                <Badge
+                  key={projectTeam}
+                  variant="outline"
+                  className="rounded-full text-[10px] font-medium"
+                >
+                  {teamTabLabel(projectTeam)}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <Badge variant={status.variant}>{status.label}</Badge>
+          <span className="text-xs text-muted-foreground">
+            {project.memberIds.length} member{project.memberIds.length === 1 ? "" : "s"}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-1.5">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Progress</span>
+          <span>{progress}%</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-muted">
+          <div
+            className="h-full rounded-full bg-primary transition-all duration-500"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 function TeamProjectCard({
   team,
   projects,
@@ -1111,7 +1192,7 @@ function TeamProjectCard({
     projects.length === 0 ? 0 : Math.round((completed / projects.length) * 100);
 
   return (
-    <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_50px_-30px_rgba(15,23,42,0.45)]">
+    <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
       <CardHeader className="border-b border-border/60 bg-muted/15 pb-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -1121,88 +1202,42 @@ function TeamProjectCard({
             <div>
               <CardTitle className="text-lg">{team}</CardTitle>
               <CardDescription className="mt-1">
-                {projects.length} project{projects.length === 1 ? "" : "s"} · {completionPercentage}% completed
+                {projects.length} project{projects.length === 1 ? "" : "s"} · {completionPercentage}%
+                completed
               </CardDescription>
             </div>
           </div>
-          <div className="flex -space-x-2">
-            {employees.slice(0, 4).map((employee) => (
-              <Avatar key={employee.id} className="h-9 w-9 border-2 border-background ring-0">
-                <AvatarImage src={employee.imageUrl} alt={employee.name} />
-                <AvatarFallback>{profileInitials(employee.name)}</AvatarFallback>
-              </Avatar>
-            ))}
-            {employees.length > 4 && (
-              <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-background bg-muted text-xs font-semibold text-muted-foreground">
-                +{employees.length - 4}
-              </div>
-            )}
-          </div>
+          {employees.length > 0 ? (
+            <div className="flex shrink-0 -space-x-2">
+              {employees.slice(0, 4).map((employee) => (
+                <Avatar key={employee.id} className="h-9 w-9 border-2 border-background ring-0">
+                  <AvatarImage src={employee.imageUrl} alt={employee.name} />
+                  <AvatarFallback>{profileInitials(employee.name)}</AvatarFallback>
+                </Avatar>
+              ))}
+              {employees.length > 4 ? (
+                <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-background bg-muted text-xs font-semibold text-muted-foreground">
+                  +{employees.length - 4}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </CardHeader>
 
       <CardContent className="space-y-3 p-5">
         {projects.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-10 text-center text-sm text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 px-4 py-10 text-center text-sm text-muted-foreground">
             No projects yet for this team.
           </div>
         ) : (
           projects.map((project) => (
-            <Link
+            <TeamProjectRow
               key={project.id}
-              href={`/projects/${project.slug}`}
-              className="group block rounded-2xl border border-border/60 bg-background/80 p-4 transition-all duration-200 hover:border-primary/25 hover:bg-background hover:shadow-sm"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
-                      {project.name}
-                    </p>
-                    <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" />
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {project.teams.map((projectTeam) => (
-                      <Badge key={projectTeam} variant="outline" className="rounded-full bg-muted/35 text-[10px] font-medium">
-                        {teamTabLabel(projectTeam)}
-                      </Badge>
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {formatShortDate(project.assignedDate)} to {formatShortDate(project.lastDate)}
-                  </p>
-                </div>
-
-                <div className="flex shrink-0 flex-col items-end gap-2">
-                  <Badge variant={projectStatusBadge(project, today).variant}>
-                    {projectStatusBadge(project, today).label}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {project.memberIds.length} member{project.memberIds.length === 1 ? "" : "s"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>Delivery progress</span>
-                  <span>{projectProgressPercent(project, today)}%</span>
-                </div>
-                <div className="h-2 rounded-full bg-muted/70">
-                  <div
-                    className={cn(
-                      "h-full rounded-full transition-all duration-500",
-                      isProjectDelayed(project, today)
-                        ? "bg-gradient-to-r from-amber-500 to-orange-400"
-                        : project.status === "Completed"
-                          ? "bg-gradient-to-r from-emerald-500 to-emerald-400"
-                          : "bg-gradient-to-r from-primary via-indigo-500 to-cyan-400",
-                    )}
-                    style={{ width: `${projectProgressPercent(project, today)}%` }}
-                  />
-                </div>
-              </div>
-            </Link>
+              project={project}
+              ownerTeam={team}
+              today={today}
+            />
           ))
         )}
       </CardContent>

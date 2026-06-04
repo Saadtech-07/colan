@@ -18,6 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { profileNameInitial } from "@/lib/profile-image";
+import { resolveWorkspaceRoleLabel } from "@/lib/workspace-label";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
 
@@ -106,7 +107,7 @@ function getMobileViewportSnapshot() {
 }
 
 export function AppHeader() {
-  const { user, logout, access } = useAppState();
+  const { user, logout, dataLoading } = useAppState();
   const { collapsed, mobileOpen } = useSidebar();
   const pathname = usePathname();
   const pageMeta = headerMetaForPath(pathname);
@@ -164,7 +165,7 @@ export function AppHeader() {
                   {user?.email}
                 </span>
                 <Badge variant="secondary" className="w-fit">
-                  {access?.definition.label ?? user?.appRole}
+                  {resolveWorkspaceRoleLabel(user?.appRole, dataLoading)}
                 </Badge>
                 {user?.team && (
                   <span className="text-xs text-muted-foreground">

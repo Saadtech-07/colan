@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { canAccessNav } from "@/lib/permissions";
+import { formatWorkspaceSubtitle } from "@/lib/workspace-label";
 import { useAppState } from "@/providers/app-state";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -88,11 +89,12 @@ function SidebarNavItem({
 export function AppSidebar() {
   const pathname = usePathname();
   const { collapsed, setCollapsed, mobileOpen, setMobileOpen } = useSidebar();
-  const { access } = useAppState();
+  const { access, user, dataLoading, sessionStatus } = useAppState();
 
-  const workspaceSubtitle = access
-    ? `${access.definition.label} workspace`
-    : "Workspace";
+  const workspaceSubtitle =
+    sessionStatus === "loading" || !user
+      ? formatWorkspaceSubtitle(null, true)
+      : formatWorkspaceSubtitle(user.appRole, dataLoading);
 
   const visibleNav = nav.filter(
     (item) => access && canAccessNav(access.role, item.href),
