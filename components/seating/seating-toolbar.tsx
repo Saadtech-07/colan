@@ -41,28 +41,21 @@ export function SeatingToolbar({
   onReset,
 }: Props) {
   return (
-    <div className="sticky top-4 z-10 space-y-4 rounded-[24px] border border-border/70 bg-card/90 p-4 shadow-sm backdrop-blur sm:p-5">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Controls
-          </p>
-          <h3 className="mt-1 text-base font-semibold tracking-tight">Refine the layout view</h3>
-        </div>
-
-        <div className="relative min-w-0 flex-1 xl:max-w-md">
+    <div className="shrink-0 space-y-3 rounded-2xl border border-border/70 bg-background/90 p-3.5 shadow-sm backdrop-blur sm:p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="relative min-w-0 flex-1 lg:max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by name or employee ID…"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="h-11 rounded-2xl border-border/70 bg-background/85 pl-9"
+            className="h-10 rounded-xl border-border/70 bg-background pl-9"
           />
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
           <Select value={teamFilter} onValueChange={onTeamFilterChange}>
-            <SelectTrigger className="h-11 w-[170px] rounded-2xl border-border/70 bg-background/85">
+            <SelectTrigger className="h-10 w-[150px] rounded-xl border-border/70 bg-background">
               <SelectValue placeholder="Team" />
             </SelectTrigger>
             <SelectContent className="rounded-2xl border-border/60">
@@ -75,7 +68,7 @@ export function SeatingToolbar({
             </SelectContent>
           </Select>
           <Select value={viewMode} onValueChange={(v) => onViewModeChange(v as Props["viewMode"])}>
-            <SelectTrigger className="h-11 w-[160px] rounded-2xl border-border/70 bg-background/85">
+            <SelectTrigger className="h-10 w-[150px] rounded-xl border-border/70 bg-background">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="rounded-2xl border-border/60">
@@ -88,7 +81,7 @@ export function SeatingToolbar({
             type="button"
             variant="outline"
             size="sm"
-            className="h-11 rounded-2xl border-border/70 bg-background/80 px-4"
+            className="h-10 rounded-xl border-border/70 bg-background px-4"
             onClick={onReset}
           >
             <RotateCcw className="h-3.5 w-3.5" />
@@ -116,7 +109,7 @@ export function SeatingToolbar({
             variant="outline"
             size="icon"
             className="h-9 w-9 rounded-full border-border/70"
-            onClick={() => onZoomChange(Math.max(0.5, zoom - 0.1))}
+            onClick={() => onZoomChange(Math.max(0.65, zoom - 0.05))}
             aria-label="Zoom out"
           >
             <ZoomOut className="h-4 w-4" />
@@ -129,7 +122,7 @@ export function SeatingToolbar({
             variant="outline"
             size="icon"
             className="h-9 w-9 rounded-full border-border/70"
-            onClick={() => onZoomChange(Math.min(1.25, zoom + 0.1))}
+            onClick={() => onZoomChange(Math.min(1.1, zoom + 0.05))}
             aria-label="Zoom in"
           >
             <ZoomIn className="h-4 w-4" />

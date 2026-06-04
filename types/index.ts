@@ -26,7 +26,11 @@ export type AppRole = string;
 export type EmployeeDirectoryInfo = {
   workEmail?: string;
   phone?: string;
+  /** Legacy office label; kept in sync with fullAddress when possible. */
   location?: string;
+  fullAddress?: string;
+  currentAddress?: string;
+  permanentAddress?: string;
   joinedDate?: string;
   notes?: string;
 };

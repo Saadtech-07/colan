@@ -51,7 +51,6 @@ export async function PATCH(req: Request) {
   try {
     const profile = await completeCurrentAppUserProfile({
       email,
-      name: parsed.data.name,
       imageUrl: parsed.data.imageUrl,
       currentPassword: parsed.data.currentPassword,
       newPassword: parsed.data.newPassword?.trim() || undefined,

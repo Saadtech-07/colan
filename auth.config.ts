@@ -1,4 +1,4 @@
-import { normalizeAppRole } from "@/lib/permissions";
+import { normalizeAppRole } from "@/lib/app-role";
 import { isSessionSafeImageUrl, sanitizeSessionImageUrl } from "@/lib/session-token";
 import { NextResponse } from "next/server";
 import type { NextAuthConfig } from "next-auth";

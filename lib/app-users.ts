@@ -12,6 +12,7 @@ import {
   isProjectManagerAppRole,
 } from "@/lib/project-managers";
 import type { ProjectManagerSummary } from "@/types";
+import { addressesFromDirectory, directoryPatchFromAddresses } from "@/lib/employee-address";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 
 export type VerifiedAppUser = {
@@ -170,6 +171,9 @@ export type AppUserCreateInput = {
   workEmail?: string;
   phone?: string;
   location?: string;
+  fullAddress?: string;
+  currentAddress?: string;
+  permanentAddress?: string;
   joinedDate?: string;
   notes?: string;
   bayNumber?: string;
@@ -185,6 +189,9 @@ export type AppUserUpdateInput = {
   workEmail?: string;
   phone?: string;
   location?: string;
+  fullAddress?: string;
+  currentAddress?: string;
+  permanentAddress?: string;
   joinedDate?: string;
   bayNumber?: string;
 };
@@ -199,8 +206,13 @@ export type AppUserProfileDTO = {
   isProfileCompleted: boolean;
   updatedProfileAt?: string;
   workspaceRole?: string;
+  workEmail?: string;
   phone?: string;
+  /** @deprecated Legacy single-line location; prefer currentAddress. */
   location?: string;
+  currentAddress?: string;
+  permanentAddress?: string;
+  joinedDate?: string;
   bayNumber?: string;
 };
 
@@ -214,7 +226,6 @@ export type AppUserSessionRefresh = {
 
 export type ProfileSetupUpdateInput = {
   email: string;
-  name: string;
   imageUrl?: string;
   currentPassword?: string;
   newPassword?: string;
@@ -262,6 +273,9 @@ async function enrichAppUsersWithEmployeeProfiles(
       workEmail?: string;
       phone?: string;
       location?: string;
+      fullAddress?: string;
+      currentAddress?: string;
+      permanentAddress?: string;
       joinedDate?: string;
     };
     return {
@@ -269,6 +283,9 @@ async function enrichAppUsersWithEmployeeProfiles(
       workEmail: directory.workEmail ?? user.email,
       phone: directory.phone ?? "",
       location: directory.location ?? "",
+      fullAddress: directory.fullAddress ?? directory.location ?? "",
+      currentAddress: directory.currentAddress ?? "",
+      permanentAddress: directory.permanentAddress ?? "",
       joinedDate: directory.joinedDate ?? "",
       bayNumber: typeof employee.bayNumber === "string" ? employee.bayNumber : "",
     };
@@ -367,13 +384,22 @@ export async function createAppUser(
   const workEmail = (input.workEmail?.trim() || email).toLowerCase();
   const joinedDate =
     input.joinedDate?.trim() || new Date().toISOString().split("T")[0];
-  const directory = {
-    workEmail,
-    phone: input.phone?.trim() ?? "",
-    location: input.location?.trim() || "Unassigned",
-    joinedDate,
-    notes: input.notes?.trim() ?? "",
-  };
+  const directory = directoryPatchFromAddresses(
+    {
+      currentAddress:
+        input.currentAddress?.trim() ??
+        input.fullAddress?.trim() ??
+        input.location?.trim() ??
+        "",
+      permanentAddress: input.permanentAddress?.trim() ?? "",
+    },
+    {
+      workEmail,
+      phone: input.phone?.trim() ?? "",
+      joinedDate,
+      notes: input.notes?.trim() ?? "",
+    },
+  );
 
   const doc: AppUserDocument = {
     _id: new ObjectId(),
@@ -423,6 +449,9 @@ export async function createAppUser(
         workEmail: directory.workEmail,
         phone: directory.phone || undefined,
         location: directory.location || undefined,
+        fullAddress: directory.fullAddress || undefined,
+        currentAddress: directory.currentAddress || undefined,
+        permanentAddress: directory.permanentAddress || undefined,
         joinedDate: directory.joinedDate || undefined,
         notes: directory.notes || undefined,
         updatedAt: new Date(),
@@ -503,9 +532,22 @@ export async function updateAppUser(
   const nextImageUrl = input.imageUrl ?? current.imageUrl ?? "";
   const nextWorkEmail = (input.workEmail?.trim() || current.email).toLowerCase();
   const nextPhone = input.phone?.trim() ?? "";
-  const nextLocation = input.location?.trim() ?? "";
-  const nextJoinedDate =
-    input.joinedDate?.trim() || new Date().toISOString().split("T")[0];
+  const nextDirectory = directoryPatchFromAddresses(
+    {
+      currentAddress:
+        input.currentAddress?.trim() ??
+        input.fullAddress?.trim() ??
+        input.location?.trim() ??
+        "",
+      permanentAddress: input.permanentAddress?.trim() ?? "",
+    },
+    {
+      workEmail: nextWorkEmail,
+      phone: nextPhone || undefined,
+      joinedDate: input.joinedDate?.trim() || new Date().toISOString().split("T")[0],
+    },
+  );
+  const nextJoinedDate = nextDirectory.joinedDate ?? new Date().toISOString().split("T")[0];
 
   const employeeCol = db.collection(COLLECTIONS.employees);
   const existingEmployee = await employeeCol.findOne({
@@ -549,7 +591,10 @@ export async function updateAppUser(
     bayNumber: nextBayNumber,
     "directory.workEmail": nextWorkEmail,
     "directory.phone": nextPhone,
-    "directory.location": nextLocation || "Unassigned",
+    "directory.location": nextDirectory.location ?? "",
+    "directory.fullAddress": nextDirectory.fullAddress ?? "",
+    "directory.currentAddress": nextDirectory.currentAddress ?? "",
+    "directory.permanentAddress": nextDirectory.permanentAddress ?? "",
     "directory.joinedDate": nextJoinedDate,
     updatedAt: new Date(),
   };
@@ -562,8 +607,12 @@ export async function updateAppUser(
     $set: employeeSet,
   });
 
+  let employeeRef = existingEmployee?._id;
+
   if (employeeUpdate.matchedCount === 0) {
+    employeeRef = new ObjectId();
     await db.collection("employees").insertOne({
+      _id: employeeRef,
       employeeId: nextEmployeeId,
       email: current.email,
       name: nextName,
@@ -575,12 +624,42 @@ export async function updateAppUser(
       directory: {
         workEmail: nextWorkEmail,
         phone: nextPhone,
-        location: nextLocation || "Unassigned",
+        location: nextDirectory.location ?? "",
+        fullAddress: nextDirectory.fullAddress ?? "",
+        currentAddress: nextDirectory.currentAddress ?? "",
+        permanentAddress: nextDirectory.permanentAddress ?? "",
         joinedDate: nextJoinedDate,
       },
       createdAt: new Date(),
       updatedAt: new Date(),
     });
+  } else if (!employeeRef) {
+    const refreshed = await employeeCol.findOne(employeeFilter);
+    employeeRef = refreshed?._id;
+  }
+
+  if (employeeRef) {
+    await db.collection(COLLECTIONS.employeeDetails).updateOne(
+      { employeeRef },
+      {
+        $set: {
+          employeeRef,
+          workEmail: nextWorkEmail,
+          phone: nextPhone || undefined,
+          location: nextDirectory.location || undefined,
+          fullAddress: nextDirectory.fullAddress || undefined,
+          currentAddress: nextDirectory.currentAddress || undefined,
+          permanentAddress: nextDirectory.permanentAddress || undefined,
+          joinedDate: nextJoinedDate || undefined,
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          _id: new ObjectId(),
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
   }
 
   return appUserDocToPublic(result);
@@ -767,6 +846,7 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
       imageUrl: user.imageUrl,
       isProfileCompleted: normalizeProfileCompleted(user.isProfileCompleted),
       updatedProfileAt: new Date().toISOString(),
+      workEmail: user.email,
     };
   }
 
@@ -783,28 +863,56 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
     typeof employee?.employeeId === "string" ? employee.employeeId : undefined,
   );
 
-  if (!employee) return profile;
+  if (!employee) {
+    profile.workEmail = doc.email;
+    return profile;
+  }
 
   if (!profile.employeeId && typeof employee.employeeId === "string") {
     profile.employeeId = employee.employeeId;
+  }
+
+  if (!profile.team && typeof employee.team === "string") {
+    profile.team = employee.team as TeamName;
   }
 
   profile.workspaceRole = typeof employee.role === "string" ? employee.role : undefined;
   profile.bayNumber = typeof employee.bayNumber === "string" ? employee.bayNumber : undefined;
 
   const embeddedDirectory = employee.directory as
-    | { phone?: string; location?: string; workEmail?: string }
+    | {
+        phone?: string;
+        location?: string;
+        workEmail?: string;
+        joinedDate?: string;
+        fullAddress?: string;
+        currentAddress?: string;
+        permanentAddress?: string;
+      }
     | undefined;
-  if (embeddedDirectory?.phone) profile.phone = embeddedDirectory.phone;
-  if (embeddedDirectory?.location) profile.location = embeddedDirectory.location;
 
   const details = await db.collection(COLLECTIONS.employeeDetails).findOne({
     employeeRef: employee._id,
   });
-  if (details) {
-    if (details.phone) profile.phone = details.phone;
-    if (details.location) profile.location = details.location;
-  }
+
+  const mergedDirectory = {
+    location: details?.location ?? embeddedDirectory?.location,
+    fullAddress: details?.fullAddress ?? embeddedDirectory?.fullAddress,
+    currentAddress: details?.currentAddress ?? embeddedDirectory?.currentAddress,
+    permanentAddress: details?.permanentAddress ?? embeddedDirectory?.permanentAddress,
+    workEmail: embeddedDirectory?.workEmail ?? details?.workEmail,
+    phone: details?.phone ?? embeddedDirectory?.phone,
+    joinedDate: details?.joinedDate ?? embeddedDirectory?.joinedDate,
+  };
+
+  profile.workEmail = mergedDirectory.workEmail?.trim() || doc.email;
+  profile.phone = mergedDirectory.phone?.trim() || undefined;
+  profile.joinedDate = mergedDirectory.joinedDate?.trim() || undefined;
+
+  const { currentAddress, permanentAddress } = addressesFromDirectory(mergedDirectory);
+  profile.currentAddress = currentAddress || undefined;
+  profile.permanentAddress = permanentAddress || undefined;
+  profile.location = currentAddress || mergedDirectory.location?.trim() || undefined;
 
   return profile;
 }
@@ -823,9 +931,6 @@ export async function completeCurrentAppUserProfile(
   const current = await col.findOne({ email });
   if (!current) throw new Error("User not found.");
 
-  const trimmedName = input.name.trim();
-  if (!trimmedName) throw new Error("Full name is required.");
-
   const nextImageUrl = input.imageUrl?.trim() ?? "";
   const wantsPasswordChange = Boolean(input.newPassword);
 
@@ -843,7 +948,6 @@ export async function completeCurrentAppUserProfile(
   }
 
   const updates: Partial<AppUserDocument> = {
-    name: trimmedName,
     imageUrl: nextImageUrl,
     isProfileCompleted: true,
     updatedProfileAt: new Date(),
@@ -861,18 +965,16 @@ export async function completeCurrentAppUserProfile(
   );
   if (!updated) throw new Error("User not found.");
 
-  await db.collection("employees").updateOne(
+  await db.collection(COLLECTIONS.employees).updateOne(
     {
       $or: [{ email }, { "directory.workEmail": email }],
     },
     {
       $set: {
-        name: trimmedName,
         imageUrl: nextImageUrl,
-        "directory.workEmail": email,
       },
     },
   );
 
-  return appUserDocToProfile(updated);
+  return getCurrentAppUserProfile(email);
 }

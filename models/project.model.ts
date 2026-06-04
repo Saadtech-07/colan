@@ -23,6 +23,24 @@ export type ProjectDocument = {
   updatedAt?: Date;
 };
 
+const PROJECT_STATUS_ALIASES: Record<string, ProjectStatus> = {
+  "yet to start": "Yet To Start",
+  "yet-to-start": "Yet To Start",
+  "in progress": "In Progress",
+  completed: "Completed",
+};
+
+export function normalizeProjectStatus(raw: unknown): ProjectStatus {
+  if (typeof raw !== "string" || !raw.trim()) return "Yet To Start";
+  const key = raw.trim().toLowerCase();
+  if (PROJECT_STATUS_ALIASES[key]) return PROJECT_STATUS_ALIASES[key];
+  const titled = raw.trim() as ProjectStatus;
+  if (titled === "Yet To Start" || titled === "In Progress" || titled === "Completed") {
+    return titled;
+  }
+  return "Yet To Start";
+}
+
 export function projectDocToDTO(doc: ProjectDocument): Project {
   const slug =
     doc.slug && doc.slug.length > 0
@@ -41,7 +59,7 @@ export function projectDocToDTO(doc: ProjectDocument): Project {
     teams: normalizeProjectTeams(doc),
     assignedDate: doc.assignedDate,
     lastDate: doc.lastDate,
-    status: doc.status,
+    status: normalizeProjectStatus(doc.status),
     description: doc.description ?? "",
     memberIds: doc.memberIds ?? [],
   };

@@ -36,6 +36,9 @@ export type AppUserPublicDTO = {
   workEmail?: string;
   phone?: string;
   location?: string;
+  fullAddress?: string;
+  currentAddress?: string;
+  permanentAddress?: string;
   joinedDate?: string;
   bayNumber?: string;
 };

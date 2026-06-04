@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   stats: SeatingStats;
+  /** Embedded inside the page header — hides duplicate title block. */
+  compact?: boolean;
 };
 
 type AnalyticsItem = {
@@ -19,7 +21,7 @@ type AnalyticsItem = {
   iconClassName: string;
 };
 
-export function SeatingAnalyticsOverview({ stats }: Props) {
+export function SeatingAnalyticsOverview({ stats, compact = false }: Props) {
   const occupancyRate = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0;
 
   const items: AnalyticsItem[] = [
@@ -58,25 +60,32 @@ export function SeatingAnalyticsOverview({ stats }: Props) {
   ];
 
   return (
-    <section className="space-y-3">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            Admin overview
-          </p>
-          <h2 className="mt-1 text-base font-semibold tracking-tight text-foreground sm:text-lg">
-            Bay analytics
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Live seating capacity and utilization.
-          </p>
+    <section className={compact ? "space-y-0" : "space-y-3"}>
+      {!compact ? (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+              Admin overview
+            </p>
+            <h2 className="mt-1 text-base font-semibold tracking-tight text-foreground sm:text-lg">
+              Bay analytics
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Live seating capacity and utilization.
+            </p>
+          </div>
+          <span className="inline-flex shrink-0 items-center self-start rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300">
+            Live
+          </span>
         </div>
-        <span className="inline-flex shrink-0 items-center self-start rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300">
-          Live
-        </span>
-      </div>
+      ) : null}
 
-      <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        className={cn(
+          "grid auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-4",
+          compact && "gap-2.5",
+        )}
+      >
         {items.map((item) => {
           const Icon = item.icon;
 
@@ -88,7 +97,7 @@ export function SeatingAnalyticsOverview({ stats }: Props) {
                 item.accentClassName,
               )}
             >
-              <CardContent className="flex h-full flex-col p-4">
+              <CardContent className={cn("flex h-full flex-col", compact ? "p-3.5" : "p-4")}>
                 <span
                   className={cn(
                     "inline-flex h-10 w-10 items-center justify-center rounded-xl",
@@ -101,24 +110,33 @@ export function SeatingAnalyticsOverview({ stats }: Props) {
                   <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                     {item.label}
                   </p>
-                  <p className="mt-2 text-3xl font-bold leading-none tabular-nums text-foreground">
+                  <p
+                    className={cn(
+                      "mt-2 font-bold leading-none tabular-nums text-foreground",
+                      compact ? "text-2xl" : "text-3xl",
+                    )}
+                  >
                     {item.value}
                   </p>
                 </div>
-                <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
-                  {item.helper}
-                </p>
-                <div className="mt-auto pt-3">
-                  <span
-                    className={cn(
-                      "block h-px w-full rounded-full opacity-60",
-                      item.label === "Total bays" && "bg-slate-200 dark:bg-slate-800",
-                      item.label === "Occupied" && "bg-emerald-200 dark:bg-emerald-900/70",
-                      item.label === "Available" && "bg-amber-200 dark:bg-amber-900/70",
-                      item.label === "Utilization" && "bg-violet-200 dark:bg-violet-900/70",
-                    )}
-                  />
-                </div>
+                {!compact ? (
+                  <>
+                    <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+                      {item.helper}
+                    </p>
+                    <div className="mt-auto pt-3">
+                      <span
+                        className={cn(
+                          "block h-px w-full rounded-full opacity-60",
+                          item.label === "Total bays" && "bg-slate-200 dark:bg-slate-800",
+                          item.label === "Occupied" && "bg-emerald-200 dark:bg-emerald-900/70",
+                          item.label === "Available" && "bg-amber-200 dark:bg-amber-900/70",
+                          item.label === "Utilization" && "bg-violet-200 dark:bg-violet-900/70",
+                        )}
+                      />
+                    </div>
+                  </>
+                ) : null}
               </CardContent>
             </Card>
           );

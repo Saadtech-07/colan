@@ -38,7 +38,11 @@ import {
   projectProgressPercent,
   relativeProjectDeadline,
 } from "@/lib/project-ui";
-import { projectBelongsToTeam } from "@/lib/project-teams";
+import {
+  projectBelongsToTeam,
+  projectHasNoTeams,
+  UNASSIGNED_PROJECTS_SECTION,
+} from "@/lib/project-teams";
 import { teamTabLabel } from "@/lib/team-utils";
 import { cn } from "@/lib/utils";
 import { parseApiError, useAppState } from "@/providers/app-state";
@@ -49,8 +53,11 @@ import { profileInitials } from "@/lib/profile-image";
 
 const ALL_TAB = "All";
 
-function renderTeamIcon(team: string, className?: string) {
-  const normalized = team.toLowerCase();
+function renderTeamIcon(team: string | undefined | null, className?: string) {
+  const normalized = (team ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return <FolderKanban className={className} />;
+  }
   if (normalized.includes("react") || normalized.includes("next")) {
     return <Code2 className={className} />;
   }
@@ -120,8 +127,17 @@ export default function ProjectsPage() {
     return projects.filter((project) => project.memberIds.includes(currentEmployee.id));
   }, [currentEmployee, isAssignedProjectsOnly, projects]);
 
-  const teamsToShow: TeamName[] =
-    isBroadViewer || !user?.team ? teamNames : [user.team];
+  const teamsToShow: TeamName[] = React.useMemo(() => {
+    const names =
+      isBroadViewer || !user?.team
+        ? teamNames
+        : user.team
+          ? [user.team]
+          : [];
+    return names.filter(
+      (name): name is TeamName => typeof name === "string" && name.trim().length > 0,
+    );
+  }, [isBroadViewer, teamNames, user?.team]);
 
   React.useEffect(() => {
     if (!isBroadViewer && user?.team && tab === ALL_TAB) {
@@ -134,6 +150,15 @@ export default function ProjectsPage() {
       ? scopedProjects
       : scopedProjects.filter((p) => projectBelongsToTeam(p, tab as TeamName));
 
+  const unassignedProjects = React.useMemo(
+    () =>
+      scopedProjects.filter((p) => {
+        if (projectHasNoTeams(p)) return true;
+        return !teamsToShow.some((team) => projectBelongsToTeam(p, team));
+      }),
+    [scopedProjects, teamsToShow],
+  );
+
   const byTeam = teamsToShow.reduce(
     (acc, team) => {
       acc[team] = scopedProjects.filter((p) => projectBelongsToTeam(p, team));
@@ -143,6 +168,16 @@ export default function ProjectsPage() {
   );
 
   const activeTeamTab = !isBroadViewer && user?.team ? user.team : tab;
+
+  const singleTeamTab = React.useMemo(() => {
+    if (tab === ALL_TAB) return null;
+    if (isBroadViewer) {
+      const name = tab.trim();
+      return name.length > 0 ? (name as TeamName) : null;
+    }
+    const squad = user?.team?.trim();
+    return squad ? (squad as TeamName) : null;
+  }, [isBroadViewer, tab, user?.team]);
 
   const updateProjectStatus = React.useCallback(
     async (project: Project, nextStatus: ProjectStatus) => {
@@ -313,14 +348,29 @@ export default function ProjectsPage() {
                 today={today}
               />
             ))}
+            {unassignedProjects.length > 0 ? (
+              <TeamProjectSection
+                key={UNASSIGNED_PROJECTS_SECTION}
+                team={UNASSIGNED_PROJECTS_SECTION}
+                teamRecord={null}
+                items={unassignedProjects}
+                employees={employees}
+                canEditStatus={!!access?.canManageProjects}
+                canManageTeam={false}
+                emptyMessage="No unassigned projects."
+                onStatusChange={updateProjectStatus}
+                onRenameTeam={handleRenameTeam}
+                onDeleteTeam={handleDeleteTeam}
+                onTeamActionError={setTeamActionError}
+                today={today}
+              />
+            ) : null}
           </div>
-        ) : (
+        ) : singleTeamTab ? (
           <TeamProjectSection
-            team={(isBroadViewer ? tab : user?.team) as TeamName}
+            team={singleTeamTab}
             teamRecord={
-              workspaceTeams.find(
-                (record) => record.name === (isBroadViewer ? tab : user?.team),
-              ) ?? null
+              workspaceTeams.find((record) => record.name === singleTeamTab) ?? null
             }
             items={filtered}
             employees={employees}
@@ -337,6 +387,14 @@ export default function ProjectsPage() {
             onTeamActionError={setTeamActionError}
             today={today}
           />
+        ) : (
+          <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-6 py-12 text-center">
+            <FolderKanban className="mx-auto mb-3 h-8 w-8 text-muted-foreground/60" />
+            <p className="font-medium text-foreground">No squad selected</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Assign a team on your account or pick a squad tab to view projects.
+            </p>
+          </div>
         )}
       </TabsContent>
     </Tabs>
@@ -381,9 +439,15 @@ function TeamProjectSection({
               {renderTeamIcon(team, "h-5 w-5 text-primary")}
             </div>
             <div className="space-y-1">
-              <CardTitle className="text-lg">{team}</CardTitle>
+              <CardTitle className="text-lg">
+                {team === UNASSIGNED_PROJECTS_SECTION
+                  ? "Unassigned projects"
+                  : teamTabLabel(team)}
+              </CardTitle>
               <CardDescription>
-                {items.length} project{items.length === 1 ? "" : "s"} • {completion}% completed
+                {team === UNASSIGNED_PROJECTS_SECTION
+                  ? "Projects with no squad or unknown squad — edit project teams to fix"
+                  : `${items.length} project${items.length === 1 ? "" : "s"} • ${completion}% completed`}
               </CardDescription>
             </div>
           </div>
@@ -482,15 +546,24 @@ function ProjectLinkList({
                         <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100" />
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        {project.teams.map((team) => (
+                        {project.teams.length === 0 ? (
                           <Badge
-                            key={team}
                             variant="outline"
                             className="rounded-full bg-muted/35 text-[10px] font-medium"
                           >
-                            {teamTabLabel(team)}
+                            Unassigned
                           </Badge>
-                        ))}
+                        ) : (
+                          project.teams.map((squad) => (
+                            <Badge
+                              key={squad}
+                              variant="outline"
+                              className="rounded-full bg-muted/35 text-[10px] font-medium"
+                            >
+                              {teamTabLabel(squad)}
+                            </Badge>
+                          ))
+                        )}
                         <div
                           className={cn(
                             "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold",

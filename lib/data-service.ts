@@ -12,6 +12,8 @@ import {
 } from "@/lib/employee-slug";
 import { getProjectsForEmployee } from "@/lib/project-assignments";
 import { assertProjectsMatchEmployeeTeam, filterProjectsByEmployeeTeam } from "@/lib/projects";
+import { resolveProjectTeamsFromDoc } from "@/lib/project-team-resolve";
+import { listTeams } from "@/lib/teams-data";
 import { uniqueProjectSlug } from "@/lib/project-slug";
 import type {
   Employee,
@@ -20,6 +22,7 @@ import type {
   GalleryImage,
   Project,
   ProjectDetail,
+  TeamName,
 } from "@/types";
 import {
   COLLECTIONS,
@@ -58,6 +61,34 @@ function toDetail(project: Project, allEmployees: Employee[]): ProjectDetail {
     ...project,
     members: resolveMembers(project.memberIds, allEmployees),
   };
+}
+
+/** Copy legacy `team` into `teams` and persist normalized squad lists. */
+async function backfillProjectTeams(db: Db) {
+  const col = db.collection<ProjectDocument>(COLLECTIONS.projects);
+  const docs = await col.find({}).toArray();
+  const now = new Date();
+
+  const catalog = await listTeams();
+
+  for (const doc of docs) {
+    const teams = resolveProjectTeamsFromDoc(doc, catalog);
+    const rawTeams = doc.teams as TeamName[] | TeamName | undefined;
+    const stored = Array.isArray(rawTeams)
+      ? rawTeams.map((t) => String(t).trim()).filter(Boolean).sort().join("\0")
+      : typeof rawTeams === "string"
+        ? rawTeams.trim()
+        : "";
+    const nextKey = [...teams].sort().join("\0");
+    if (stored === nextKey) continue;
+
+    await col.updateOne(
+      { _id: doc._id },
+      teams.length > 0
+        ? { $set: { teams, updatedAt: now }, $unset: { team: "" } }
+        : { $set: { teams, updatedAt: now } },
+    );
+  }
 }
 
 /** Ensure metadata fields exist on legacy project documents. */
@@ -209,6 +240,7 @@ async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>
   }
 
   await backfillProjectSlugs(db);
+  await backfillProjectTeams(db);
   await backfillProjectMetadata(db);
   await repairProjectMemberIds(db);
 
@@ -258,6 +290,9 @@ function mergeEmployeeDirectory(
     workEmail: fromCollection.workEmail ?? embedded.workEmail,
     phone: fromCollection.phone ?? embedded.phone,
     location: fromCollection.location ?? embedded.location,
+    fullAddress: fromCollection.fullAddress ?? embedded.fullAddress,
+    currentAddress: fromCollection.currentAddress ?? embedded.currentAddress,
+    permanentAddress: fromCollection.permanentAddress ?? embedded.permanentAddress,
     joinedDate: fromCollection.joinedDate ?? embedded.joinedDate,
     notes: fromCollection.notes,
   };
@@ -371,6 +406,18 @@ async function upsertEmployeeDirectory(
       directory.location !== undefined
         ? directory.location || undefined
         : existing?.location,
+    fullAddress:
+      directory.fullAddress !== undefined
+        ? directory.fullAddress || undefined
+        : existing?.fullAddress,
+    currentAddress:
+      directory.currentAddress !== undefined
+        ? directory.currentAddress || undefined
+        : existing?.currentAddress,
+    permanentAddress:
+      directory.permanentAddress !== undefined
+        ? directory.permanentAddress || undefined
+        : existing?.permanentAddress,
     joinedDate:
       directory.joinedDate !== undefined
         ? directory.joinedDate || undefined
@@ -612,12 +659,19 @@ export async function listProjects(): Promise<Project[]> {
   const db = await getDb();
   if (!db) return memoryStore.projects.map((p) => ({ ...p }));
   await ensureMongoSeed(db);
+  const catalog = await listTeams();
   const rows = await db
     .collection<ProjectDocument>(COLLECTIONS.projects)
     .find({})
     .sort({ assignedDate: -1 })
     .toArray();
-  return rows.map((d) => projectDocToDTO(d));
+  return rows.map((d) => {
+    const dto = projectDocToDTO(d);
+    return {
+      ...dto,
+      teams: resolveProjectTeamsFromDoc(d, catalog),
+    };
+  });
 }
 
 export async function getProjectBySlug(slug: string): Promise<Project | null> {
@@ -626,10 +680,13 @@ export async function getProjectBySlug(slug: string): Promise<Project | null> {
     return memoryStore.projects.find((p) => p.slug === slug) ?? null;
   }
   await ensureMongoSeed(db);
+  const catalog = await listTeams();
   const doc = await db
     .collection<ProjectDocument>(COLLECTIONS.projects)
     .findOne({ slug });
-  return doc ? projectDocToDTO(doc) : null;
+  if (!doc) return null;
+  const dto = projectDocToDTO(doc);
+  return { ...dto, teams: resolveProjectTeamsFromDoc(doc, catalog) };
 }
 
 export async function getProjectDetailBySlug(
@@ -707,7 +764,9 @@ export async function createProject(
     updatedAt: new Date(),
   };
   await col.insertOne(doc);
-  return projectDocToDTO(doc);
+  const catalog = await listTeams();
+  const dto = projectDocToDTO(doc);
+  return { ...dto, teams: resolveProjectTeamsFromDoc(doc, catalog) };
 }
 
 export async function updateProjectBySlug(
@@ -747,7 +806,10 @@ export async function updateProjectBySlug(
     { $set: { ...patch, updatedAt: new Date() } },
     { returnDocument: "after" },
   );
-  return result ? projectDocToDTO(result) : null;
+  if (!result) return null;
+  const catalog = await listTeams();
+  const dto = projectDocToDTO(result);
+  return { ...dto, teams: resolveProjectTeamsFromDoc(result, catalog) };
 }
 
 /**

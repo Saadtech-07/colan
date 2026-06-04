@@ -5,11 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   Building2,
   CircleCheckBig,
-  Loader2,
   Mail,
   Pencil,
   Plus,
-  Save,
   Search,
   ShieldCheck,
   Trash2,
@@ -23,15 +21,16 @@ import {
   type ConfirmDeleteTarget,
 } from "@/components/features/confirm-delete-dialog";
 import {
-  AppUserAccountFormFields,
+  buildDefaultAppUserForm,
+  buildFormFromAppUserRecord,
   type AppUserAccountFormValues,
 } from "@/components/features/app-user-account-form-fields";
 import {
   CreateAppUserWizardDialog,
-  UNASSIGNED_SEAT,
-  buildDefaultAppUserForm,
   type AccountSetupForm,
 } from "@/components/features/create-app-user-wizard-dialog";
+import { EditAppUserDialog } from "@/components/features/edit-app-user-dialog";
+import { UNASSIGNED_SEAT } from "@/components/features/app-user-account-form-fields";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,14 +41,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -148,7 +139,6 @@ export default function AppUsersPage() {
   const [roleFilter, setRoleFilter] = React.useState("all");
   const [teamFilter, setTeamFilter] = React.useState("all");
 
-  const formRef = React.useRef<HTMLFormElement | null>(null);
   const toastTimerRef = React.useRef<number | null>(null);
   const openedFromQueryRef = React.useRef(false);
 
@@ -323,7 +313,8 @@ export default function AppUsersPage() {
         ...(account.imageUrl.trim() ? { imageUrl: account.imageUrl.trim() } : {}),
         workEmail: account.workEmail.trim() || account.email.trim().toLowerCase(),
         phone: account.phone.trim() || undefined,
-        location: account.location.trim() || undefined,
+        currentAddress: account.currentAddress.trim() || undefined,
+        permanentAddress: account.permanentAddress.trim() || undefined,
         joinedDate: account.joinedDate.trim() || undefined,
         bayNumber:
           account.bayNumber && account.bayNumber !== UNASSIGNED_SEAT
@@ -344,7 +335,6 @@ export default function AppUsersPage() {
       const result = (await res.json()) as AppUserMutationResponse;
       await fetchUsers();
       await refreshData();
-      router.refresh();
       setSuccess("Employee account created successfully.");
 
       if (result.emailDelivery?.sent) {
@@ -366,35 +356,16 @@ export default function AppUsersPage() {
     });
   };
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveEdit = async () => {
     if (!editingId) return;
 
-    event.preventDefault();
     setError(null);
     setSuccess(null);
-
-    if (!form.email || !form.name) {
-      setError("Email and name are required.");
-      return;
-    }
-
-    if (showEmployeeIdentityFields) {
-      if (!form.employeeId.trim()) {
-        setError("Employee ID is required for this role.");
-        return;
-      }
-      if (!form.team) {
-        setError("Team is required for this role.");
-        return;
-      }
-    }
 
     const preset = LOADING_PRESETS.updatingAccount;
 
     try {
       await withLoading("app-users-submit", preset, async () => {
-        const endpoint = `/api/app-users/${editingId}`;
-        const method = "PATCH";
         const body = {
           name: form.name.trim(),
           appRole: form.appRole,
@@ -410,14 +381,15 @@ export default function AppUsersPage() {
             : {}),
           workEmail: form.workEmail.trim() || form.email.trim(),
           phone: form.phone.trim() || undefined,
-          location: form.location.trim() || undefined,
+          currentAddress: form.currentAddress.trim() || undefined,
+          permanentAddress: form.permanentAddress.trim() || undefined,
           joinedDate: form.joinedDate.trim() || undefined,
           ...(form.imageUrl.trim() ? { imageUrl: form.imageUrl.trim() } : {}),
           ...(form.password ? { password: form.password } : {}),
         };
 
-        const res = await fetch(endpoint, {
-          method,
+        const res = await fetch(`/api/app-users/${editingId}`, {
+          method: "PATCH",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -429,14 +401,13 @@ export default function AppUsersPage() {
         await res.json();
         await fetchUsers();
         await refreshData();
-        router.refresh();
 
         setDialogOpen(false);
         resetForm({ clearFeedback: false });
         setSuccess("Account updated successfully.");
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to save account.");
+      throw e;
     }
   };
 
@@ -467,7 +438,6 @@ export default function AppUsersPage() {
         }
         await fetchUsers();
         await refreshData();
-        router.refresh();
         setSuccess("Account removed.");
         setDeleteTarget(null);
         if (editingId === id) {
@@ -484,20 +454,25 @@ export default function AppUsersPage() {
     (userRecord: AppUserPublicDTO) => {
       setEditingId(userRecord.id);
       setEditingEmployeeId(findLinkedEmployeeId(userRecord, employees));
-      setForm({
-        email: userRecord.email,
-        name: userRecord.name,
-        password: "",
-        employeeId: userRecord.employeeId ?? "",
-        appRole: userRecord.appRole,
-        team: userRecord.team ?? defaultTeam,
-        workEmail: userRecord.workEmail ?? userRecord.email,
-        phone: userRecord.phone ?? "",
-        location: userRecord.location ?? "",
-        joinedDate: userRecord.joinedDate ?? new Date().toISOString().split("T")[0],
-        bayNumber: userRecord.bayNumber?.trim() || UNASSIGNED_SEAT,
-        imageUrl: userRecord.imageUrl ?? "",
-      });
+      setForm(
+        buildFormFromAppUserRecord({
+          email: userRecord.email,
+          name: userRecord.name,
+          employeeId: userRecord.employeeId,
+          appRole: userRecord.appRole,
+          team: userRecord.team,
+          defaultTeam,
+          workEmail: userRecord.workEmail,
+          phone: userRecord.phone,
+          location: userRecord.location,
+          fullAddress: userRecord.fullAddress,
+          currentAddress: userRecord.currentAddress,
+          permanentAddress: userRecord.permanentAddress,
+          joinedDate: userRecord.joinedDate,
+          bayNumber: userRecord.bayNumber,
+          imageUrl: userRecord.imageUrl,
+        }),
+      );
       setSuccess(null);
       setError(null);
       setDialogOpen(true);
@@ -910,70 +885,23 @@ export default function AppUsersPage() {
         onSubmit={handleCreateAccount}
       />
 
-      <Dialog open={dialogOpen && !!editingId} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="max-h-[92vh] overflow-hidden border-border/70 bg-background/95 p-0 sm:max-w-[56rem]">
-          <div className="flex max-h-[92vh] flex-col">
-            <DialogHeader className="border-b border-border/60 px-6 py-5">
-              <Badge
-                variant="warning"
-                className="w-fit rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.18em]"
-              >
-                Editing account
-              </Badge>
-              <DialogTitle className="mt-3 text-xl">Edit account</DialogTitle>
-              <DialogDescription className="mt-1">
-                Update account access, workspace role, and employee details.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="flex-1 overflow-y-auto px-6 py-5">
-              <form ref={formRef} onSubmit={handleSubmit}>
-                <AppUserAccountFormFields
-                  mode="edit"
-                  values={form}
-                  onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
-                  workspaceRoles={workspaceRoles}
-                  teamNames={teamNames}
-                  defaultTeam={defaultTeam}
-                  employees={employees}
-                  editingEmployeeId={editingEmployeeId}
-                  disabled={submitting}
-                />
-              </form>
-            </div>
-
-            <DialogFooter className="border-t border-border/60 bg-background/95 px-6 py-4 backdrop-blur sm:justify-between">
-              <div className="text-xs leading-5 text-muted-foreground">
-                Changes apply to the existing login account and linked workspace profile.
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded-2xl border-border/70 bg-background/80"
-                  onClick={() => handleDialogOpenChange(false)}
-                >
-                  Cancel Edit
-                </Button>
-                <Button
-                  type="button"
-                  className="h-11 rounded-2xl px-5 shadow-sm"
-                  disabled={submitting}
-                  onClick={() => formRef.current?.requestSubmit()}
-                >
-                  {submitting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                  ) : (
-                    <Save className="h-4 w-4" />
-                  )}
-                  Save Changes
-                </Button>
-              </div>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <EditAppUserDialog
+        open={dialogOpen && !!editingId}
+        onOpenChange={handleDialogOpenChange}
+        values={form}
+        onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+        workspaceRoles={workspaceRoles}
+        teamNames={teamNames}
+        defaultTeam={defaultTeam}
+        employees={employees}
+        editingEmployeeId={editingEmployeeId}
+        submitting={submitting}
+        onSubmit={() => {
+          void handleSaveEdit().catch((e) => {
+            setError(e instanceof Error ? e.message : "Unable to save account.");
+          });
+        }}
+      />
     </div>
   );
 }

@@ -153,6 +153,9 @@ export const appUserCreateSchema = z
     workEmail: z.union([z.string().email(), z.literal("")]).optional(),
     phone: z.string().optional(),
     location: z.string().optional(),
+    fullAddress: z.string().optional(),
+    currentAddress: z.string().optional(),
+    permanentAddress: z.string().optional(),
     joinedDate: z.string().optional(),
     notes: z.string().optional(),
     bayNumber: z.string().optional(),
@@ -199,6 +202,12 @@ export const appUserUpdateSchema = z.object({
 
   location: z.string().optional(),
 
+  fullAddress: z.string().optional(),
+
+  currentAddress: z.string().optional(),
+
+  permanentAddress: z.string().optional(),
+
   joinedDate: z.string().optional(),
 
   bayNumber: z.string().optional(),
@@ -209,7 +218,6 @@ const profileImageSchema = appUserImageSchema;
 
 export const profileSettingsUpdateSchema = z
   .object({
-    name: z.string().trim().min(1, "Full name is required."),
     imageUrl: profileImageSchema.optional(),
     currentPassword: z.string().optional().default(""),
     newPassword: z.string().optional().default(""),

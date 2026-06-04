@@ -14,6 +14,9 @@ export type EmployeeDetailsDocument = {
   workEmail?: string;
   phone?: string;
   location?: string;
+  fullAddress?: string;
+  currentAddress?: string;
+  permanentAddress?: string;
   /** ISO date string YYYY-MM-DD */
   joinedDate?: string;
   reportsToEmployeeRef?: ObjectId;
@@ -29,6 +32,9 @@ export type EmployeeDetailsDTO = {
   workEmail?: string;
   phone?: string;
   location?: string;
+  fullAddress?: string;
+  currentAddress?: string;
+  permanentAddress?: string;
   joinedDate?: string;
   reportsToEmployeeId?: string;
   notes?: string;
@@ -43,6 +49,9 @@ export function employeeDetailsDocToDTO(
     workEmail: doc.workEmail,
     phone: doc.phone,
     location: doc.location,
+    fullAddress: doc.fullAddress,
+    currentAddress: doc.currentAddress,
+    permanentAddress: doc.permanentAddress,
     joinedDate: doc.joinedDate,
     reportsToEmployeeId: doc.reportsToEmployeeRef?.toHexString(),
     notes: doc.notes,

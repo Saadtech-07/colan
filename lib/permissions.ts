@@ -6,6 +6,7 @@ import {
   type ModulePermissionsMap,
   type RbacModule,
 } from "@/lib/rbac-modules";
+import { teamMatchKey } from "@/lib/team-utils";
 import { getRoleFromRegistry } from "@/lib/role-registry";
 import type { Employee, Project, TeamName } from "@/types";
 import type { WorkspaceRole } from "@/models";
@@ -80,13 +81,9 @@ export type RoleDefinition = {
 };
 
 import type { AppRole } from "@/types";
+import { FALLBACK_ROLE_KEY, normalizeAppRole } from "@/lib/app-role";
 
-const FALLBACK_ROLE_KEY = "employee";
-
-export function normalizeAppRole(value: unknown): AppRole {
-  if (typeof value === "string" && value.trim()) return value.trim();
-  return FALLBACK_ROLE_KEY;
-}
+export { FALLBACK_ROLE_KEY, normalizeAppRole };
 
 function fallbackRoleDefinition(): RoleDefinition {
   return {
@@ -238,7 +235,10 @@ export function filterProjectsForUser(
 ): Project[] {
   if (hasPermission(roleKey, "projects:read_all")) return projects;
   if (userTeam) {
-    return projects.filter((p) => p.teams.includes(userTeam));
+    const squadKey = teamMatchKey(userTeam);
+    return projects.filter((p) =>
+      p.teams.some((t) => t === userTeam || teamMatchKey(t) === squadKey),
+    );
   }
   return [];
 }

@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { projectStatusVariant } from "@/lib/project-assignments";
+import { addressesFromDirectory } from "@/lib/employee-address";
 import { formatWorkspaceDate, parseSeatAllocation } from "@/lib/employee-workspace-ui";
 import { buildWorkforceAccess } from "@/lib/team-members-ui";
 import { appUserEditHref } from "@/lib/app-user-navigation";
@@ -37,7 +38,7 @@ export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
   const loginEmail = employee.email?.trim() || "";
   const workEmail = directory?.workEmail?.trim() || "";
   const phone = directory?.phone?.trim() || "";
-  const location = directory?.location?.trim() || "";
+  const { currentAddress, permanentAddress } = addressesFromDirectory(directory);
 
   const assignedProjects =
     employee.assignedProjects.length > 0
@@ -189,7 +190,8 @@ export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
               href={loginEmail ? `mailto:${loginEmail}` : undefined}
             />
             <InfoRow label="Phone number" value={phone} />
-            <InfoRow label="Office location" value={location} last icon={MapPin} />
+            <InfoRow label="Current address" value={currentAddress} icon={MapPin} />
+            <InfoRow label="Permanent address" value={permanentAddress} last />
           </InfoGrid>
         </RecordPanel>
       </div>

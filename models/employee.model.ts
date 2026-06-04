@@ -18,6 +18,9 @@ export type EmployeeDocument = {
     workEmail?: string;
     phone?: string;
     location?: string;
+    fullAddress?: string;
+    currentAddress?: string;
+    permanentAddress?: string;
     joinedDate?: string;
   };
   createdAt?: Date;

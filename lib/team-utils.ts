@@ -15,6 +15,15 @@ export function teamTabLabel(name: string): string {
   return name.replace(/ Team$/i, "").trim() || name;
 }
 
+/** Compare squads ignoring optional " Team" suffix and casing (edge/client safe). */
+export function teamMatchKey(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+team$/i, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 /** Normalize admin input to canonical squad name, e.g. "java" → "Java Team". */
 export function normalizeTeamName(raw: string): string {
   const trimmed = raw.trim().replace(/\s+/g, " ");
