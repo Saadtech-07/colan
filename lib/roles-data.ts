@@ -52,12 +52,36 @@ function cloneMemoryRolesFromSeed(): WorkspaceRole[] {
   });
 }
 
+/** Ensures system roles in MongoDB include chat permissions from current seeds. */
+export async function syncSystemRoleChatPermissions(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+): Promise<void> {
+  const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
+  for (const seed of SYSTEM_ROLE_SEEDS) {
+    const chat = seed.permissions.chat;
+    if (!chat) continue;
+    await col.updateOne(
+      { key: seed.key, isSystem: true },
+      {
+        $set: {
+          "permissions.chat": chat,
+          updatedAt: new Date(),
+        },
+      },
+    );
+  }
+}
+
 export async function ensureRolesSeed(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
 ): Promise<void> {
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
   const count = await col.countDocuments();
-  if (count > 0) return;
+  if (count > 0) {
+    await syncSystemRoleChatPermissions(db);
+    invalidateServerRoleCache();
+    return;
+  }
 
   const docs: CompanyRoleDocument[] = SYSTEM_ROLE_SEEDS.map((seed, index) => ({
     _id: new ObjectId(),
@@ -94,6 +118,8 @@ export async function listWorkspaceRoles(): Promise<WorkspaceRole[]> {
 
   await ensureColanModelIndexes(db);
   await ensureRolesSeed(db);
+  await syncSystemRoleChatPermissions(db);
+  invalidateServerRoleCache();
 
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
   const docs = await col.find({}).sort({ displayOrder: 1, name: 1 }).toArray();

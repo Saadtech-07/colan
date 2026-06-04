@@ -406,4 +406,12 @@ export function parseRolePermissionsInput(
 
 }
 
+export const chatSendMessageSchema = z.object({
+  text: z.string().trim().min(1, "Message is required.").max(4000),
+});
+
+export const chatMarkReadSchema = z.object({
+  conversationId: z.string().trim().min(1).optional(),
+});
+
 

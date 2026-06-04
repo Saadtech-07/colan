@@ -53,6 +53,11 @@ const PAGE_META: Array<{
     subtitle: "View employee details, assignments, and project access.",
   },
   {
+    match: /^\/chat$/,
+    title: "Messages",
+    subtitle: "Real-time chat with workspace admin or employees.",
+  },
+  {
     match: /^\/gallery$/,
     title: "Gallery",
     subtitle: "Manage uploaded images and workspace highlights.",

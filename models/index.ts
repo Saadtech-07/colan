@@ -11,4 +11,6 @@ export * from "./seating-assignment.model";
 export * from "./team-member.model";
 export * from "./project.model";
 export * from "./gallery-image.model";
+export * from "./conversation.model";
+export * from "./message.model";
 

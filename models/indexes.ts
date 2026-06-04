@@ -10,6 +10,8 @@ import type { SeatingAssignmentDocument } from "./seating-assignment.model";
 import type { TeamMemberDocument } from "./team-member.model";
 import type { ProjectDocument } from "./project.model";
 import type { GalleryImageDocument } from "./gallery-image.model";
+import type { ConversationDocument } from "./conversation.model";
+import type { MessageDocument } from "./message.model";
 
 async function removeDuplicateEmployeeIds(db: Db): Promise<void> {
   const collection = db.collection<EmployeeDocument>(COLLECTIONS.employees);
@@ -131,4 +133,16 @@ export async function ensureColanModelIndexes(db: Db): Promise<void> {
     .collection(COLLECTIONS.passwordResetTokens)
     .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   await db.collection(COLLECTIONS.passwordResetTokens).createIndex({ email: 1 });
+
+  await db
+    .collection<ConversationDocument>(COLLECTIONS.conversations)
+    .createIndex({ employeeUserId: 1 }, { unique: true });
+  await db
+    .collection<ConversationDocument>(COLLECTIONS.conversations)
+    .createIndex({ lastMessageAt: -1 });
+
+  await db
+    .collection<MessageDocument>(COLLECTIONS.messages)
+    .createIndex({ conversationId: 1, createdAt: 1 });
+  await db.collection<MessageDocument>(COLLECTIONS.messages).createIndex({ receiverId: 1, isRead: 1 });
 }

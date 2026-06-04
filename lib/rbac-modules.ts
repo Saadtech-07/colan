@@ -8,6 +8,7 @@ export const RBAC_MODULES = [
   "gallery",
   "roles",
   "appUsers",
+  "chat",
 ] as const;
 
 export type RbacModule = (typeof RBAC_MODULES)[number];
@@ -230,6 +231,22 @@ export const MODULE_PERMISSION_CATALOG: Record<RbacModule, ModuleCatalogEntry> =
       },
     ],
   },
+  chat: {
+    title: "Messages",
+    description: "One-to-one messaging between employees and workspace admin.",
+    view: "View Messages",
+    manage: "Admin inbox",
+    viewPermission: "chat:view",
+    managePermission: "chat:manage",
+    actions: [
+      {
+        key: "send",
+        label: "Send",
+        description: "Send messages in allowed conversations.",
+        permission: "chat:send",
+      },
+    ],
+  },
   appUsers: {
     title: "App Users",
     description: "Workspace accounts, invitations, edits, and account lifecycle controls.",
@@ -296,6 +313,7 @@ export const NAV_PATH_MODULES: Record<string, RbacModule> = {
   "/gallery": "gallery",
   "/roles": "roles",
   "/app-users": "appUsers",
+  "/chat": "chat",
 };
 
 export function getModuleActionConfigs(module: RbacModule): readonly ModuleActionConfig[] {
@@ -516,6 +534,20 @@ export function resolveLegacyAccess(
   ) {
     permissions.add("roles:read");
     permissions.add("roles:manage");
+  }
+
+  if (modules.chat.view) {
+    permissions.add("chat:view");
+  }
+  if (
+    modules.chat.manage ||
+    hasModulePermissionAction("chat", modules.chat, "send")
+  ) {
+    permissions.add("chat:view");
+    permissions.add("chat:send");
+  }
+  if (modules.chat.manage) {
+    permissions.add("chat:manage");
   }
 
   if (modules.appUsers.view) {

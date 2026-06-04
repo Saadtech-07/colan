@@ -14,6 +14,8 @@ export const COLLECTIONS = {
   projects: "projects",
   gallery: "gallery",
   passwordResetTokens: "password_reset_tokens",
+  conversations: "conversations",
+  messages: "messages",
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

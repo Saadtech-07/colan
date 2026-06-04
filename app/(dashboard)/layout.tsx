@@ -1,5 +1,6 @@
 import { DashboardShell } from "@/components/layout/dashboard-shell";
 import { AppStateProvider } from "@/providers/app-state";
+import { ChatProvider } from "@/providers/chat-provider";
 import { GlobalLoadingProvider } from "@/providers/global-loading";
 
 export default function DashboardLayout({
@@ -9,9 +10,11 @@ export default function DashboardLayout({
 }) {
   return (
     <AppStateProvider>
-      <GlobalLoadingProvider>
-        <DashboardShell>{children}</DashboardShell>
-      </GlobalLoadingProvider>
+      <ChatProvider>
+        <GlobalLoadingProvider>
+          <DashboardShell>{children}</DashboardShell>
+        </GlobalLoadingProvider>
+      </ChatProvider>
     </AppStateProvider>
   );
 }

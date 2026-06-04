@@ -64,7 +64,9 @@ export type Permission =
   | "appUsers:suspend"
   | "appUsers:manage"
   | "appUsers:read"
-  | "appUsers:manage";
+  | "chat:view"
+  | "chat:send"
+  | "chat:manage";
 
 export type RoleDefinition = {
   role: string;
@@ -103,6 +105,7 @@ function fallbackRoleDefinition(): RoleDefinition {
       gallery: { view: true, manage: false },
       roles: { view: true, manage: false },
       appUsers: { view: false, manage: false },
+      chat: { view: true, manage: false, actions: { send: true } },
     }),
   };
 }

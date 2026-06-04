@@ -1,5 +1,4 @@
 import {
-  getRoleRegistrySize,
   hydrateRoleRegistry,
   resetRoleRegistry,
 } from "@/lib/role-registry";
@@ -19,8 +18,6 @@ export async function ensureRoleRegistry(): Promise<Map<string, WorkspaceRole>> 
     loadPromise = listWorkspaceRoles();
   }
   const roles = await loadPromise;
-  if (getRoleRegistrySize() === 0) {
-    hydrateRoleRegistry(roles);
-  }
+  hydrateRoleRegistry(roles);
   return new Map(roles.map((r) => [r.key, r]));
 }

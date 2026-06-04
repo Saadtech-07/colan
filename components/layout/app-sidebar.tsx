@@ -10,13 +10,16 @@ import {
   LayoutGrid,
   Menu,
   Shield,
+  MessageCircle,
   UserCog,
   Users,
   X,
 } from "lucide-react";
+import { canAccessChat } from "@/lib/chat-access";
 import { canAccessNav } from "@/lib/permissions";
 import { formatWorkspaceSubtitle } from "@/lib/workspace-label";
 import { useAppState } from "@/providers/app-state";
+import { useChatUnread } from "@/providers/chat-provider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -27,6 +30,7 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects", label: "Team Projects", icon: Briefcase },
   { href: "/team-members", label: "Team Members", icon: Users },
+  { href: "/chat", label: "Messages", icon: MessageCircle },
   { href: "/gallery", label: "Gallery", icon: ImageIcon },
   { href: "/seating", label: "Seating Arrangement", icon: LayoutGrid },
   { href: "/roles", label: "Roles", icon: Shield },
@@ -40,6 +44,7 @@ function SidebarNavItem({
   active,
   collapsed,
   onNavigate,
+  badge,
 }: {
   href: string;
   label: string;
@@ -47,6 +52,7 @@ function SidebarNavItem({
   active: boolean;
   collapsed: boolean;
   onNavigate: () => void;
+  badge?: number;
 }) {
   return (
     <div className="group/nav relative">
@@ -65,13 +71,18 @@ function SidebarNavItem({
         <Icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-200 group-hover:scale-110" />
         <span
           className={cn(
-            "truncate transition-all duration-300 ease-out",
+            "flex min-w-0 flex-1 items-center gap-2 truncate transition-all duration-300 ease-out",
             collapsed
               ? "pointer-events-none max-w-0 overflow-hidden opacity-0 -translate-x-1"
               : "max-w-[180px] opacity-100 translate-x-0",
           )}
         >
-          {label}
+          <span className="truncate">{label}</span>
+          {!collapsed && badge && badge > 0 ? (
+            <span className="ml-auto shrink-0 rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
+              {badge > 99 ? "99+" : badge}
+            </span>
+          ) : null}
         </span>
       </Link>
       {collapsed && (
@@ -90,15 +101,18 @@ export function AppSidebar() {
   const pathname = usePathname();
   const { collapsed, setCollapsed, mobileOpen, setMobileOpen } = useSidebar();
   const { access, user, dataLoading, sessionStatus } = useAppState();
+  const chatUnread = useChatUnread();
 
   const workspaceSubtitle =
     sessionStatus === "loading" || !user
       ? formatWorkspaceSubtitle(null, true)
       : formatWorkspaceSubtitle(user.appRole, dataLoading);
 
-  const visibleNav = nav.filter(
-    (item) => access && canAccessNav(access.role, item.href),
-  );
+  const visibleNav = nav.filter((item) => {
+    if (!access) return false;
+    if (item.href === "/chat") return canAccessChat(access.role);
+    return canAccessNav(access.role, item.href);
+  });
 
   const isDesktopCollapsed = collapsed;
   const showExpandedChrome = !isDesktopCollapsed || mobileOpen;
@@ -210,6 +224,7 @@ export function AppSidebar() {
                   active={active}
                   collapsed={!showExpandedChrome}
                   onNavigate={() => setMobileOpen(false)}
+                  badge={item.href === "/chat" ? chatUnread : undefined}
                 />
               );
             })}
