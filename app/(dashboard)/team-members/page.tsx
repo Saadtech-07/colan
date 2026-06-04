@@ -43,12 +43,14 @@ import {
   workforceAnalytics,
 } from "@/lib/team-members-ui";
 import { profileNameInitial } from "@/lib/profile-image";
-import { useClientPagination } from "@/lib/client-pagination";
+import {
+  GRID_DIRECTORY_PAGE_SIZE,
+  useClientPagination,
+} from "@/lib/client-pagination";
 import { ListPagination } from "@/components/ui/list-pagination";
 import { cn } from "@/lib/utils";
 
 const ALL_TAB = "All";
-const TEAM_MEMBERS_PAGE_SIZE = 6;
 
 function joinDateLabel(date?: string) {
   if (!date) return "Join date unavailable";
@@ -115,7 +117,11 @@ export default function TeamMembersPage() {
     totalItems: paginatedTotal,
     rangeStart,
     rangeEnd,
-  } = useClientPagination(filteredEmployees, TEAM_MEMBERS_PAGE_SIZE, [search, tab, roleTab]);
+  } = useClientPagination(filteredEmployees, GRID_DIRECTORY_PAGE_SIZE, [
+    search,
+    tab,
+    roleTab,
+  ]);
 
   const analytics = React.useMemo(
     () => workforceAnalytics(filteredEmployees, projects),
@@ -292,7 +298,7 @@ export default function TeamMembersPage() {
           </Badge>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {paginatedEmployees.map((employee) => {
           const profileHref = employeeProfilePath(employee);
           const activeProjects = employeeActiveProjects(employee, projects);

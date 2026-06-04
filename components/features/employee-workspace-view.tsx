@@ -115,40 +115,45 @@ export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
         description="Active project memberships for this employee"
       >
         {assignedProjects.length === 0 ? (
-          <div className="px-6 py-10 text-center">
-            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-zinc-200/70 dark:bg-zinc-800/80">
-              <Briefcase className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+          <div className="bg-background px-6 py-10 text-center">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted/60">
+              <Briefcase className="h-4 w-4 text-muted-foreground" />
             </div>
-            <p className="mt-4 text-sm font-medium text-zinc-700 dark:text-zinc-200">
-              No projects assigned
-            </p>
-            <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+            <p className="mt-4 text-sm font-medium text-foreground">No projects assigned</p>
+            <p className="mt-1 text-sm text-muted-foreground">
               Assign this employee from Team Projects.
             </p>
           </div>
         ) : (
-          <ul className="divide-y divide-zinc-200/70 dark:divide-zinc-800/80">
-            {assignedProjects.map((project) => (
-              <li key={project.id}>
-                <Link
-                  href={`/projects/${project.slug}`}
-                  className="group flex flex-wrap items-center justify-between gap-3 px-6 py-4 transition-colors hover:bg-zinc-100/60 dark:hover:bg-zinc-800/40"
-                >
-                  <div className="min-w-0">
-                    <p className="font-medium text-zinc-800 transition-colors group-hover:text-primary dark:text-zinc-100">
-                      {project.name}
-                    </p>
-                    <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
-                      Assigned {formatWorkspaceDate(project.assignedDate)}
-                    </p>
-                  </div>
-                  <Badge variant={projectStatusVariant(project.status)} className="shrink-0">
-                    {project.status}
-                  </Badge>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <div
+            className={cn(
+              "overflow-y-auto overscroll-contain",
+              assignedProjects.length > 1 && "max-h-60 sm:max-h-72",
+            )}
+          >
+            <ul className="divide-y divide-border/60">
+              {assignedProjects.map((project) => (
+                <li key={project.id}>
+                  <Link
+                    href={`/projects/${project.slug}`}
+                    className="group flex flex-wrap items-center justify-between gap-3 bg-background px-6 py-4 transition-colors hover:bg-muted/40"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground transition-colors group-hover:text-primary">
+                        {project.name}
+                      </p>
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        Assigned {formatWorkspaceDate(project.assignedDate)}
+                      </p>
+                    </div>
+                    <Badge variant={projectStatusVariant(project.status)} className="shrink-0">
+                      {project.status}
+                    </Badge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </RecordPanel>
 
@@ -239,21 +244,19 @@ function RecordPanel({
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-zinc-200/80 bg-zinc-50/80 shadow-sm dark:border-zinc-800/80 dark:bg-zinc-900/40">
-      <header className="flex items-start gap-3 border-b border-zinc-200/70 bg-zinc-100/70 px-5 py-4 dark:border-zinc-800/80 dark:bg-zinc-800/50">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zinc-200/80 dark:bg-zinc-700/60">
-          <Icon className="h-4 w-4 text-zinc-600 dark:text-zinc-300" />
+    <section className="overflow-hidden rounded-xl border border-border/70 bg-background shadow-sm">
+      <header className="flex items-start gap-3 border-b border-border/60 bg-background px-5 py-4">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+          <Icon className="h-4 w-4 text-primary" />
         </div>
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">
-            {title}
-          </h2>
+          <h2 className="text-base font-bold tracking-tight text-foreground">{title}</h2>
           {description ? (
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{description}</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
           ) : null}
         </div>
       </header>
-      {children}
+      <div className="bg-background">{children}</div>
     </section>
   );
 }
@@ -268,8 +271,8 @@ function InfoGrid({
   return (
     <dl
       className={cn(
-        "p-2",
-        columns === 2 && "grid gap-0 sm:grid-cols-2 sm:p-3",
+        "bg-background p-1 sm:p-2",
+        columns === 2 && "grid gap-0 sm:grid-cols-2",
       )}
     >
       {children}
@@ -298,27 +301,30 @@ function InfoRow({
   return (
     <div
       className={cn(
-        "rounded-lg px-4 py-3.5 transition-colors",
-        "hover:bg-zinc-100/50 dark:hover:bg-zinc-800/30",
+        "rounded-lg border border-transparent bg-background px-4 py-3.5 transition-colors",
+        "hover:border-border/50 hover:bg-muted/20",
         !last && "mb-0.5",
       )}
     >
       <div className="grid gap-1.5 sm:grid-cols-[minmax(0,140px)_1fr] sm:items-baseline sm:gap-4">
-        <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400">
+        <dt className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
           {label}
         </dt>
         <dd
           className={cn(
-            "flex items-center gap-1.5 text-sm font-medium text-zinc-800 dark:text-zinc-100",
+            "flex items-center gap-1.5 text-sm font-semibold text-foreground",
             mono && !isEmpty && "font-mono text-[13px]",
-            isEmpty && "font-normal text-zinc-400 dark:text-zinc-500",
+            isEmpty && "font-normal text-muted-foreground/80",
           )}
         >
           {Icon && !isEmpty ? (
-            <Icon className="h-3.5 w-3.5 shrink-0 text-zinc-400 dark:text-zinc-500" />
+            <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           ) : null}
           {href && !isEmpty ? (
-            <a href={href} className="text-zinc-700 underline-offset-2 hover:text-primary hover:underline dark:text-zinc-200">
+            <a
+              href={href}
+              className="text-foreground underline-offset-2 hover:text-primary hover:underline"
+            >
               {display}
             </a>
           ) : (

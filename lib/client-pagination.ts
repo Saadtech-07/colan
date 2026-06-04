@@ -1,5 +1,8 @@
 import * as React from "react";
 
+/** Team Members directory: 3 columns × 2 rows per page. */
+export const GRID_DIRECTORY_PAGE_SIZE = 6;
+
 export function getPaginationRange(
   page: number,
   pageSize: number,
