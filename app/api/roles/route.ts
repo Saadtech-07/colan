@@ -17,12 +17,14 @@ export async function GET() {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  await ensureRoleRegistry();
+  const registry = await ensureRoleRegistry();
   const roleKey = normalizeAppRole(session.user.appRole);
   if (!canViewModule(roleKey, "roles")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const roles = await listWorkspaceRoles();
+  const roles = [...registry.values()].sort(
+    (a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name),
+  );
   return NextResponse.json(roles);
 }
 

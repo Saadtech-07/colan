@@ -100,13 +100,13 @@ function SidebarNavItem({
 export function AppSidebar() {
   const pathname = usePathname();
   const { collapsed, setCollapsed, mobileOpen, setMobileOpen } = useSidebar();
-  const { access, user, dataLoading, sessionStatus } = useAppState();
+  const { access, user, sessionStatus, dataLoading } = useAppState();
   const chatUnread = useChatUnread();
 
-  const workspaceSubtitle =
-    sessionStatus === "loading" || !user
-      ? formatWorkspaceSubtitle(null, true)
-      : formatWorkspaceSubtitle(user.appRole, dataLoading);
+  const workspaceSubtitle = formatWorkspaceSubtitle(user?.appRole, {
+    sessionStatus,
+    dataLoading,
+  });
 
   const visibleNav = nav.filter((item) => {
     if (!access) return false;

@@ -3,7 +3,12 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { buildAccessContext, normalizeAppRole, type AccessContext } from "@/lib/permissions";
+import {
+  buildAccessContext,
+  normalizeAppRole,
+  roleNeedsTeam,
+  type AccessContext,
+} from "@/lib/permissions";
 import { hydrateRoleRegistry } from "@/lib/role-registry";
 import { sanitizeSessionImageUrl } from "@/lib/session-token";
 import type { TeamDTO, WorkspaceRole } from "@/models";
@@ -85,34 +90,59 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [dataSummary, setDataSummary] = React.useState<DataLayerSummary | null>(null);
   const [profileAvatarUrl, setProfileAvatarUrl] = React.useState<string | undefined>();
   const hydratedForEmailRef = React.useRef<string | null>(null);
+  const workspaceLoadIdRef = React.useRef(0);
+  const lastKnownUserRef = React.useRef<AuthUser | null>(null);
+  const sessionUserRef = React.useRef(session?.user);
+  const profileRefreshInFlightRef = React.useRef(false);
+  const lastSessionSyncKeyRef = React.useRef<string | null>(null);
+
+  sessionUserRef.current = session?.user;
+
+  const sessionTeamForRole = React.useCallback(
+    (appRole: string, team?: string | null) =>
+      roleNeedsTeam(appRole) && team ? team : undefined,
+    [],
+  );
 
   const syncSessionFromProfile = React.useCallback(
     async (profile: ProfileSessionSync) => {
-      const current = session?.user;
+      const current = sessionUserRef.current;
       if (!current?.email) return;
 
       const nextRole = normalizeAppRole(profile.appRole);
       const currentRole = normalizeAppRole(current.appRole);
+      const nextTeam = sessionTeamForRole(profile.appRole, profile.team);
+      const currentTeam = sessionTeamForRole(current.appRole, current.team);
       const profileComplete = profile.isProfileCompleted !== false;
       const sessionComplete = current.isProfileCompleted !== false;
+      const syncKey = JSON.stringify({
+        name: profile.name.trim(),
+        role: nextRole,
+        team: nextTeam ?? "",
+        profileComplete,
+      });
 
       if (
-        profile.name === (current.name ?? "") &&
+        profile.name.trim() === (current.name ?? "").trim() &&
         nextRole === currentRole &&
-        (profile.team ?? undefined) === (current.team ?? undefined) &&
+        nextTeam === currentTeam &&
         profileComplete === sessionComplete
       ) {
+        lastSessionSyncKeyRef.current = syncKey;
         return;
       }
+
+      if (lastSessionSyncKeyRef.current === syncKey) return;
+      lastSessionSyncKeyRef.current = syncKey;
 
       await updateSession({
         name: profile.name,
         appRole: profile.appRole,
-        team: profile.team,
+        team: nextTeam,
         isProfileCompleted: profile.isProfileCompleted,
       });
     },
-    [session?.user, updateSession],
+    [sessionTeamForRole, updateSession],
   );
 
   const refreshProfileAvatar = React.useCallback(async () => {
@@ -120,7 +150,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setProfileAvatarUrl(undefined);
       return;
     }
+    if (profileRefreshInFlightRef.current) return;
 
+    profileRefreshInFlightRef.current = true;
     try {
       const res = await fetch("/api/profile-settings", {
         credentials: "include",
@@ -131,23 +163,32 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const profile = (await res.json()) as ProfileSessionSync & { imageUrl?: string };
-      setProfileAvatarUrl(profile?.imageUrl?.trim() || undefined);
+      const nextAvatar = profile?.imageUrl?.trim() || undefined;
+      setProfileAvatarUrl((prev) => (prev === nextAvatar ? prev : nextAvatar));
       await syncSessionFromProfile(profile);
     } catch {
       setProfileAvatarUrl(undefined);
+    } finally {
+      profileRefreshInFlightRef.current = false;
     }
   }, [sessionStatus, syncSessionFromProfile]);
 
+  const refreshProfileAvatarRef = React.useRef(refreshProfileAvatar);
+  refreshProfileAvatarRef.current = refreshProfileAvatar;
+
+  const profileSessionEmail = session?.user?.email?.trim().toLowerCase() ?? "";
+
   React.useEffect(() => {
-    if (sessionStatus !== "authenticated" || !session?.user?.email) {
+    if (sessionStatus !== "authenticated" || !profileSessionEmail) {
       setProfileAvatarUrl(undefined);
+      lastSessionSyncKeyRef.current = null;
       return;
     }
 
-    void refreshProfileAvatar();
+    void refreshProfileAvatarRef.current();
 
     const refresh = () => {
-      void refreshProfileAvatar();
+      void refreshProfileAvatarRef.current();
     };
     window.addEventListener("focus", refresh);
     const interval = window.setInterval(refresh, 30_000);
@@ -156,14 +197,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       window.removeEventListener("focus", refresh);
       window.clearInterval(interval);
     };
-  }, [refreshProfileAvatar, session?.user?.email, sessionStatus]);
+  }, [profileSessionEmail, sessionStatus]);
 
   const user = React.useMemo<AuthUser | null>(() => {
-    if (!session?.user) return null;
+    if (!session?.user) {
+      if (sessionStatus === "loading" && lastKnownUserRef.current) {
+        return lastKnownUserRef.current;
+      }
+      lastKnownUserRef.current = null;
+      return null;
+    }
     const u = session.user;
     const email = u.email ?? "";
     const sessionAvatar = sanitizeSessionImageUrl(u.image);
-    return {
+    const next: AuthUser = {
       id: u.id ?? email,
       name: u.name ?? "",
       email,
@@ -172,7 +219,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       avatarUrl: profileAvatarUrl ?? sessionAvatar,
       isProfileCompleted: u.isProfileCompleted !== false,
     };
-  }, [profileAvatarUrl, session?.user]);
+    lastKnownUserRef.current = next;
+    return next;
+  }, [profileAvatarUrl, session?.user, sessionStatus]);
 
   const access = React.useMemo(
     () => (user ? buildAccessContext(user.appRole, user.team) : null),
@@ -187,54 +236,101 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [workspaceTeams],
   );
 
-  const refreshData = React.useCallback(async () => {
-    if (sessionStatus !== "authenticated") return;
-    setDataLoading(true);
-    setDataError(null);
-    try {
-      const [emRes, prRes, gaRes, teRes, roRes, sumRes] = await Promise.all([
-        fetch("/api/employees", { credentials: "include" }),
-        fetch("/api/projects", { credentials: "include" }),
-        fetch("/api/gallery", { credentials: "include" }),
-        fetch("/api/teams", { credentials: "include" }),
-        fetch("/api/roles", { credentials: "include" }),
-        fetch("/api/db-status", { credentials: "include" }),
-      ]);
-      if (sumRes.ok) {
-        setDataSummary((await sumRes.json()) as DataLayerSummary);
-      } else {
-        setDataSummary(null);
-      }
-      if (!emRes.ok) throw new Error(await parseApiError(emRes));
-      if (!prRes.ok) throw new Error(await parseApiError(prRes));
-      if (!gaRes.ok) throw new Error(await parseApiError(gaRes));
-      if (!teRes.ok) throw new Error(await parseApiError(teRes));
-      if (!roRes.ok) throw new Error(await parseApiError(roRes));
-      const [em, pr, ga, te, ro] = await Promise.all([
-        emRes.json() as Promise<Employee[]>,
-        prRes.json() as Promise<Project[]>,
-        gaRes.json() as Promise<GalleryImage[]>,
-        teRes.json() as Promise<TeamDTO[]>,
-        roRes.json() as Promise<WorkspaceRole[]>,
-      ]);
+  const applyWorkspacePayload = React.useCallback(
+    (
+      em: Employee[],
+      pr: Project[],
+      ga: GalleryImage[],
+      te: TeamDTO[],
+      ro: WorkspaceRole[],
+      email: string,
+    ) => {
       setEmployees(em);
       setProjects(pr);
       setGallery(ga);
       setWorkspaceTeams(te);
       setWorkspaceRoles(ro);
       hydrateRoleRegistry(ro);
-      hydratedForEmailRef.current = session?.user?.email?.trim().toLowerCase() ?? null;
+      hydratedForEmailRef.current = email;
+      setDataLoading(false);
+    },
+    [],
+  );
+
+  const fetchWorkspaceData = React.useCallback(async () => {
+    // Load roles before projects so server permission checks are not racing
+    // with /api/roles clearing the in-memory role registry.
+    const roRes = await fetch("/api/roles", { credentials: "include" });
+    let ro: WorkspaceRole[] = [];
+    if (roRes.ok) {
+      ro = (await roRes.json()) as WorkspaceRole[];
+      hydrateRoleRegistry(ro);
+    } else if (roRes.status !== 403) {
+      throw new Error(await parseApiError(roRes));
+    }
+
+    const [emRes, prRes, gaRes, teRes, sumRes] = await Promise.all([
+      fetch("/api/employees", { credentials: "include" }),
+      fetch("/api/projects", { credentials: "include" }),
+      fetch("/api/gallery", { credentials: "include" }),
+      fetch("/api/teams", { credentials: "include" }),
+      fetch("/api/db-status", { credentials: "include" }),
+    ]);
+
+    if (sumRes.ok) {
+      setDataSummary((await sumRes.json()) as DataLayerSummary);
+    } else {
+      setDataSummary(null);
+    }
+    if (!emRes.ok) throw new Error(await parseApiError(emRes));
+    if (!prRes.ok) throw new Error(await parseApiError(prRes));
+    if (!gaRes.ok) throw new Error(await parseApiError(gaRes));
+    if (!teRes.ok) throw new Error(await parseApiError(teRes));
+
+    const [em, pr, ga, te] = await Promise.all([
+      emRes.json() as Promise<Employee[]>,
+      prRes.json() as Promise<Project[]>,
+      gaRes.json() as Promise<GalleryImage[]>,
+      teRes.json() as Promise<TeamDTO[]>,
+    ]);
+    return { em, pr, ga, te, ro };
+  }, []);
+
+  const refreshData = React.useCallback(async () => {
+    if (sessionStatus !== "authenticated") return;
+    const email = session?.user?.email?.trim().toLowerCase() ?? "";
+    if (!email) return;
+
+    const isInitialHydration = hydratedForEmailRef.current !== email;
+    const loadId = ++workspaceLoadIdRef.current;
+    if (isInitialHydration) {
+      setDataLoading(true);
+    }
+    setDataError(null);
+    try {
+      const { em, pr, ga, te, ro } = await fetchWorkspaceData();
+      if (workspaceLoadIdRef.current !== loadId) return;
+      applyWorkspacePayload(em, pr, ga, te, ro, email);
     } catch (e) {
+      if (workspaceLoadIdRef.current !== loadId) return;
       setDataError(e instanceof Error ? e.message : "Failed to load data");
     } finally {
-      setDataLoading(false);
+      if (workspaceLoadIdRef.current === loadId && isInitialHydration) {
+        setDataLoading(false);
+      }
     }
-  }, [session?.user?.email, sessionStatus]);
+  }, [
+    applyWorkspacePayload,
+    fetchWorkspaceData,
+    session?.user?.email,
+    sessionStatus,
+  ]);
 
   const sessionEmail = session?.user?.email?.trim().toLowerCase() ?? "";
 
   React.useEffect(() => {
     if (!sessionEmail) {
+      workspaceLoadIdRef.current += 1;
       hydratedForEmailRef.current = null;
       setEmployees([]);
       setProjects([]);
@@ -248,56 +344,36 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
     if (hydratedForEmailRef.current === sessionEmail) return;
 
-    let cancelled = false;
+    const loadId = ++workspaceLoadIdRef.current;
+    setDataLoading(true);
+    setDataError(null);
     void (async () => {
-      setDataLoading(true);
-      setDataError(null);
       try {
-        const [emRes, prRes, gaRes, teRes, roRes, sumRes] = await Promise.all([
-          fetch("/api/employees", { credentials: "include" }),
-          fetch("/api/projects", { credentials: "include" }),
-          fetch("/api/gallery", { credentials: "include" }),
-          fetch("/api/teams", { credentials: "include" }),
-          fetch("/api/roles", { credentials: "include" }),
-          fetch("/api/db-status", { credentials: "include" }),
-        ]);
-        if (cancelled) return;
-        if (sumRes.ok) {
-          setDataSummary((await sumRes.json()) as DataLayerSummary);
-        } else {
-          setDataSummary(null);
+        const { em, pr, ga, te, ro } = await fetchWorkspaceData();
+        if (workspaceLoadIdRef.current !== loadId) return;
+        applyWorkspacePayload(em, pr, ga, te, ro, sessionEmail);
+        if (
+          pr.length === 0 &&
+          normalizeAppRole(sessionUserRef.current?.appRole).toLowerCase() === "admin"
+        ) {
+          const retryRes = await fetch("/api/projects", { credentials: "include" });
+          if (retryRes.ok && workspaceLoadIdRef.current === loadId) {
+            const retryProjects = (await retryRes.json()) as Project[];
+            if (retryProjects.length > 0) {
+              setProjects(retryProjects);
+            }
+          }
         }
-        if (!emRes.ok) throw new Error(await parseApiError(emRes));
-        if (!prRes.ok) throw new Error(await parseApiError(prRes));
-        if (!gaRes.ok) throw new Error(await parseApiError(gaRes));
-        if (!teRes.ok) throw new Error(await parseApiError(teRes));
-        if (!roRes.ok) throw new Error(await parseApiError(roRes));
-        const [em, pr, ga, te, ro] = await Promise.all([
-          emRes.json() as Promise<Employee[]>,
-          prRes.json() as Promise<Project[]>,
-          gaRes.json() as Promise<GalleryImage[]>,
-          teRes.json() as Promise<TeamDTO[]>,
-          roRes.json() as Promise<WorkspaceRole[]>,
-        ]);
-        if (cancelled) return;
-        setEmployees(em);
-        setProjects(pr);
-        setGallery(ga);
-        setWorkspaceTeams(te);
-        setWorkspaceRoles(ro);
-        hydrateRoleRegistry(ro);
-        hydratedForEmailRef.current = sessionEmail;
       } catch (e) {
-        if (cancelled) return;
+        if (workspaceLoadIdRef.current !== loadId) return;
         setDataError(e instanceof Error ? e.message : "Failed to load data");
       } finally {
-        if (!cancelled) setDataLoading(false);
+        if (workspaceLoadIdRef.current === loadId) {
+          setDataLoading(false);
+        }
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionEmail]);
+  }, [applyWorkspacePayload, fetchWorkspaceData, sessionEmail]);
 
   const logout = React.useCallback(async () => {
     await signOut({ callbackUrl: "/login" });

@@ -79,7 +79,6 @@ export async function ensureRolesSeed(
   const count = await col.countDocuments();
   if (count > 0) {
     await syncSystemRoleChatPermissions(db);
-    invalidateServerRoleCache();
     return;
   }
 
@@ -119,7 +118,6 @@ export async function listWorkspaceRoles(): Promise<WorkspaceRole[]> {
   await ensureColanModelIndexes(db);
   await ensureRolesSeed(db);
   await syncSystemRoleChatPermissions(db);
-  invalidateServerRoleCache();
 
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
   const docs = await col.find({}).sort({ displayOrder: 1, name: 1 }).toArray();

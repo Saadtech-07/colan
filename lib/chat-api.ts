@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { canAccessChat, canManageChatInbox, canSendChat } from "@/lib/chat-access";
 import { getChatActorByEmail } from "@/lib/chat-data";
-import { ensureRoleRegistry, invalidateServerRoleCache } from "@/lib/role-registry.server";
+import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { sessionAccess } from "@/lib/session-access";
 import type { ChatActor } from "@/lib/chat-data";
 
@@ -16,7 +16,6 @@ export async function requireChatContext(): Promise<ChatRequestContext | NextRes
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  invalidateServerRoleCache();
   await ensureRoleRegistry();
   const access = sessionAccess(session);
   const roleKey = access?.role ?? session.user.appRole;

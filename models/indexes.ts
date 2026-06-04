@@ -73,11 +73,32 @@ async function removeInvalidCompanyRoleKeys(db: Db): Promise<void> {
   }
 }
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __colanIndexesPromise: Map<string, Promise<void>> | undefined;
+}
+
+function indexesCacheKey(db: Db): string {
+  return db.databaseName;
+}
+
 /**
- * Idempotent index setup for Colan collections. Safe to call on each request
- * (MongoDB no-ops if index already exists with same options).
+ * Idempotent index setup for Colan collections. Runs once per database per process.
  */
 export async function ensureColanModelIndexes(db: Db): Promise<void> {
+  const key = indexesCacheKey(db);
+  if (!globalThis.__colanIndexesPromise) {
+    globalThis.__colanIndexesPromise = new Map();
+  }
+  let pending = globalThis.__colanIndexesPromise.get(key);
+  if (!pending) {
+    pending = ensureColanModelIndexesWork(db);
+    globalThis.__colanIndexesPromise.set(key, pending);
+  }
+  return pending;
+}
+
+async function ensureColanModelIndexesWork(db: Db): Promise<void> {
   await db
     .collection<AppUserDocument>(COLLECTIONS.appUsers)
     .createIndex({ email: 1 }, { unique: true });

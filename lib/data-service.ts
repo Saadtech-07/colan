@@ -13,6 +13,7 @@ import {
 import { getProjectsForEmployee } from "@/lib/project-assignments";
 import { assertProjectsMatchEmployeeTeam, filterProjectsByEmployeeTeam } from "@/lib/projects";
 import { resolveProjectTeamsFromDoc } from "@/lib/project-team-resolve";
+import { mergeProjectTeamNames } from "@/lib/project-teams";
 import { listTeams } from "@/lib/teams-data";
 import { uniqueProjectSlug } from "@/lib/project-slug";
 import type {
@@ -63,9 +64,27 @@ function toDetail(project: Project, allEmployees: Employee[]): ProjectDetail {
   };
 }
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __colanMongoSeedPromise: Map<string, Promise<void>> | undefined;
+}
+
+function mongoSeedCacheKey(db: Db): string {
+  return db.databaseName;
+}
+
 /** Copy legacy `team` into `teams` and persist normalized squad lists. */
 async function backfillProjectTeams(db: Db) {
   const col = db.collection<ProjectDocument>(COLLECTIONS.projects);
+  const needsBackfill = await col.countDocuments({
+    $or: [
+      { team: { $exists: true, $type: "string", $ne: "" } },
+      { teams: { $exists: false } },
+      { teams: { $size: 0 } },
+    ],
+  });
+  if (needsBackfill === 0) return;
+
   const docs = await col.find({}).toArray();
   const now = new Date();
 
@@ -190,7 +209,7 @@ async function repairProjectMemberIds(
   }
 }
 
-async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
   const pr = db.collection<ProjectDocument>(COLLECTIONS.projects);
   const em = db.collection<EmployeeDocument>(COLLECTIONS.employees);
 
@@ -264,6 +283,20 @@ async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>
   }
 
   await ensureColanModelIndexes(db);
+}
+
+/** Seed, backfill, and index setup — once per database per server process. */
+export async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  const key = mongoSeedCacheKey(db);
+  if (!globalThis.__colanMongoSeedPromise) {
+    globalThis.__colanMongoSeedPromise = new Map();
+  }
+  let pending = globalThis.__colanMongoSeedPromise.get(key);
+  if (!pending) {
+    pending = ensureMongoSeedWork(db);
+    globalThis.__colanMongoSeedPromise.set(key, pending);
+  }
+  return pending;
 }
 
 function detailsToDirectory(
@@ -667,9 +700,10 @@ export async function listProjects(): Promise<Project[]> {
     .toArray();
   return rows.map((d) => {
     const dto = projectDocToDTO(d);
+    const resolved = resolveProjectTeamsFromDoc(d, catalog);
     return {
       ...dto,
-      teams: resolveProjectTeamsFromDoc(d, catalog),
+      teams: mergeProjectTeamNames(resolved, d),
     };
   });
 }
@@ -686,7 +720,8 @@ export async function getProjectBySlug(slug: string): Promise<Project | null> {
     .findOne({ slug });
   if (!doc) return null;
   const dto = projectDocToDTO(doc);
-  return { ...dto, teams: resolveProjectTeamsFromDoc(doc, catalog) };
+  const resolved = resolveProjectTeamsFromDoc(doc, catalog);
+  return { ...dto, teams: mergeProjectTeamNames(resolved, doc) };
 }
 
 export async function getProjectDetailBySlug(
@@ -766,7 +801,8 @@ export async function createProject(
   await col.insertOne(doc);
   const catalog = await listTeams();
   const dto = projectDocToDTO(doc);
-  return { ...dto, teams: resolveProjectTeamsFromDoc(doc, catalog) };
+  const resolved = resolveProjectTeamsFromDoc(doc, catalog);
+  return { ...dto, teams: mergeProjectTeamNames(resolved, doc) };
 }
 
 export async function updateProjectBySlug(
@@ -809,7 +845,8 @@ export async function updateProjectBySlug(
   if (!result) return null;
   const catalog = await listTeams();
   const dto = projectDocToDTO(result);
-  return { ...dto, teams: resolveProjectTeamsFromDoc(result, catalog) };
+  const resolved = resolveProjectTeamsFromDoc(result, catalog);
+  return { ...dto, teams: mergeProjectTeamNames(resolved, result) };
 }
 
 /**

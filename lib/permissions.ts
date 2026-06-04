@@ -228,12 +228,26 @@ export function canManageProjectForTeam(
   return false;
 }
 
+const PORTFOLIO_ROLE_KEYS = new Set(["admin", "manager"]);
+
+/** Company-wide project visibility (admin, manager, portfolio roles). */
+export function canViewAllWorkspaceProjects(roleKey: AppRole): boolean {
+  if (PORTFOLIO_ROLE_KEYS.has(normalizeAppRole(roleKey).toLowerCase())) return true;
+  if (hasPermission(roleKey, "projects:read_all")) return true;
+  if (hasPermission(roleKey, "projects:manage")) return true;
+  if (canManageModule(roleKey, "appUsers")) return true;
+  if (canManageModule(roleKey, "projects") && !hasPermission(roleKey, "projects:manage_team")) {
+    return true;
+  }
+  return false;
+}
+
 export function filterProjectsForUser(
   projects: Project[],
   roleKey: AppRole,
   userTeam?: TeamName,
 ): Project[] {
-  if (hasPermission(roleKey, "projects:read_all")) return projects;
+  if (canViewAllWorkspaceProjects(roleKey)) return projects;
   if (userTeam) {
     const squadKey = teamMatchKey(userTeam);
     return projects.filter((p) =>
@@ -325,7 +339,7 @@ export function buildAccessContext(roleKey: AppRole, team?: TeamName) {
     canAssignSeating: canAssignSeating(roleKey),
     canWriteGallery: canWriteGallery(roleKey),
     seesAllTeams:
-      hasPermission(roleKey, "projects:read_all") ||
+      canViewAllWorkspaceProjects(roleKey) ||
       hasPermission(roleKey, "employees:read_all"),
     has: (permission: Permission) => hasPermission(roleKey, permission),
   };

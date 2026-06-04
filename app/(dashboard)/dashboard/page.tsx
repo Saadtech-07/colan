@@ -50,7 +50,7 @@ import {
   projectProgressPercent,
 } from "@/lib/project-ui";
 import { teamTabLabel } from "@/lib/team-utils";
-import { resolveWorkspaceRoleLabel } from "@/lib/workspace-label";
+import { resolveWorkspaceRoleLabelForChrome } from "@/lib/workspace-label";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
 import type { AuthUser, Employee, Project, TeamName } from "@/types";
@@ -458,6 +458,7 @@ export default function DashboardPage() {
     dataSummary,
     teamNames,
     dataLoading,
+    sessionStatus,
   } = useAppState();
 
   const today = React.useMemo(() => new Date(), []);
@@ -590,7 +591,10 @@ export default function DashboardPage() {
     [scopedProjects, teamsInScope],
   );
 
-  const roleLabel = resolveWorkspaceRoleLabel(user?.appRole, dataLoading);
+  const roleLabel = resolveWorkspaceRoleLabelForChrome(user?.appRole, {
+    sessionStatus,
+    dataLoading,
+  });
   const workspaceSubtitle =
     dashboardScope === "company"
       ? "Here's your workspace performance overview."

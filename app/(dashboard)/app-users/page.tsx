@@ -222,21 +222,19 @@ export default function AppUsersPage() {
     setLoading(true);
     setError(null);
     try {
-      await withLoading("app-users-fetch", LOADING_PRESETS.loadingAccounts, async () => {
-        const res = await fetch("/api/app-users", {
-          credentials: "include",
-        });
-        if (!res.ok) {
-          throw new Error(await parseApiError(res));
-        }
-        setUsers((await res.json()) as AppUserPublicDTO[]);
+      const res = await fetch("/api/app-users", {
+        credentials: "include",
       });
+      if (!res.ok) {
+        throw new Error(await parseApiError(res));
+      }
+      setUsers((await res.json()) as AppUserPublicDTO[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load accounts.");
     } finally {
       setLoading(false);
     }
-  }, [withLoading]);
+  }, []);
 
   React.useEffect(() => {
     if (!isAdmin) return;

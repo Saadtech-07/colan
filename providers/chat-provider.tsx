@@ -49,6 +49,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [currentUserId, setCurrentUserId] = React.useState<string | null>(null);
   const activeIdRef = React.useRef<string | null>(null);
   const currentUserIdRef = React.useRef<string | null>(null);
+  const chatBootstrappedRef = React.useRef(false);
 
   React.useEffect(() => {
     activeIdRef.current = activeConversationId;
@@ -100,6 +101,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }
   }, [canUseChat]);
 
+  const refreshConversationsRef = React.useRef(refreshConversations);
+  const refreshUnreadRef = React.useRef(refreshUnread);
+  refreshConversationsRef.current = refreshConversations;
+  refreshUnreadRef.current = refreshUnread;
+
   const loadMessages = React.useCallback(async (conversationId: string) => {
     setLoadingMessages(true);
     try {
@@ -119,11 +125,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       setConversations((prev) =>
         prev.map((c) => (c.id === conversationId ? { ...c, unreadCount: 0 } : c)),
       );
-      await refreshUnread();
+      await refreshUnreadRef.current();
     } finally {
       setLoadingMessages(false);
     }
-  }, [refreshUnread, socket]);
+  }, [socket]);
 
   React.useEffect(() => {
     if (!activeConversationId) {
@@ -134,10 +140,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [activeConversationId, loadMessages]);
 
   React.useEffect(() => {
-    if (status !== "authenticated" || !canUseChat) return;
-    void refreshConversations();
-    void refreshUnread();
-  }, [status, canUseChat, refreshConversations, refreshUnread]);
+    if (status !== "authenticated" || !canUseChat) {
+      chatBootstrappedRef.current = false;
+      return;
+    }
+    if (chatBootstrappedRef.current) return;
+    chatBootstrappedRef.current = true;
+    void refreshConversationsRef.current();
+    void refreshUnreadRef.current();
+  }, [status, canUseChat]);
 
   React.useEffect(() => {
     if (status !== "authenticated" || !canUseChat || !session?.user) return;
@@ -184,7 +195,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           ),
         );
       }
-      void refreshUnread();
+      void refreshUnreadRef.current();
     });
 
     instance.on("conversation-updated", (payload: { conversationId: string; lastMessage: string; lastMessageAt: string }) => {
@@ -221,7 +232,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       setSocket(null);
       setConnected(false);
     };
-  }, [status, canUseChat, currentUserId, refreshUnread]);
+  }, [status, canUseChat, session?.user?.email]);
 
   const sendMessage = React.useCallback(
     async (text: string) => {
