@@ -2,8 +2,10 @@
 
 import * as React from "react";
 import { SEATING_ROWS } from "@/lib/seating-layout";
+import { SeatingAiCanvas } from "@/components/seating/seating-ai-canvas";
 import { SeatingLayoutCanvas } from "@/components/seating/seating-layout-canvas";
 import { SeatingRowBlock } from "@/components/seating/seating-row-block";
+import type { GeneratedSeatingLayout } from "@/lib/seating-layout-types";
 import type { SeatingAiZone } from "@/lib/seating-ai-types";
 import type { Employee } from "@/types";
 
@@ -12,6 +14,7 @@ type Props = {
   selectedSeat: string | null;
   highlightSeats: Set<string> | null;
   layoutMode?: boolean;
+  generatedLayout?: GeneratedSeatingLayout | null;
   layoutSeats?: Set<string> | null;
   layoutZones?: SeatingAiZone[];
   zoneBySeat?: Map<string, string>;
@@ -29,6 +32,7 @@ export function SeatingFloorPlan({
   selectedSeat,
   highlightSeats,
   layoutMode = false,
+  generatedLayout = null,
   layoutSeats = null,
   layoutZones = [],
   zoneBySeat = new Map(),
@@ -64,6 +68,26 @@ export function SeatingFloorPlan({
     },
     [viewMode],
   );
+
+  if (layoutMode && generatedLayout) {
+    return (
+      <div
+        className="w-max origin-top transition-transform duration-200 ease-out"
+        style={{
+          width: generatedLayout.room.width * zoom,
+          height: generatedLayout.room.height * zoom,
+        }}
+      >
+        <SeatingAiCanvas
+          layout={generatedLayout}
+          occupancy={occupancy}
+          selectedSeat={selectedSeat}
+          zoom={zoom}
+          onSeatClick={onSeatClick}
+        />
+      </div>
+    );
+  }
 
   if (layoutMode && layoutZones.length > 0) {
     return (

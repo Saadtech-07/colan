@@ -1,5 +1,4 @@
 import type { SeatingAiSuggestion } from "@/lib/seating-ai-types";
-import { isValidSeatId } from "@/lib/seating-layout";
 import type { Employee } from "@/types";
 
 /** True when a blank AI layout canvas is active. */
@@ -18,7 +17,7 @@ export function buildLayoutCanvasOccupancy(
 ): Map<string, Employee> {
   const next = new Map<string, Employee>();
   for (const emp of employees) {
-    if (emp.bayNumber && isValidSeatId(emp.bayNumber) && layoutSeats.has(emp.bayNumber)) {
+    if (emp.bayNumber && layoutSeats.has(emp.bayNumber)) {
       next.set(emp.bayNumber, emp);
     }
   }

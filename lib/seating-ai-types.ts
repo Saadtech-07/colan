@@ -12,15 +12,21 @@ export type SeatingAiAssignment = {
   reason?: string;
 };
 
+import type { GeneratedSeatingLayout } from "@/lib/seating-layout-types";
+
 export type SeatingAiSuggestion = {
   summary: string;
+  description?: string;
   strategy: string[];
   /** Seats included in the proposed blank layout (all shown vacant for manual assignment). */
   layoutSeats: string[];
   zones: SeatingAiZone[];
+  /** Coordinate-based layout from the AI generator (canvas mode). */
+  layout?: GeneratedSeatingLayout;
   assignments: SeatingAiAssignment[];
   warnings: string[];
   modelUsed: string;
+  /** @deprecated Image upload mode removed. */
   imageAnalysis?: string;
 };
 

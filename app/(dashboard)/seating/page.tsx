@@ -11,7 +11,6 @@ import {
   SeatingAiPanel,
 } from "@/components/seating/seating-ai-panel";
 import { SeatingToolbar } from "@/components/seating/seating-toolbar";
-import { imageFileToBase64Payload } from "@/lib/seating-ai-client";
 import type { SeatingAiSuggestion } from "@/lib/seating-ai-types";
 import type { Employee } from "@/types";
 import { layoutSeatSet, zoneLabelBySeat } from "@/lib/seating-ai-layout-builder";
@@ -150,22 +149,6 @@ export default function SeatingPage() {
     });
   };
 
-  const handleGenerateImage = async (file: File, prompt?: string) => {
-    const { imageBase64, mimeType } = await imageFileToBase64Payload(file);
-    await withLoading("seating-ai-generate", LOADING_PRESETS.seatingAiGenerate, async () => {
-      const suggestion = await requestSeatingAiGeneration({
-        mode: "image",
-        prompt,
-        imageBase64,
-        mimeType,
-      });
-      freezeColanForLayout();
-      setAiSuggestion(suggestion);
-      setAiPanelOpen(true);
-      setViewMode("all");
-    });
-  };
-
   const liveStats = React.useMemo(() => computeSeatingStats(employees), [employees]);
   const headerStats = layoutMode || colanFrozen ? stats : liveStats;
 
@@ -249,7 +232,6 @@ export default function SeatingPage() {
           loading={aiGenerating}
           suggestion={aiSuggestion}
           onGenerateText={handleGenerateText}
-          onGenerateImage={handleGenerateImage}
           onBackToColan={clearAiLayout}
         />
       )}
@@ -295,6 +277,7 @@ export default function SeatingPage() {
               selectedSeat={selectedSeat}
               highlightSeats={highlights}
               layoutMode={layoutMode}
+              generatedLayout={aiSuggestion?.layout ?? null}
               layoutSeats={layoutSeats}
               layoutZones={layoutZones}
               zoneBySeat={zoneBySeat}

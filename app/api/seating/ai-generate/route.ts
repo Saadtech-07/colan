@@ -2,11 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { ensureServerEnvLoaded, isOpenRouterConfigured } from "@/lib/openrouter-env";
 import {
-  generateSeatingFromImage,
   generateSeatingFromTextPrompt,
-  OpenRouterInferenceError,
+  SeatingAiGenerationError,
 } from "@/lib/seating-ai-generator";
-import { listEmployees } from "@/lib/data-service";
 import { canAssignSeating, normalizeAppRole } from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { seatingAiGenerateSchema } from "@/lib/validations";
@@ -53,39 +51,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    const employees = await listEmployees();
-
-    if (parsed.data.mode === "text") {
-      const suggestion = await generateSeatingFromTextPrompt({
-        prompt: parsed.data.prompt,
-        employees,
-      });
-      return NextResponse.json(suggestion);
-    }
-
-    const base64 = parsed.data.imageBase64.replace(/^data:[^;]+;base64,/, "");
-    const imageBytes = Buffer.from(base64, "base64");
-    if (!imageBytes.length) {
-      return NextResponse.json({ error: "Invalid image payload." }, { status: 400 });
-    }
-
-    const suggestion = await generateSeatingFromImage({
+    const suggestion = await generateSeatingFromTextPrompt({
       prompt: parsed.data.prompt,
-      imageBytes,
-      mimeType: parsed.data.mimeType,
-      employees,
     });
-
     return NextResponse.json(suggestion);
   } catch (error) {
-    if (error instanceof OpenRouterInferenceError) {
-      return NextResponse.json(
-        {
-          error: error.message,
-          details: error.details,
-        },
-        { status: error.status ?? 502 },
-      );
+    if (error instanceof SeatingAiGenerationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
     }
 
     return NextResponse.json(
