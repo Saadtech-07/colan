@@ -13,14 +13,18 @@ type Props = {
 export function ChatComposer({ disabled, onSend }: Props) {
   const [text, setText] = React.useState("");
   const [sending, setSending] = React.useState(false);
+  const [sendError, setSendError] = React.useState<string | null>(null);
 
   const submit = async () => {
     const trimmed = text.trim();
     if (!trimmed || sending || disabled) return;
     setSending(true);
+    setSendError(null);
     try {
       await onSend(trimmed);
       setText("");
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : "Failed to send message");
     } finally {
       setSending(false);
     }
@@ -54,6 +58,7 @@ export function ChatComposer({ disabled, onSend }: Props) {
           <Send className="h-4 w-4" />
         </Button>
       </div>
+      {sendError ? <p className="mt-2 text-xs text-destructive">{sendError}</p> : null}
     </div>
   );
 }

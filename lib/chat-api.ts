@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { canAccessChat, canManageChatInbox, canSendChat } from "@/lib/chat-access";
+import { canAccessChat, canSendChat } from "@/lib/chat-access";
 import { getChatActorByEmail } from "@/lib/chat-data";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { sessionAccess } from "@/lib/session-access";
@@ -45,9 +45,3 @@ export function assertCanSend(actor: ChatActor): string | null {
   return null;
 }
 
-export function assertAdminInbox(actor: ChatActor): string | null {
-  if (!canManageChatInbox(actor.appRole)) {
-    return "Only workspace admins can access the shared inbox.";
-  }
-  return null;
-}

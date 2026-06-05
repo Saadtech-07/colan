@@ -13,10 +13,10 @@ import type { Employee } from "@/types";
 import {
   getDefaultTextModel,
   getDefaultVisionModel,
-  HuggingFaceInferenceError,
-  runHuggingFaceImageCaption,
-  runHuggingFaceTextGeneration,
-} from "@/services/huggingface-inference";
+  OpenRouterInferenceError,
+  runOpenRouterImageCaption,
+  runOpenRouterTextGeneration,
+} from "@/services/openrouter-inference";
 
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 
@@ -67,7 +67,7 @@ async function requestLayoutJson(input: {
   }
 
   try {
-    return await runHuggingFaceTextGeneration({
+    return await runOpenRouterTextGeneration({
       model: textModel,
       system,
       user,
@@ -77,10 +77,10 @@ async function requestLayoutJson(input: {
     });
   } catch (error) {
     if (
-      error instanceof HuggingFaceInferenceError &&
+      error instanceof OpenRouterInferenceError &&
       (error.status === 400 || error.status === 422)
     ) {
-      return runHuggingFaceTextGeneration({
+      return runOpenRouterTextGeneration({
         model: textModel,
         system,
         user,
@@ -144,7 +144,7 @@ export async function generateSeatingFromImage(input: {
   }
 
   const visionModel = getDefaultVisionModel();
-  const imageAnalysis = await runHuggingFaceImageCaption({
+  const imageAnalysis = await runOpenRouterImageCaption({
     model: visionModel,
     imageBytes: input.imageBytes,
     mimeType: input.mimeType,
@@ -170,4 +170,4 @@ export async function generateSeatingFromImage(input: {
   };
 }
 
-export { HuggingFaceInferenceError };
+export { OpenRouterInferenceError };

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { canManageChatInbox, canAccessChat } from "@/lib/chat-access";
+import { canAccessChat } from "@/lib/chat-access";
 import { useAppState } from "@/providers/app-state";
 import { ChatWorkspace } from "@/components/chat/chat-workspace";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
@@ -37,9 +37,8 @@ export default function ChatPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Messages</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          {canManageChatInbox(access!.role)
-            ? "Search any app user (manager, employee, lead, …) and start or continue a conversation."
-            : "Contact workspace admin for support and approvals."}
+          Search any app user (admin, manager, employee, project manager, …) and start or continue a
+          conversation.
         </p>
       </div>
       <ChatWorkspace />

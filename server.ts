@@ -1,7 +1,10 @@
+import { loadEnvConfig } from "@next/env";
 import { createServer } from "http";
 import { parse } from "url";
 import next from "next";
 import { initSocketServer } from "./lib/socket-server";
+
+loadEnvConfig(process.cwd());
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOSTNAME ?? "localhost";

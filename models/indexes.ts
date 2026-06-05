@@ -1,4 +1,4 @@
-import type { Db, ObjectId } from "mongodb";
+import { ObjectId, type Db } from "mongodb";
 import { COLLECTIONS } from "./collections";
 import type { AppUserDocument } from "./app-user.model";
 import type { EmployeeDocument } from "./employee.model";
@@ -10,7 +10,7 @@ import type { SeatingAssignmentDocument } from "./seating-assignment.model";
 import type { TeamMemberDocument } from "./team-member.model";
 import type { ProjectDocument } from "./project.model";
 import type { GalleryImageDocument } from "./gallery-image.model";
-import type { ConversationDocument } from "./conversation.model";
+import { ensureChatConversationIndexes } from "@/lib/chat-indexes";
 import type { MessageDocument } from "./message.model";
 
 async function removeDuplicateEmployeeIds(db: Db): Promise<void> {
@@ -78,8 +78,10 @@ declare global {
   var __colanIndexesPromise: Map<string, Promise<void>> | undefined;
 }
 
+const INDEX_SETUP_VERSION = 3;
+
 function indexesCacheKey(db: Db): string {
-  return db.databaseName;
+  return `${db.databaseName}:v${INDEX_SETUP_VERSION}`;
 }
 
 /**
@@ -155,12 +157,7 @@ async function ensureColanModelIndexesWork(db: Db): Promise<void> {
     .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
   await db.collection(COLLECTIONS.passwordResetTokens).createIndex({ email: 1 });
 
-  await db
-    .collection<ConversationDocument>(COLLECTIONS.conversations)
-    .createIndex({ employeeUserId: 1 }, { unique: true });
-  await db
-    .collection<ConversationDocument>(COLLECTIONS.conversations)
-    .createIndex({ lastMessageAt: -1 });
+  await ensureChatConversationIndexes(db);
 
   await db
     .collection<MessageDocument>(COLLECTIONS.messages)

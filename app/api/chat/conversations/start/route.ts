@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { assertAdminInbox, requireChatContext } from "@/lib/chat-api";
-import { startAdminConversationWithUser } from "@/lib/chat-data";
+import { assertCanSend, requireChatContext } from "@/lib/chat-api";
+import { startConversationWithUser } from "@/lib/chat-data";
 import { getOnlineUserIds } from "@/lib/chat-online";
 import { z } from "zod";
 
@@ -12,12 +12,8 @@ export async function POST(req: Request) {
   const ctx = await requireChatContext();
   if (ctx instanceof NextResponse) return ctx;
 
-  if (!ctx.actor.isAdmin) {
-    return NextResponse.json({ error: "Only admins can start conversations." }, { status: 403 });
-  }
-
-  const denied = assertAdminInbox(ctx.actor);
-  if (denied) return NextResponse.json({ error: denied }, { status: 403 });
+  const sendDenied = assertCanSend(ctx.actor);
+  if (sendDenied) return NextResponse.json({ error: sendDenied }, { status: 403 });
 
   let body: unknown;
   try {
@@ -35,7 +31,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const conversation = await startAdminConversationWithUser(
+    const conversation = await startConversationWithUser(
       ctx.actor.id,
       parsed.data.targetUserId,
       getOnlineUserIds(),

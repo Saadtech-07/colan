@@ -86,10 +86,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
       const data = (await res.json()) as {
         conversations: ChatConversationSummary[];
-        role: "admin" | "employee";
         currentUserId: string;
       };
-      setIsAdmin(data.role === "admin");
+      setIsAdmin(true);
       setCurrentUserId(data.currentUserId);
       const sorted = sortConversations(data.conversations);
       setConversations(sorted);
@@ -239,26 +238,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const trimmed = text.trim();
       if (!trimmed || !activeConversationId) return;
 
-      if (socket?.connected) {
-        await new Promise<void>((resolve, reject) => {
-          socket.emit(
-            "send-message",
-            { conversationId: activeConversationId, text: trimmed },
-            (response: { ok: boolean; error?: string; message?: MessageDTO }) => {
-              if (!response?.ok) {
-                reject(new Error(response?.error ?? "Failed to send"));
-                return;
-              }
-              if (response.message) {
-                setMessages((prev) => appendMessage(prev, response.message!));
-              }
-              resolve();
-            },
-          );
-        });
-        return;
-      }
-
       const res = await fetch(`/api/chat/conversations/${activeConversationId}/messages`, {
         method: "POST",
         credentials: "include",
@@ -266,14 +245,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ text: trimmed }),
       });
       if (!res.ok) {
-        const err = (await res.json()) as { error?: string };
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(err.error ?? "Failed to send message");
       }
       const data = (await res.json()) as { message: MessageDTO };
       setMessages((prev) => appendMessage(prev, data.message));
       await refreshConversations();
     },
-    [activeConversationId, socket, refreshConversations],
+    [activeConversationId, refreshConversations],
   );
 
   const value = React.useMemo<ChatContextValue>(

@@ -27,6 +27,7 @@ export function canSendChat(roleKey: AppRole): boolean {
   );
 }
 
+/** Search people and manage the personal chat inbox (all roles with send access). */
 export function canManageChatInbox(roleKey: AppRole): boolean {
-  return isWorkspaceChatAdmin(roleKey);
+  return canSendChat(roleKey);
 }

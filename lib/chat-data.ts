@@ -1,5 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
+import { ensureChatConversationIndexes } from "@/lib/chat-indexes";
+import { objectIdsEqual, readObjectIdHex, sortParticipantIdPair } from "@/lib/object-id";
 import { isWorkspaceChatAdmin } from "@/lib/chat-access";
 import { getRoleDefinition, normalizeAppRole } from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
@@ -10,6 +12,7 @@ import {
   employeeDocToDTO,
   ensureColanModelIndexes,
   messageDocToDTO,
+  resolveConversationParticipants,
   type AppUserDocument,
   type ConversationDocument,
   type ConversationDTO,
@@ -33,6 +36,59 @@ export type ChatActor = {
   imageUrl: string;
   isAdmin: boolean;
 };
+
+export function getCounterpartyId(
+  viewerId: string,
+  participants: [string, string],
+): string {
+  if (objectIdsEqual(participants[0], viewerId)) return participants[1];
+  if (objectIdsEqual(participants[1], viewerId)) return participants[0];
+  return participants[0] === viewerId ? participants[1] : participants[0];
+}
+
+function viewerInConversation(viewerId: string, conversation: ConversationDTO): boolean {
+  return (
+    objectIdsEqual(conversation.participants[0], viewerId) ||
+    objectIdsEqual(conversation.participants[1], viewerId)
+  );
+}
+
+function participantLookup(userId: string): (string | ObjectId)[] {
+  const hex = readObjectIdHex(userId);
+  if (!hex) return [];
+  return [hex, new ObjectId(hex)];
+}
+
+function conversationFilterForUser(userId: string) {
+  const keys = participantLookup(userId);
+  return {
+    $or: [
+      { "participants.0": { $in: keys } },
+      { "participants.1": { $in: keys } },
+    ],
+  };
+}
+
+async function findDirectConversationDoc(
+  userA: string,
+  userB: string,
+): Promise<ConversationDocument | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [p0, p1] = sortParticipantIdPair(userA, userB);
+  const keys0 = participantLookup(p0);
+  const keys1 = participantLookup(p1);
+
+  return db.collection<ConversationDocument>(COLLECTIONS.conversations).findOne({
+    $or: [
+      { "participants.0": keys0[0], "participants.1": keys1[0] },
+      { "participants.0": keys0[1], "participants.1": keys1[1] },
+      { "participants.0": keys0[0], "participants.1": keys1[1] },
+      { "participants.0": keys0[1], "participants.1": keys1[0] },
+    ],
+  });
+}
 
 export async function getChatActorByEmail(email: string): Promise<ChatActor | null> {
   const db = await getDb();
@@ -132,37 +188,38 @@ async function enrichParticipant(
   };
 }
 
-/** Non-admin app users the workspace admin can message. */
+/** All app users the viewer can message (any role, except self). */
 export async function searchChatRecipients(args: {
-  adminUserId: string;
+  viewerUserId: string;
   query?: string;
   onlineUserIds?: Set<string>;
   limit?: number;
 }): Promise<ChatSearchUser[]> {
   const db = await getDb();
-  if (!db || !ObjectId.isValid(args.adminUserId)) return [];
+  if (!db || !ObjectId.isValid(args.viewerUserId)) return [];
 
   const q = (args.query ?? "").trim().toLowerCase();
   const limit = args.limit ?? 24;
   const online = args.onlineUserIds ?? new Set<string>();
 
+  const existingConversations = await db
+    .collection<ConversationDocument>(COLLECTIONS.conversations)
+    .find(conversationFilterForUser(args.viewerUserId), { projection: { participants: 1 } })
+    .toArray();
+
+  const conversationPartnerIds = new Set<string>();
+  for (const conv of existingConversations) {
+    const participants = resolveConversationParticipants(conv);
+    if (!participants) continue;
+    conversationPartnerIds.add(getCounterpartyId(args.viewerUserId, participants));
+  }
+
   const users = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).find({}).toArray();
-
-  const conversationUserIds = new Set(
-    (
-      await db
-        .collection<ConversationDocument>(COLLECTIONS.conversations)
-        .find({}, { projection: { employeeUserId: 1 } })
-        .toArray()
-    ).map((c) => c.employeeUserId.toHexString()),
-  );
-
   const results: ChatSearchUser[] = [];
 
   for (const doc of users) {
     const pub = appUserDocToPublic(doc);
-    if (pub.id === args.adminUserId) continue;
-    if (isWorkspaceChatAdmin(pub.appRole)) continue;
+    if (pub.id === args.viewerUserId) continue;
 
     const profile = await resolveParticipantProfile(
       pub.id,
@@ -189,7 +246,7 @@ export async function searchChatRecipients(args: {
       roleLabel,
       team: pub.team,
       isOnline: online.has(pub.id),
-      hasConversation: conversationUserIds.has(pub.id),
+      hasConversation: conversationPartnerIds.has(pub.id),
     });
   }
 
@@ -201,39 +258,86 @@ export async function searchChatRecipients(args: {
   return results.slice(0, limit);
 }
 
-export async function startAdminConversationWithUser(
-  adminViewerId: string,
+export async function getOrCreateDirectConversation(
+  userA: string,
+  userB: string,
+): Promise<ConversationDTO | null> {
+  const db = await getDb();
+  if (!db || !ObjectId.isValid(userA) || !ObjectId.isValid(userB)) return null;
+  if (userA === userB) throw new Error("You cannot message yourself.");
+
+  await ensureChatConversationIndexes(db);
+
+  const [p0, p1] = sortParticipantIdPair(userA, userB);
+  const col = db.collection<ConversationDocument>(COLLECTIONS.conversations);
+
+  const existing = await findDirectConversationDoc(userA, userB);
+  if (existing) {
+    const repaired = await repairConversationParticipants(existing);
+    return conversationDocToDTO(repaired);
+  }
+
+  const now = new Date();
+  const doc: ConversationDocument = {
+    _id: new ObjectId(),
+    participants: [new ObjectId(p0), new ObjectId(p1)],
+    lastMessage: "",
+    lastMessageAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    await col.insertOne(doc);
+  } catch (error) {
+    const race = await findDirectConversationDoc(userA, userB);
+    if (race) {
+      const repaired = await repairConversationParticipants(race);
+      return conversationDocToDTO(repaired);
+    }
+
+    const code = (error as { code?: number }).code;
+    if (code === 11000) {
+      await ensureChatConversationIndexes(db);
+      try {
+        await col.insertOne(doc);
+        return conversationDocToDTO(doc);
+      } catch (retryError) {
+        const retryRace = await findDirectConversationDoc(userA, userB);
+        if (retryRace) {
+          const repaired = await repairConversationParticipants(retryRace);
+          return conversationDocToDTO(repaired);
+        }
+        const msg = retryError instanceof Error ? retryError.message : "Duplicate key";
+        throw new Error(`Could not create conversation: ${msg}`);
+      }
+    }
+
+    const msg = error instanceof Error ? error.message : "Insert failed";
+    throw new Error(`Could not create conversation: ${msg}`);
+  }
+
+  return conversationDocToDTO(doc);
+}
+
+export async function startConversationWithUser(
+  viewerId: string,
   targetUserId: string,
   onlineUserIds: Set<string> = new Set(),
 ): Promise<ChatConversationSummary | null> {
-  if (!ObjectId.isValid(targetUserId) || !ObjectId.isValid(adminViewerId)) {
+  if (!ObjectId.isValid(targetUserId) || !ObjectId.isValid(viewerId)) {
     throw new Error("Invalid user.");
   }
-  if (targetUserId === adminViewerId) {
+  if (targetUserId === viewerId) {
     throw new Error("You cannot message yourself.");
   }
 
   const target = await getChatActorById(targetUserId);
   if (!target) throw new Error("User not found.");
-  if (target.isAdmin) {
-    throw new Error("Admin accounts use the shared inbox; message managers and employees instead.");
-  }
 
-  const conv = await getOrCreateEmployeeConversation(targetUserId);
+  const conv = await getOrCreateDirectConversation(viewerId, targetUserId);
   if (!conv) return null;
-  return getConversationDetail(conv.id, adminViewerId, true, onlineUserIds);
-}
-
-async function getConversationByEmployeeUserId(
-  employeeUserId: string,
-): Promise<ConversationDTO | null> {
-  if (!ObjectId.isValid(employeeUserId)) return null;
-  const db = await getDb();
-  if (!db) return null;
-  const doc = await db.collection<ConversationDocument>(COLLECTIONS.conversations).findOne({
-    employeeUserId: new ObjectId(employeeUserId),
-  });
-  return doc ? conversationDocToDTO(doc) : null;
+  return getConversationDetail(conv.id, viewerId, onlineUserIds);
 }
 
 async function countUnreadForUser(
@@ -249,7 +353,7 @@ async function countUnreadForUser(
   });
 }
 
-export async function listAdminConversations(
+export async function listUserConversations(
   viewerId: string,
   onlineUserIds: Set<string> = new Set(),
 ): Promise<ChatConversationSummary[]> {
@@ -258,7 +362,7 @@ export async function listAdminConversations(
 
   const docs = await db
     .collection<ConversationDocument>(COLLECTIONS.conversations)
-    .find({})
+    .find(conversationFilterForUser(viewerId))
     .sort({ lastMessageAt: -1 })
     .toArray();
 
@@ -266,12 +370,15 @@ export async function listAdminConversations(
   const summaries: ChatConversationSummary[] = [];
 
   for (const doc of docs) {
-    const participant = await enrichParticipant(doc.employeeUserId.toHexString(), onlineUserIds);
+    const participantIds = resolveConversationParticipants(doc);
+    if (!participantIds) continue;
+    const counterpartyId = getCounterpartyId(viewerId, participantIds);
+    const participant = await enrichParticipant(counterpartyId, onlineUserIds);
     if (!participant) continue;
     const unreadCount = await countUnreadForUser(doc._id, viewerOid);
     summaries.push({
-      id: doc._id.toHexString(),
-      employeeUserId: doc.employeeUserId.toHexString(),
+      id: readObjectIdHex(doc._id),
+      employeeUserId: readObjectIdHex(doc.employeeUserId) || undefined,
       lastMessage: doc.lastMessage,
       lastMessageAt: doc.lastMessageAt.toISOString(),
       unreadCount,
@@ -282,52 +389,16 @@ export async function listAdminConversations(
   return summaries;
 }
 
-export async function getEmployeeConversation(
-  employeeUserId: string,
-  viewerId: string,
-  onlineUserIds: Set<string> = new Set(),
-): Promise<ChatConversationDetail | null> {
-  const db = await getDb();
-  if (!db || !ObjectId.isValid(employeeUserId) || !ObjectId.isValid(viewerId)) {
-    return null;
-  }
-
-  const doc = await db.collection<ConversationDocument>(COLLECTIONS.conversations).findOne({
-    employeeUserId: new ObjectId(employeeUserId),
-  });
-  if (!doc) return null;
-
-  const adminId = doc.participants[1].toHexString();
-  const adminProfile = await enrichParticipant(adminId, onlineUserIds);
-  if (!adminProfile) return null;
-
-  const viewerOid = new ObjectId(viewerId);
-  const unreadCount = await countUnreadForUser(doc._id, viewerOid);
-
-  return {
-    id: doc._id.toHexString(),
-    employeeUserId: doc.employeeUserId.toHexString(),
-    lastMessage: doc.lastMessage,
-    lastMessageAt: doc.lastMessageAt.toISOString(),
-    unreadCount,
-    participant: adminProfile,
-    participants: [doc.participants[0].toHexString(), doc.participants[1].toHexString()],
-  };
-}
-
 export async function getConversationDetail(
   conversationId: string,
   viewerId: string,
-  viewerIsAdmin: boolean,
   onlineUserIds: Set<string> = new Set(),
 ): Promise<ChatConversationDetail | null> {
   const conversation = await getConversationById(conversationId);
   if (!conversation || !ObjectId.isValid(viewerId)) return null;
+  if (!viewerInConversation(viewerId, conversation)) return null;
 
-  const counterpartyId = viewerIsAdmin
-    ? conversation.employeeUserId
-    : conversation.participants[1];
-
+  const counterpartyId = getCounterpartyId(viewerId, conversation.participants);
   const participant = await enrichParticipant(counterpartyId, onlineUserIds);
   if (!participant) return null;
 
@@ -350,36 +421,35 @@ export async function getConversationDetail(
   };
 }
 
-export async function getOrCreateEmployeeConversation(
-  employeeUserId: string,
-): Promise<ConversationDTO | null> {
-  const db = await getDb();
-  if (!db || !ObjectId.isValid(employeeUserId)) return null;
-
-  const employeeOid = new ObjectId(employeeUserId);
-  const existing = await db.collection<ConversationDocument>(COLLECTIONS.conversations).findOne({
-    employeeUserId: employeeOid,
-  });
-  if (existing) return conversationDocToDTO(existing);
-
-  const anchorAdminId = await getAnchorAdminUserId();
-  if (!anchorAdminId || !ObjectId.isValid(anchorAdminId)) {
-    throw new Error("No workspace admin account is configured for messaging.");
+async function repairConversationParticipants(
+  doc: ConversationDocument,
+): Promise<ConversationDocument> {
+  let participants = resolveConversationParticipants(doc);
+  if (!participants) {
+    const employee = readObjectIdHex(doc.employeeUserId);
+    const adminId = employee ? await getAnchorAdminUserId() : null;
+    if (employee && adminId) {
+      participants = sortParticipantIdPair(employee, adminId);
+    }
   }
+  if (!participants) return doc;
 
-  const now = new Date();
-  const doc: ConversationDocument = {
-    _id: new ObjectId(),
-    employeeUserId: employeeOid,
-    participants: [employeeOid, new ObjectId(anchorAdminId)],
-    lastMessage: "",
-    lastMessageAt: now,
-    createdAt: now,
-    updatedAt: now,
-  };
+  const [p0, p1] = participants;
+  const raw = doc.participants;
+  const stored0 = Array.isArray(raw) ? readObjectIdHex(raw[0]) : "";
+  const stored1 = Array.isArray(raw) ? readObjectIdHex(raw[1]) : "";
+  if (stored0 === p0 && stored1 === p1) return doc;
 
-  await db.collection<ConversationDocument>(COLLECTIONS.conversations).insertOne(doc);
-  return conversationDocToDTO(doc);
+  const db = await getDb();
+  if (!db) return doc;
+
+  const repaired: [ObjectId, ObjectId] = [new ObjectId(p0), new ObjectId(p1)];
+  await db.collection<ConversationDocument>(COLLECTIONS.conversations).updateOne(
+    { _id: doc._id },
+    { $set: { participants: repaired, updatedAt: new Date() } },
+  );
+
+  return { ...doc, participants: repaired };
 }
 
 export async function getConversationById(
@@ -391,15 +461,17 @@ export async function getConversationById(
   const doc = await db
     .collection<ConversationDocument>(COLLECTIONS.conversations)
     .findOne({ _id: new ObjectId(conversationId) });
-  return doc ? conversationDocToDTO(doc) : null;
+  if (!doc) return null;
+  const repaired = await repairConversationParticipants(doc);
+  if (!resolveConversationParticipants(repaired)) return null;
+  return conversationDocToDTO(repaired);
 }
 
 export function assertConversationAccess(
   actor: ChatActor,
   conversation: ConversationDTO,
 ): string | null {
-  if (actor.isAdmin) return null;
-  if (conversation.employeeUserId === actor.id) return null;
+  if (viewerInConversation(actor.id, conversation)) return null;
   return "You do not have access to this conversation.";
 }
 
@@ -436,28 +508,19 @@ export async function sendChatMessage(args: {
   const trimmed = args.text.trim();
   if (!trimmed) throw new Error("Message cannot be empty.");
 
-  const conversationOid = new ObjectId(args.conversationId);
-  const senderOid = new ObjectId(args.senderId);
-
-  const conversation = await db
-    .collection<ConversationDocument>(COLLECTIONS.conversations)
-    .findOne({ _id: conversationOid });
+  const conversation = await getConversationById(args.conversationId);
   if (!conversation) throw new Error("Conversation not found.");
 
-  const employeeId = conversation.employeeUserId;
-  const adminId = conversation.participants[1];
-
-  const actor = await getChatActorById(args.senderId);
-  if (!actor) throw new Error("Sender account not found.");
-
-  let receiverId: ObjectId;
-  if (senderOid.equals(employeeId)) {
-    receiverId = adminId;
-  } else if (actor.isAdmin) {
-    receiverId = employeeId;
-  } else {
+  const [p0, p1] = conversation.participants;
+  const senderOid = new ObjectId(args.senderId);
+  const isParticipant =
+    new ObjectId(p0).equals(senderOid) || new ObjectId(p1).equals(senderOid);
+  if (!isParticipant) {
     throw new Error("You cannot send messages in this conversation.");
   }
+
+  const conversationOid = new ObjectId(args.conversationId);
+  const receiverId = new ObjectId(getCounterpartyId(args.senderId, [p0, p1]));
 
   const now = new Date();
   const messageDoc: MessageDocument = {
@@ -483,13 +546,14 @@ export async function sendChatMessage(args: {
     },
   );
 
-  const updated = await db
-    .collection<ConversationDocument>(COLLECTIONS.conversations)
-    .findOne({ _id: conversationOid });
-
   return {
     message: messageDocToDTO(messageDoc),
-    conversation: conversationDocToDTO(updated!),
+    conversation: {
+      ...conversation,
+      lastMessage: trimmed,
+      lastMessageAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    },
   };
 }
 

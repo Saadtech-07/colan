@@ -25,7 +25,7 @@ export async function GET(_req: Request, { params }: Params) {
   }
 
   const online = getOnlineUserIds();
-  const detail = await getConversationDetail(id, ctx.actor.id, ctx.actor.isAdmin, online);
+  const detail = await getConversationDetail(id, ctx.actor.id, online);
 
   if (!detail) {
     return NextResponse.json({ error: "Conversation not found" }, { status: 404 });

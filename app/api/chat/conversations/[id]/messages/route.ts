@@ -6,6 +6,7 @@ import {
   listMessages,
   sendChatMessage,
 } from "@/lib/chat-data";
+import { emitChatMessageSent } from "@/lib/chat-realtime";
 import { chatSendMessageSchema } from "@/lib/validations";
 
 type Params = { params: Promise<{ id: string }> };
@@ -70,6 +71,7 @@ export async function POST(req: Request, { params }: Params) {
       senderId: ctx.actor.id,
       text: parsed.data.text,
     });
+    emitChatMessageSent(result);
     return NextResponse.json(result);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to send message";

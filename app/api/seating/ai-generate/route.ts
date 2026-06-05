@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureServerEnvLoaded, isHuggingFaceConfigured } from "@/lib/huggingface-env";
+import { ensureServerEnvLoaded, isOpenRouterConfigured } from "@/lib/openrouter-env";
 import {
   generateSeatingFromImage,
   generateSeatingFromTextPrompt,
-  HuggingFaceInferenceError,
+  OpenRouterInferenceError,
 } from "@/lib/seating-ai-generator";
 import { listEmployees } from "@/lib/data-service";
 import { canAssignSeating, normalizeAppRole } from "@/lib/permissions";
@@ -16,11 +16,11 @@ export const maxDuration = 120;
 export async function POST(req: Request) {
   ensureServerEnvLoaded();
 
-  if (!isHuggingFaceConfigured()) {
+  if (!isOpenRouterConfigured()) {
     return NextResponse.json(
       {
         error:
-          "HUGGINGFACE_API_TOKEN is not configured. Add it to .env.local, save the file, and restart the dev server.",
+          "OPENROUTER_API_KEY is not configured. Add it to .env.local, save the file, and restart the dev server.",
       },
       { status: 503 },
     );
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(suggestion);
   } catch (error) {
-    if (error instanceof HuggingFaceInferenceError) {
+    if (error instanceof OpenRouterInferenceError) {
       return NextResponse.json(
         {
           error: error.message,

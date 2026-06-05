@@ -1,5 +1,6 @@
 import type { ObjectId } from "mongodb";
 import { COLLECTIONS } from "./collections";
+import { readObjectIdHex } from "@/lib/object-id";
 
 export const MESSAGE_COLLECTION = COLLECTIONS.messages;
 
@@ -27,10 +28,10 @@ export type MessageDTO = {
 
 export function messageDocToDTO(doc: MessageDocument): MessageDTO {
   return {
-    id: doc._id.toHexString(),
-    conversationId: doc.conversationId.toHexString(),
-    senderId: doc.senderId.toHexString(),
-    receiverId: doc.receiverId.toHexString(),
+    id: readObjectIdHex(doc._id),
+    conversationId: readObjectIdHex(doc.conversationId),
+    senderId: readObjectIdHex(doc.senderId),
+    receiverId: readObjectIdHex(doc.receiverId),
     text: doc.text,
     isRead: doc.isRead,
     createdAt: doc.createdAt.toISOString(),

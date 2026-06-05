@@ -90,6 +90,9 @@ export function initSocketServer(httpServer: HttpServer): Server {
 
     socket.on("send-message", async (payload: { conversationId?: string; text?: string }, ack) => {
       try {
+        const chatData = await import("@/lib/chat-data");
+        const { emitChatMessageSent } = await import("@/lib/chat-realtime");
+
         if (!canSendChat(user.appRole)) {
           throw new Error("You do not have permission to send messages.");
         }
@@ -97,30 +100,22 @@ export function initSocketServer(httpServer: HttpServer): Server {
         const text = payload?.text?.trim() ?? "";
         if (!conversationId || !text) throw new Error("Invalid message payload.");
 
-        const conversation = await getConversationById(conversationId);
+        const conversation = await chatData.getConversationById(conversationId);
         if (!conversation) throw new Error("Conversation not found.");
 
-        const actor = await getChatActorByEmail(user.email);
+        const actor = await chatData.getChatActorByEmail(user.email);
         if (!actor) throw new Error("Account not found.");
 
-        const denied = assertConversationAccess(actor, conversation);
+        const denied = chatData.assertConversationAccess(actor, conversation);
         if (denied) throw new Error(denied);
 
-        const result = await sendChatMessage({
+        const result = await chatData.sendChatMessage({
           conversationId,
-          senderId: user.id,
+          senderId: actor.id,
           text,
         });
 
-        io?.emit("receive-message", {
-          message: result.message,
-          conversation: result.conversation,
-        });
-        io?.emit("conversation-updated", {
-          conversationId: result.conversation.id,
-          lastMessage: result.conversation.lastMessage,
-          lastMessageAt: result.conversation.lastMessageAt,
-        });
+        emitChatMessageSent(result);
 
         if (typeof ack === "function") {
           ack({ ok: true, message: result.message, conversation: result.conversation });

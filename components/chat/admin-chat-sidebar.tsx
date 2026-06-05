@@ -108,34 +108,6 @@ function SearchUserChip({
   );
 }
 
-function SearchUserRow({
-  user,
-  onSelect,
-}: {
-  user: ChatSearchUser;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/50"
-    >
-      <Avatar className="h-9 w-9">
-        <AvatarImage src={user.imageUrl} alt={user.name} />
-        <AvatarFallback>{profileInitials(user.name)}</AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-foreground">{user.name}</p>
-        <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-      </div>
-      <Badge variant="outline" className="shrink-0 rounded-full text-[10px]">
-        {user.roleLabel}
-      </Badge>
-    </button>
-  );
-}
-
 type Props = {
   connected: boolean;
   conversations: ChatConversationSummary[];
@@ -190,7 +162,6 @@ export function AdminChatSidebar({
   }, [query, searchFocused]);
 
   const showSearchPanel = searchFocused || query.trim().length > 0;
-  const topPeople = searchResults.slice(0, 8);
 
   const handlePickUser = async (user: ChatSearchUser) => {
     setStartingUserId(user.id);
@@ -250,28 +221,15 @@ export function AdminChatSidebar({
           ) : searchResults.length === 0 ? (
             <p className="px-4 pb-4 text-sm text-muted-foreground">No matching app users.</p>
           ) : (
-            <>
-              {topPeople.length > 0 ? (
-                <div className="flex gap-1 overflow-x-auto px-3 pb-3">
-                  {topPeople.map((user) => (
-                    <SearchUserChip
-                      key={user.id}
-                      user={user}
-                      onSelect={() => void handlePickUser(user)}
-                    />
-                  ))}
-                </div>
-              ) : null}
-              <div className="border-t border-border/50">
-                {searchResults.map((user) => (
-                  <SearchUserRow
-                    key={user.id}
-                    user={user}
-                    onSelect={() => void handlePickUser(user)}
-                  />
-                ))}
-              </div>
-            </>
+            <div className="flex gap-1 overflow-x-auto px-3 pb-3">
+              {searchResults.map((user) => (
+                <SearchUserChip
+                  key={user.id}
+                  user={user}
+                  onSelect={() => void handlePickUser(user)}
+                />
+              ))}
+            </div>
           )}
           {startingUserId ? (
             <p className="px-4 py-2 text-xs text-muted-foreground">Opening conversation…</p>

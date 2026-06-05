@@ -24,7 +24,8 @@ export type ChatSearchUser = {
 
 export type ChatConversationSummary = {
   id: string;
-  employeeUserId: string;
+  /** @deprecated Legacy admin inbox field */
+  employeeUserId?: string;
   lastMessage: string;
   lastMessageAt: string;
   unreadCount: number;

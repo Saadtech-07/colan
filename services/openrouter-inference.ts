@@ -1,42 +1,49 @@
 import "server-only";
 
-import { requireHuggingFaceApiToken } from "@/lib/huggingface-env";
+import { requireOpenRouterApiKey } from "@/lib/openrouter-env";
 
 const CHAT_COMPLETIONS_URL =
-  process.env.HUGGINGFACE_CHAT_URL?.trim() ||
-  "https://router.huggingface.co/v1/chat/completions";
+  process.env.OPENROUTER_API_URL?.trim() ||
+  "https://openrouter.ai/api/v1/chat/completions";
 
-const DEFAULT_TIMEOUT_MS = Number(process.env.HUGGINGFACE_TIMEOUT_MS ?? 90_000);
+const DEFAULT_TIMEOUT_MS = Number(process.env.OPENROUTER_TIMEOUT_MS ?? 90_000);
 const MAX_RETRIES_ON_LOADING = 2;
 
-export type HuggingFaceChatContentPart =
+const APP_REFERER =
+  process.env.OPENROUTER_HTTP_REFERER?.trim() ||
+  process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+  "http://localhost:3000";
+
+const APP_TITLE = process.env.OPENROUTER_APP_TITLE?.trim() || "Colan Teams";
+
+export type OpenRouterChatContentPart =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 
-export type HuggingFaceChatMessage = {
+export type OpenRouterChatMessage = {
   role: "system" | "user" | "assistant";
-  content: string | HuggingFaceChatContentPart[];
+  content: string | OpenRouterChatContentPart[];
 };
 
-export class HuggingFaceInferenceError extends Error {
+export class OpenRouterInferenceError extends Error {
   constructor(
     message: string,
     readonly status?: number,
     readonly details?: string,
   ) {
     super(message);
-    this.name = "HuggingFaceInferenceError";
+    this.name = "OpenRouterInferenceError";
   }
 }
 
 function getApiToken(): string {
   try {
-    return requireHuggingFaceApiToken();
+    return requireOpenRouterApiKey();
   } catch (error) {
-    throw new HuggingFaceInferenceError(
+    throw new OpenRouterInferenceError(
       error instanceof Error
         ? error.message
-        : "HUGGINGFACE_API_TOKEN is not configured on the server.",
+        : "OPENROUTER_API_KEY is not configured on the server.",
       503,
     );
   }
@@ -63,38 +70,35 @@ function extractErrorDetail(payload: unknown, rawText: string): string {
 
 function extractChatCompletionText(payload: unknown): string {
   if (!payload || typeof payload !== "object") {
-    throw new HuggingFaceInferenceError("Unexpected Hugging Face response format.");
+    throw new OpenRouterInferenceError("Unexpected OpenRouter response format.");
   }
 
   const record = payload as Record<string, unknown>;
 
   if (record.error) {
-    throw new HuggingFaceInferenceError(
-      extractErrorDetail(payload, ""),
-      502,
-    );
+    throw new OpenRouterInferenceError(extractErrorDetail(payload, ""), 502);
   }
 
   const choices = record.choices;
   if (!Array.isArray(choices) || !choices[0] || typeof choices[0] !== "object") {
-    throw new HuggingFaceInferenceError("Unexpected Hugging Face response format.");
+    throw new OpenRouterInferenceError("Unexpected OpenRouter response format.");
   }
 
   const message = (choices[0] as Record<string, unknown>).message;
   if (!message || typeof message !== "object") {
-    throw new HuggingFaceInferenceError("Unexpected Hugging Face response format.");
+    throw new OpenRouterInferenceError("Unexpected OpenRouter response format.");
   }
 
   const content = (message as Record<string, unknown>).content;
   if (typeof content === "string" && content.trim()) return content.trim();
 
-  throw new HuggingFaceInferenceError("Hugging Face returned an empty completion.");
+  throw new OpenRouterInferenceError("OpenRouter returned an empty completion.");
 }
 
 async function postChatCompletion(
   input: {
     model: string;
-    messages: HuggingFaceChatMessage[];
+    messages: OpenRouterChatMessage[];
     maxTokens?: number;
     temperature?: number;
     jsonMode?: boolean;
@@ -114,6 +118,8 @@ async function postChatCompletion(
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
+          "HTTP-Referer": APP_REFERER,
+          "X-Title": APP_TITLE,
         },
         body: JSON.stringify({
           model: input.model,
@@ -133,16 +139,16 @@ async function postChatCompletion(
       }
 
       if (res.status === 503 && attempt < MAX_RETRIES_ON_LOADING) {
-        await sleep(8_000);
+        await sleep(4_000);
         continue;
       }
 
       if (!res.ok) {
         const detail = extractErrorDetail(parsed, rawText);
-        throw new HuggingFaceInferenceError(
+        throw new OpenRouterInferenceError(
           detail
-            ? `Hugging Face inference failed (${res.status}): ${detail}`
-            : `Hugging Face inference failed (${res.status}).`,
+            ? `OpenRouter request failed (${res.status}): ${detail}`
+            : `OpenRouter request failed (${res.status}).`,
           res.status,
           detail,
         );
@@ -150,26 +156,26 @@ async function postChatCompletion(
 
       return extractChatCompletionText(parsed);
     } catch (error) {
-      if (error instanceof HuggingFaceInferenceError) throw error;
+      if (error instanceof OpenRouterInferenceError) throw error;
       if (error instanceof Error && error.name === "AbortError") {
-        throw new HuggingFaceInferenceError(
-          `Hugging Face request timed out after ${Math.round(timeoutMs / 1000)}s.`,
+        throw new OpenRouterInferenceError(
+          `OpenRouter request timed out after ${Math.round(timeoutMs / 1000)}s.`,
           504,
         );
       }
-      throw new HuggingFaceInferenceError(
-        error instanceof Error ? error.message : "Hugging Face request failed.",
+      throw new OpenRouterInferenceError(
+        error instanceof Error ? error.message : "OpenRouter request failed.",
       );
     } finally {
       clearTimeout(timer);
     }
   }
 
-  throw new HuggingFaceInferenceError("Hugging Face model is still loading. Try again shortly.", 503);
+  throw new OpenRouterInferenceError("OpenRouter model is unavailable. Try again shortly.", 503);
 }
 
-/** Text seating layout via Inference Providers chat API. */
-export async function runHuggingFaceTextGeneration(input: {
+/** Text seating layout via OpenRouter chat completions. */
+export async function runOpenRouterTextGeneration(input: {
   model: string;
   system: string;
   user: string;
@@ -189,8 +195,8 @@ export async function runHuggingFaceTextGeneration(input: {
   });
 }
 
-/** Vision analysis for uploaded floor plans via chat API. */
-export async function runHuggingFaceImageCaption(input: {
+/** Vision analysis for uploaded floor plans via OpenRouter multimodal chat. */
+export async function runOpenRouterImageCaption(input: {
   model: string;
   imageBytes: Buffer;
   mimeType: string;
@@ -218,11 +224,9 @@ export async function runHuggingFaceImageCaption(input: {
 }
 
 export function getDefaultTextModel(): string {
-  return process.env.HUGGINGFACE_TEXT_MODEL?.trim() || "Qwen/Qwen2.5-7B-Instruct";
+  return process.env.OPENROUTER_TEXT_MODEL?.trim() || "openai/gpt-4o-mini";
 }
 
 export function getDefaultVisionModel(): string {
-  return (
-    process.env.HUGGINGFACE_VISION_MODEL?.trim() || "CohereLabs/aya-vision-32b:fastest"
-  );
+  return process.env.OPENROUTER_VISION_MODEL?.trim() || "google/gemini-2.5-flash";
 }
