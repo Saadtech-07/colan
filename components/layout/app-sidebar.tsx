@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Briefcase,
+  ChevronLeft,
+  ChevronRight,
   ImageIcon,
   LayoutDashboard,
   LayoutGrid,
@@ -117,18 +119,18 @@ export function AppSidebar() {
   const isDesktopCollapsed = collapsed;
   const showExpandedChrome = !isDesktopCollapsed || mobileOpen;
 
-  const handleSidebarToggle = React.useCallback(() => {
+  const handleCollapseToggle = React.useCallback(() => {
     if (
       typeof window !== "undefined" &&
       window.matchMedia("(max-width: 1023px)").matches
     ) {
-      setMobileOpen((o) => !o);
+      setMobileOpen(false);
     } else {
       setCollapsed((c) => !c);
     }
   }, [setCollapsed, setMobileOpen]);
 
-  const toggleAriaLabel = mobileOpen
+  const collapseAriaLabel = mobileOpen
     ? "Close menu"
     : collapsed
       ? "Expand sidebar"
@@ -145,61 +147,52 @@ export function AppSidebar() {
       >
         <header className="h-16 shrink-0 overflow-hidden border-b border-sidebar-border transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
           {showExpandedChrome ? (
-            <div className="flex h-full items-center justify-between gap-3 px-3">
-              <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 shadow-sm transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
-                  <img
-                    src={colanlogo.src}
-                    alt="Colan Infotech"
-                    className="h-8 w-auto shrink-0 object-contain"
-                  />
-                </div>
-                <div className="min-w-0 flex-1 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
-                  <p className="truncate text-sm font-semibold leading-tight tracking-tight">
-                    COLAN INFOTECH
-                  </p>
-                  <p className="truncate text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
-                    {workspaceSubtitle}
-                  </p>
-                </div>
+            <Link
+              href="/dashboard"
+              onClick={() => setMobileOpen(false)}
+              className="flex h-full items-center gap-3 px-3 transition-colors hover:bg-sidebar-accent/40"
+              title="Go to Dashboard"
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 shadow-sm transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
+                <img
+                  src={colanlogo.src}
+                  alt="Colan Infotech"
+                  className="h-8 w-auto shrink-0 object-contain"
+                />
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="group h-9 w-9 shrink-0 rounded-xl border border-transparent bg-transparent text-sidebar-foreground/80 transition-all duration-300 hover:border-white/10 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground"
-                onClick={handleSidebarToggle}
-                aria-label={toggleAriaLabel}
-              >
-                {mobileOpen ? (
-                  <X className="h-4 w-4 lg:hidden" />
-                ) : (
-                  <Menu className="h-4 w-4 transition-transform duration-300 group-hover:scale-105" />
-                )}
-              </Button>
-            </div>
+              <div className="min-w-0 flex-1 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
+                <p className="truncate text-sm font-semibold leading-tight tracking-tight">
+                  COLAN INFOTECH
+                </p>
+                <p className="truncate text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
+                  {workspaceSubtitle}
+                </p>
+              </div>
+            </Link>
           ) : (
             <div className="flex h-full items-center justify-center px-3">
-              <button
-                type="button"
+              <Link
+                href="/dashboard"
                 className="group flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 shadow-sm transition-all duration-300 hover:bg-sidebar-accent/80 hover:ring-white/20"
-                onClick={handleSidebarToggle}
-                aria-label={toggleAriaLabel}
-                title={toggleAriaLabel}
+                title="Go to Dashboard"
               >
                 <img
                   src={colanlogo.src}
                   alt="Colan Infotech"
                   className="h-6 w-auto shrink-0 object-contain object-center transition-transform duration-300 group-hover:scale-105"
                 />
-              </button>
+              </Link>
             </div>
           )}
         </header>
 
         <div
+          // className={cn(
+          //   "flex-1 overflow-x-visible overflow-y-auto transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          //   showExpandedChrome ? "px-3 py-4" : "px-2.5 py-4",
+          // )}
           className={cn(
-            "flex-1 overflow-x-visible overflow-y-auto transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "flex-1 overflow-visible transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
             showExpandedChrome ? "px-3 py-4" : "px-2.5 py-4",
           )}
         >
@@ -232,13 +225,45 @@ export function AppSidebar() {
         </div>
 
         <Separator className="bg-sidebar-border" />
-        <div
-          className={cn(
-            "shrink-0 overflow-hidden p-4 text-xs text-sidebar-foreground/60 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
-            showExpandedChrome ? "max-h-24 opacity-100" : "max-h-0 p-0 opacity-0",
-          )}
-        >
-          MongoDB · NextAuth · Cloudinary — coming soon
+        <div className="shrink-0">
+          <button
+            type="button"
+            onClick={handleCollapseToggle}
+            aria-label={collapseAriaLabel}
+            title={collapseAriaLabel}
+            className={cn(
+              "flex w-full items-center text-sm font-medium text-sidebar-foreground/80 transition-all duration-300 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+              showExpandedChrome
+                ? "justify-center gap-2 px-4 py-3.5"
+                : "justify-center px-2 py-3.5",
+            )}
+          >
+            {showExpandedChrome ? (
+              mobileOpen ? (
+                <>
+                  <span className="lg:hidden">Close</span>
+                  <X className="h-4 w-4 shrink-0 lg:hidden" />
+                  <span className="hidden lg:inline">Collapse</span>
+                  <ChevronLeft className="hidden h-4 w-4 shrink-0 lg:block" />
+                </>
+              ) : (
+                <>
+                  <span>Collapse</span>
+                  <ChevronLeft className="h-4 w-4 shrink-0" />
+                </>
+              )
+            ) : (
+              <ChevronRight className="h-4 w-4 shrink-0" />
+            )}
+          </button>
+          <div
+            className={cn(
+              "overflow-hidden px-4 pb-4 text-xs text-sidebar-foreground/60 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+              showExpandedChrome ? "max-h-24 opacity-100" : "max-h-0 p-0 opacity-0",
+            )}
+          >
+            {/* MongoDB · NextAuth · Cloudinary — coming soon */}
+          </div>
         </div>
       </aside>
 
