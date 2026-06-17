@@ -19,6 +19,8 @@ export type CompanyRole =
   | "Employee"
   | "Intern";
 
+export type Gender = "male" | "female" | "other";
+
 /** Workspace access role key (matches `company_roles.key` / app_users.appRole). */
 export type AppRole = string;
 
@@ -41,6 +43,7 @@ export interface Employee {
   name: string;
   team: TeamName;
   role: CompanyRole;
+  gender: Gender;
   bayNumber: string;
   imageUrl: string;
   /** Login email from the linked app user account. */

@@ -314,6 +314,7 @@ export default function AppUsersPage() {
         currentAddress: account.currentAddress.trim() || undefined,
         permanentAddress: account.permanentAddress.trim() || undefined,
         joinedDate: account.joinedDate.trim() || undefined,
+        gender: account.gender,
         bayNumber:
           account.bayNumber && account.bayNumber !== UNASSIGNED_SEAT
             ? account.bayNumber
@@ -382,6 +383,7 @@ export default function AppUsersPage() {
           currentAddress: form.currentAddress.trim() || undefined,
           permanentAddress: form.permanentAddress.trim() || undefined,
           joinedDate: form.joinedDate.trim() || undefined,
+          gender: form.gender,
           ...(form.imageUrl.trim() ? { imageUrl: form.imageUrl.trim() } : {}),
           ...(form.password ? { password: form.password } : {}),
         };
@@ -468,6 +470,7 @@ export default function AppUsersPage() {
           permanentAddress: userRecord.permanentAddress,
           joinedDate: userRecord.joinedDate,
           bayNumber: userRecord.bayNumber,
+          gender: (userRecord.gender as AppUserFormState["gender"]) ?? "male",
           imageUrl: userRecord.imageUrl,
         }),
       );

@@ -50,7 +50,6 @@ import {
   projectProgressPercent,
 } from "@/lib/project-ui";
 import { teamTabLabel } from "@/lib/team-utils";
-import { resolveWorkspaceRoleLabelForChrome } from "@/lib/workspace-label";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
 import type { AuthUser, Employee, Project, TeamName } from "@/types";
@@ -458,7 +457,6 @@ export default function DashboardPage() {
     dataSummary,
     teamNames,
     dataLoading,
-    sessionStatus,
   } = useAppState();
 
   const today = React.useMemo(() => new Date(), []);
@@ -591,65 +589,12 @@ export default function DashboardPage() {
     [scopedProjects, teamsInScope],
   );
 
-  const roleLabel = resolveWorkspaceRoleLabelForChrome(user?.appRole, {
-    sessionStatus,
-    dataLoading,
-  });
-  const workspaceSubtitle =
-    dashboardScope === "company"
-      ? "Here's your workspace performance overview."
-      : dashboardScope === "team"
-        ? `Here's the latest delivery view for ${teamTabLabel(user?.team ?? "your team")}.`
-        : "Here's your personal delivery overview.";
-
   const showDistributionChart = dashboardScope !== "personal" && teamDistribution.length > 1;
   const isInitialLoading =
     dataLoading && scopedProjects.length === 0 && employees.length === 0 && teamNames.length === 0;
 
   return (
     <div className="space-y-6">
-      <section>
-        <div className="relative overflow-hidden rounded-[28px] border border-border/70 bg-background/75 p-5 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-6">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.12),transparent_38%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.08),transparent_30%)]" />
-          <div className="relative space-y-4">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="rounded-full px-3 py-1 font-medium">
-                  {roleLabel} workspace
-                </Badge>
-                {user?.team && (
-                  <Badge variant="outline" className="rounded-full px-3 py-1 font-normal">
-                    {teamTabLabel(user.team)}
-                  </Badge>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-[2rem]">
-                  Welcome back, {user?.name ?? "there"}
-                </h1>
-                <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
-                  {workspaceSubtitle}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground sm:text-sm">
-                <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1.5">
-                  <BriefcaseBusiness className="h-4 w-4 text-primary" />
-                  {scopedProjects.length} visible projects
-                </span>
-                <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1.5">
-                  <CalendarClock className="h-4 w-4 text-amber-500" />
-                  {deadlinesThisWeek.length} due this week
-                </span>
-                <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1.5">
-                  <ShieldAlert className="h-4 w-4 text-rose-500" />
-                  {delayedProjects.length} delayed
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {dataSummary?.backend === "memory" && (
         <AlertStrip
           tone="warning"

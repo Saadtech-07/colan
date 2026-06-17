@@ -1,6 +1,13 @@
 import { ALL_SEAT_IDS, isValidSeatId } from "@/lib/seating-layout";
+import { employeeMatchesRoleFilter } from "@/lib/team-members-ui";
 import { teamTabLabel } from "@/lib/team-utils";
-import type { Employee, TeamName } from "@/types";
+import type { WorkspaceRole } from "@/models";
+import type { Employee, Gender, TeamName } from "@/types";
+
+export function employeeMatchesGenderFilter(emp: Employee, gender: string): boolean {
+  if (!gender || gender === "all") return true;
+  return (emp.gender ?? "male") === (gender as Gender);
+}
 
 const TEAM_PALETTE = [
   { bg: "bg-sky-500/20", border: "border-sky-500/50", text: "text-sky-700 dark:text-sky-300", dot: "bg-sky-500" },
@@ -65,14 +72,26 @@ export function employeeMatchesSearch(emp: Employee, query: string): boolean {
 
 export function filterEmployeesForSeating(
   employees: Employee[],
-  opts: { team?: string; search?: string; view?: "all" | "occupied" | "available" },
+  opts: {
+    team?: string;
+    search?: string;
+    view?: "all" | "occupied" | "available";
+    role?: string;
+    gender?: string;
+    workspaceRoles?: WorkspaceRole[];
+  },
 ): Employee[] {
-  const { team, search = "", view = "all" } = opts;
+  const { team, search = "", view = "all", role = "all", gender = "all", workspaceRoles = [] } =
+    opts;
   return employees.filter((emp) => {
     const onPlan = emp.bayNumber && isValidSeatId(emp.bayNumber);
     if (view === "occupied" && !onPlan) return false;
     if (view === "available" && onPlan) return false;
     if (team && team !== "All" && emp.team !== team) return false;
+    if (role && role !== "all" && !employeeMatchesRoleFilter(emp, role, workspaceRoles)) {
+      return false;
+    }
+    if (!employeeMatchesGenderFilter(emp, gender)) return false;
     if (search && !employeeMatchesSearch(emp, search)) return false;
     return true;
   });
@@ -80,14 +99,21 @@ export function filterEmployeesForSeating(
 
 export function highlightedSeatIds(
   employees: Employee[],
-  opts: { team?: string; search?: string },
+  opts: { team?: string; search?: string; role?: string; gender?: string },
+  workspaceRoles: WorkspaceRole[] = [],
 ): Set<string> | null {
-  const { team, search = "" } = opts;
-  if (!search.trim() && (!team || team === "All")) return null;
+  const { team, search = "", role = "all", gender = "all" } = opts;
+  const hasRoleFilter = role !== "all";
+  const hasGenderFilter = gender !== "all";
+  if (!search.trim() && (!team || team === "All") && !hasRoleFilter && !hasGenderFilter) {
+    return null;
+  }
   const ids = new Set<string>();
   for (const emp of employees) {
     if (!emp.bayNumber || !isValidSeatId(emp.bayNumber)) continue;
     if (team && team !== "All" && emp.team !== team) continue;
+    if (hasRoleFilter && !employeeMatchesRoleFilter(emp, role, workspaceRoles)) continue;
+    if (!employeeMatchesGenderFilter(emp, gender)) continue;
     if (search && !employeeMatchesSearch(emp, search)) continue;
     ids.add(emp.bayNumber);
   }

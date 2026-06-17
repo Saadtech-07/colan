@@ -192,6 +192,14 @@ async function safeSeedInsert(run: () => Promise<unknown>): Promise<void> {
   }
 }
 
+async function backfillEmployeeGender(db: Db) {
+  const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  await col.updateMany(
+    { gender: { $exists: false } },
+    { $set: { gender: "male", updatedAt: new Date() } },
+  );
+}
+
 async function repairProjectMemberIds(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
 ) {
@@ -262,6 +270,7 @@ async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof get
   await backfillProjectTeams(db);
   await backfillProjectMetadata(db);
   await repairProjectMemberIds(db);
+  await backfillEmployeeGender(db);
 
   const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
   if ((await det.countDocuments()) === 0 && (await em.countDocuments()) > 0) {
@@ -523,6 +532,7 @@ export async function updateEmployee(
       ...(employeePatch.name !== undefined ? { name: employeePatch.name } : {}),
       ...(employeePatch.team !== undefined ? { team: employeePatch.team } : {}),
       ...(employeePatch.role !== undefined ? { role: employeePatch.role } : {}),
+      ...(employeePatch.gender !== undefined ? { gender: employeePatch.gender } : {}),
       ...(employeePatch.bayNumber !== undefined
         ? { bayNumber: employeePatch.bayNumber }
         : {}),
@@ -551,6 +561,7 @@ export async function updateEmployee(
       ...(employeePatch.name !== undefined ? { name: employeePatch.name } : {}),
       ...(employeePatch.team !== undefined ? { team: employeePatch.team } : {}),
       ...(employeePatch.role !== undefined ? { role: employeePatch.role } : {}),
+      ...(employeePatch.gender !== undefined ? { gender: employeePatch.gender } : {}),
       ...(employeePatch.bayNumber !== undefined
         ? { bayNumber: employeePatch.bayNumber }
         : {}),
@@ -571,6 +582,7 @@ export async function updateEmployee(
   if (employeePatch.name !== undefined) updates.name = employeePatch.name;
   if (employeePatch.team !== undefined) updates.team = employeePatch.team;
   if (employeePatch.role !== undefined) updates.role = employeePatch.role;
+  if (employeePatch.gender !== undefined) updates.gender = employeePatch.gender;
   if (employeePatch.imageUrl !== undefined) updates.imageUrl = employeePatch.imageUrl;
   if (patch.bayNumber !== undefined && !patch.bayNumber.trim()) {
     updates.bayNumber = "";

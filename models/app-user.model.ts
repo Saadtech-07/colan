@@ -41,6 +41,7 @@ export type AppUserPublicDTO = {
   permanentAddress?: string;
   joinedDate?: string;
   bayNumber?: string;
+  gender?: string;
 };
 
 export function appUserDocToPublic(doc: AppUserDocument): AppUserPublicDTO {

@@ -27,6 +27,8 @@ const projectStatuses: [ProjectStatus, ...ProjectStatus[]] = [
 
 export const teamNameSchema = z.string().trim().min(1).max(80);
 
+export const genderSchema = z.enum(["male", "female", "other"]);
+
 
 
 export const teamCreateSchema = z.object({
@@ -117,6 +119,8 @@ export const employeeCreateSchema = z.object({
 
   role: z.enum(roleEnum),
 
+  gender: genderSchema.optional().default("male"),
+
   bayNumber: z.string().optional().default(""),
 
   imageUrl: z.string().optional().default(""),
@@ -159,6 +163,7 @@ export const appUserCreateSchema = z
     joinedDate: z.string().optional(),
     notes: z.string().optional(),
     bayNumber: z.string().optional(),
+    gender: genderSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (!roleNeedsEmployeeIdentity(value.appRole)) return;
@@ -211,6 +216,8 @@ export const appUserUpdateSchema = z.object({
   joinedDate: z.string().optional(),
 
   bayNumber: z.string().optional(),
+
+  gender: genderSchema.optional(),
 
 });
 
@@ -346,6 +353,7 @@ export const employeeUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   team: teamNameSchema.optional(),
   role: z.enum(roleEnum).optional(),
+  gender: genderSchema.optional(),
   bayNumber: z.string().optional(),
   imageUrl: z.string().optional(),
   directory: directoryPatchSchema.optional(),

@@ -56,10 +56,10 @@ export function SeatingAiCanvas({
     const { room, seats, pillars, walls } = layout;
 
     ctx.clearRect(0, 0, room.width, room.height);
-    ctx.fillStyle = "#12151f";
+    ctx.fillStyle = "#f8fafc";
     ctx.fillRect(0, 0, room.width, room.height);
 
-    ctx.fillStyle = "rgba(58, 64, 96, 0.3)";
+    ctx.fillStyle = "rgba(148, 163, 184, 0.35)";
     for (let gx = 20; gx < room.width; gx += 40) {
       for (let gy = 20; gy < room.height; gy += 40) {
         ctx.beginPath();
@@ -68,13 +68,13 @@ export function SeatingAiCanvas({
       }
     }
 
-    ctx.strokeStyle = "#2a3050";
+    ctx.strokeStyle = "#cbd5e1";
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, room.width - 2, room.height - 2);
 
     walls.forEach((wall) => {
-      ctx.strokeStyle = "#3a4060";
-      ctx.lineWidth = 8;
+      ctx.strokeStyle = "#94a3b8";
+      ctx.lineWidth = 6;
       ctx.lineCap = "round";
       ctx.beginPath();
       ctx.moveTo(wall.x1, wall.y1);
@@ -88,15 +88,15 @@ export function SeatingAiCanvas({
       const pw = Math.round(pillar.width);
       const ph = Math.round(pillar.height);
 
-      ctx.shadowColor = "rgba(0,0,0,0.7)";
-      ctx.shadowBlur = 14;
-      ctx.shadowOffsetX = 3;
-      ctx.shadowOffsetY = 3;
+      ctx.shadowColor = "rgba(15,23,42,0.08)";
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetX = 2;
+      ctx.shadowOffsetY = 2;
 
       const grad = ctx.createLinearGradient(px, py, px + pw, py + ph);
-      grad.addColorStop(0, "#6b4c2a");
-      grad.addColorStop(0.45, "#8a6535");
-      grad.addColorStop(1, "#4a3018");
+      grad.addColorStop(0, "#e2e8f0");
+      grad.addColorStop(0.5, "#cbd5e1");
+      grad.addColorStop(1, "#94a3b8");
       ctx.fillStyle = grad;
       ctx.beginPath();
       ctx.roundRect(px, py, pw, ph, 5);
@@ -107,14 +107,14 @@ export function SeatingAiCanvas({
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 0;
 
-      ctx.strokeStyle = "#b8924a";
+      ctx.strokeStyle = "#94a3b8";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.roundRect(px, py, pw, ph, 5);
       ctx.stroke();
 
       if (pillar.label) {
-        ctx.fillStyle = "#d4a855";
+        ctx.fillStyle = "#64748b";
         ctx.font = "bold 11px ui-monospace, monospace";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -125,12 +125,12 @@ export function SeatingAiCanvas({
     seats.forEach((seat) => {
       const occupant = occupancy.get(seat.label);
       const isSelected = selectedSeat === seat.label;
-      const fill = occupant ? "#1a3d2e" : isSelected ? "#2a3050" : "#1f2436";
-      const stroke = occupant ? "#34d399" : isSelected ? "#a78bfa" : "#3a4060";
-      const textColor = occupant ? "#6ee7b7" : "#8892b0";
+      const fill = occupant ? "#ecfdf5" : isSelected ? "#eff6ff" : "#ffffff";
+      const stroke = occupant ? "#34d399" : isSelected ? "#60a5fa" : "#cbd5e1";
+      const textColor = occupant ? "#047857" : "#64748b";
 
-      ctx.shadowColor = "rgba(0,0,0,0.4)";
-      ctx.shadowBlur = 8;
+      ctx.shadowColor = "rgba(15,23,42,0.08)";
+      ctx.shadowBlur = 6;
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 2;
 
@@ -151,20 +151,27 @@ export function SeatingAiCanvas({
       ctx.stroke();
 
       ctx.fillStyle = textColor;
-      ctx.font = occupant ? "600 10px ui-monospace, monospace" : "600 13px ui-monospace, monospace";
+      ctx.font = occupant ? "600 9px ui-monospace, monospace" : "600 12px ui-monospace, monospace";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       const label = occupant
         ? occupant.name.split(" ")[0]?.slice(0, 8) ?? seat.label
         : seat.label;
-      ctx.fillText(label, seat.x + SEAT_SIZE / 2, seat.y + SEAT_SIZE / 2);
+      ctx.fillText(label, seat.x + SEAT_SIZE / 2, seat.y + SEAT_SIZE / 2 - (occupant ? 4 : 0));
+
+      if (occupant) {
+        ctx.fillStyle = "#64748b";
+        ctx.font = "500 7px system-ui, sans-serif";
+        const teamLabel = occupant.team.length > 10 ? `${occupant.team.slice(0, 9)}…` : occupant.team;
+        ctx.fillText(teamLabel, seat.x + SEAT_SIZE / 2, seat.y + SEAT_SIZE / 2 + 10);
+      }
     });
 
     const legendY = room.height - 26;
     const items = [
-      { color: "#3a4060", label: "Empty" },
+      { color: "#cbd5e1", label: "Empty" },
       { color: "#34d399", label: "Occupied" },
-      { color: "#b8924a", label: "Pillar" },
+      { color: "#94a3b8", label: "Pillar" },
     ];
 
     ctx.font = "10px system-ui, sans-serif";
@@ -174,7 +181,7 @@ export function SeatingAiCanvas({
       ctx.beginPath();
       ctx.roundRect(lx, legendY, 10, 10, 2);
       ctx.fill();
-      ctx.fillStyle = "#4a5270";
+      ctx.fillStyle = "#64748b";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillText(label, lx + 14, legendY + 5);

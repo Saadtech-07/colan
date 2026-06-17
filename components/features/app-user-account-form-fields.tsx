@@ -18,7 +18,7 @@ import { addressesFromDirectory, directoryPatchFromAddresses } from "@/lib/emplo
 import { seatOccupancyMap } from "@/lib/seating-utils";
 import { generateTemporaryPassword } from "@/lib/password-utils";
 import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
-import type { AppRole, Employee, TeamName } from "@/types";
+import type { AppRole, Employee, Gender, TeamName } from "@/types";
 import type { WorkspaceRole } from "@/models";
 
 export const UNASSIGNED_SEAT = "__unassigned__";
@@ -36,6 +36,7 @@ export type AppUserAccountFormValues = {
   permanentAddress: string;
   joinedDate: string;
   bayNumber: string;
+  gender: Gender;
   imageUrl: string;
 };
 
@@ -53,6 +54,7 @@ export function buildDefaultAppUserForm(defaultTeam: TeamName): AppUserAccountFo
     permanentAddress: "",
     joinedDate: new Date().toISOString().split("T")[0],
     bayNumber: UNASSIGNED_SEAT,
+    gender: "male",
     imageUrl: "",
   };
 }
@@ -89,6 +91,7 @@ export function buildFormFromAppUserRecord(args: {
   permanentAddress?: string;
   joinedDate?: string;
   bayNumber?: string;
+  gender?: Gender;
   imageUrl?: string;
 }): AppUserAccountFormValues {
   const addresses = addressesFromDirectory({
@@ -110,6 +113,7 @@ export function buildFormFromAppUserRecord(args: {
     ...addresses,
     joinedDate: args.joinedDate ?? new Date().toISOString().split("T")[0],
     bayNumber: args.bayNumber?.trim() || UNASSIGNED_SEAT,
+    gender: args.gender ?? "male",
     imageUrl: args.imageUrl ?? "",
   };
 }
@@ -431,6 +435,26 @@ export function AppUserWorkspaceDetailsStep({
               className="h-11 rounded-2xl border-border/70"
             />
           </div>
+
+          {showEmployeeIdentityFields ? (
+            <div className="space-y-2">
+              <Label>Gender</Label>
+              <Select
+                value={values.gender}
+                onValueChange={(value) => onChange({ gender: value as Gender })}
+                disabled={disabled}
+              >
+                <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
+                  <SelectValue placeholder="Select gender" />
+                </SelectTrigger>
+                <SelectContent className="rounded-2xl border-border/60">
+                  <SelectItem value="male">Male</SelectItem>
+                  <SelectItem value="female">Female</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
           {showEmployeeIdentityFields ? (
             <div className="space-y-2 sm:col-span-2">

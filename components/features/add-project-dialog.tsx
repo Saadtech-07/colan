@@ -170,7 +170,7 @@ export function AddProjectDialog({ onCreate, teamOptions, lockedTeam }: Props) {
     >
       <DialogTrigger asChild>
         <Button className="h-11 rounded-2xl px-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-          Add Project
+          Create project
         </Button>
       </DialogTrigger>
       <DialogContent className="flex max-h-[92vh] w-[min(100vw-2rem,72rem)] max-w-none flex-col overflow-hidden border-border/70 bg-background/95 p-0 shadow-2xl backdrop-blur-xl sm:rounded-[28px]">

@@ -6,7 +6,7 @@ import type { Employee } from "@/types";
 import { cn } from "@/lib/utils";
 
 const SEAT_WIDTH = 108;
-const SEAT_HEIGHT = 132;
+const SEAT_HEIGHT = 140;
 const CELL_GAP = 10;
 const LABEL_WIDTH = 128;
 const PILLAR_WIDTH = SEAT_WIDTH * 2 + CELL_GAP;
@@ -40,7 +40,7 @@ function renderCell(
       return (
         <div
           key={key}
-          className="flex shrink-0 items-center justify-end pr-4 text-right text-[11px] font-bold uppercase tracking-[0.24em] text-sky-100/95"
+          className="flex shrink-0 items-center justify-end pr-4 text-right text-[11px] font-bold uppercase tracking-[0.24em] text-slate-500"
           style={{ width: LABEL_WIDTH, height: SEAT_HEIGHT }}
         >
           {cell.text}
@@ -50,11 +50,11 @@ function renderCell(
       return (
         <div
           key={key}
-          className="flex shrink-0 items-center justify-center rounded-[24px] border-2 border-zinc-700/90 bg-zinc-600 shadow-[inset_0_2px_10px_rgba(255,255,255,0.18),0_10px_22px_rgba(15,23,42,0.24)]"
+          className="flex shrink-0 items-center justify-center rounded-[22px] border-2 border-slate-300/80 bg-gradient-to-br from-slate-100 to-slate-200/90 shadow-sm"
           style={{ width: PILLAR_WIDTH, height: SEAT_HEIGHT }}
           aria-hidden
         >
-          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-zinc-100/90">
+          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">
             Pillar
           </span>
         </div>
@@ -63,7 +63,7 @@ function renderCell(
       return (
         <div
           key={key}
-          className="flex shrink-0 items-center justify-center rounded-[24px] border-2 border-sky-200/80 bg-sky-400/90 px-4 text-center text-[10px] font-bold uppercase leading-tight tracking-[0.2em] text-white shadow-md"
+          className="flex shrink-0 items-center justify-center rounded-[22px] border-2 border-sky-200 bg-sky-50 px-4 text-center text-[10px] font-bold uppercase leading-tight tracking-[0.2em] text-sky-700 shadow-sm"
           style={{ width: ENTRANCE_WIDTH, height: SEAT_HEIGHT }}
         >
           {cell.text}

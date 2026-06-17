@@ -1,5 +1,5 @@
 import type { ObjectId } from "mongodb";
-import type { CompanyRole, Employee, TeamName } from "@/types";
+import type { CompanyRole, Employee, Gender, TeamName } from "@/types";
 import { COLLECTIONS } from "./collections";
 
 export const EMPLOYEE_COLLECTION = COLLECTIONS.employees;
@@ -11,6 +11,7 @@ export type EmployeeDocument = {
   name: string;
   team: TeamName;
   role: CompanyRole;
+  gender?: Gender;
   bayNumber: string;
   imageUrl: string;
   email?: string;
@@ -34,6 +35,7 @@ export function employeeDocToDTO(doc: EmployeeDocument): Employee {
     name: doc.name,
     team: doc.team,
     role: doc.role,
+    gender: doc.gender ?? "male",
     bayNumber: doc.bayNumber,
     imageUrl: doc.imageUrl,
     email: doc.email?.trim() || undefined,
@@ -48,6 +50,7 @@ export function employeeInputToDocFields(
     name: input.name,
     team: input.team,
     role: input.role,
+    gender: input.gender ?? "male",
     bayNumber: input.bayNumber,
     imageUrl: input.imageUrl,
   };

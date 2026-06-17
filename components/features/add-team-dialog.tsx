@@ -63,7 +63,7 @@ export function AddTeamDialog({ onCreated }: Props) {
           className="h-11 gap-2 rounded-2xl border-border/70 bg-background/80 px-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
         >
           <Plus className="h-4 w-4" />
-          Add team
+          Create team
         </Button>
       </DialogTrigger>
       <DialogContent className="border-border/70 bg-background/95 shadow-2xl backdrop-blur-xl sm:max-w-lg sm:rounded-[28px]">

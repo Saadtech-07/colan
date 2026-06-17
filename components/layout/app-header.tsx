@@ -34,8 +34,8 @@ const PAGE_META: Array<{
   },
   {
     match: /^\/projects$/,
-    title: "Team-based projects",
-    subtitle: "Browse delivery work by squad and open a project to view details.",
+    title: "Team Projects",
+    subtitle: "",
   },
   {
     match: /^\/projects\/.+$/,
@@ -113,7 +113,7 @@ function getMobileViewportSnapshot() {
 
 export function AppHeader() {
   const { user, logout, sessionStatus, dataLoading } = useAppState();
-  const { collapsed, mobileOpen } = useSidebar();
+  const { mobileOpen } = useSidebar();
   const pathname = usePathname();
   const pageMeta = headerMetaForPath(pathname);
   const isMobileViewport = React.useSyncExternalStore(
@@ -121,7 +121,7 @@ export function AppHeader() {
     getMobileViewportSnapshot,
     () => false,
   );
-  const showPageMeta = isMobileViewport ? !mobileOpen : collapsed;
+  const showPageMeta = isMobileViewport ? !mobileOpen : true;
 
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
@@ -138,9 +138,11 @@ export function AppHeader() {
           <p className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg">
             {pageMeta.title}
           </p>
-          <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
-            {pageMeta.subtitle}
-          </p>
+          {pageMeta.subtitle ? (
+            <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
+              {pageMeta.subtitle}
+            </p>
+          ) : null}
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">

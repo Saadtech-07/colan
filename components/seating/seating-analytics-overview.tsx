@@ -83,7 +83,7 @@ export function SeatingAnalyticsOverview({ stats, compact = false }: Props) {
       <div
         className={cn(
           "grid auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-4",
-          compact && "gap-2.5",
+          compact && "gap-2 sm:grid-cols-2 lg:grid-cols-4",
         )}
       >
         {items.map((item) => {
@@ -93,27 +93,39 @@ export function SeatingAnalyticsOverview({ stats, compact = false }: Props) {
             <Card
               key={item.label}
               className={cn(
-                "h-full rounded-2xl border shadow-sm hover:shadow-sm",
+                "h-full border shadow-sm hover:shadow-sm",
+                compact ? "rounded-xl" : "rounded-2xl",
                 item.accentClassName,
               )}
             >
-              <CardContent className={cn("flex h-full flex-col", compact ? "p-3.5" : "p-4")}>
+              <CardContent
+                className={cn(
+                  "flex h-full items-center",
+                  compact ? "gap-2.5 p-2.5" : "flex-col p-4",
+                )}
+              >
                 <span
                   className={cn(
-                    "inline-flex h-10 w-10 items-center justify-center rounded-xl",
+                    "inline-flex shrink-0 items-center justify-center rounded-lg",
+                    compact ? "h-7 w-7" : "h-10 w-10 rounded-xl",
                     item.iconClassName,
                   )}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
                 </span>
-                <div className="mt-3 min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                <div className={cn("min-w-0", compact ? "flex-1" : "mt-3 w-full")}>
+                  <p
+                    className={cn(
+                      "font-semibold uppercase tracking-[0.16em] text-muted-foreground",
+                      compact ? "text-[10px]" : "text-[11px] tracking-[0.18em]",
+                    )}
+                  >
                     {item.label}
                   </p>
                   <p
                     className={cn(
-                      "mt-2 font-bold leading-none tabular-nums text-foreground",
-                      compact ? "text-2xl" : "text-3xl",
+                      "font-bold leading-none tabular-nums text-foreground",
+                      compact ? "mt-0.5 text-lg" : "mt-2 text-3xl",
                     )}
                   >
                     {item.value}

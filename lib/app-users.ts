@@ -177,6 +177,7 @@ export type AppUserCreateInput = {
   joinedDate?: string;
   notes?: string;
   bayNumber?: string;
+  gender?: import("@/types").Gender;
 };
 
 export type AppUserUpdateInput = {
@@ -194,6 +195,7 @@ export type AppUserUpdateInput = {
   permanentAddress?: string;
   joinedDate?: string;
   bayNumber?: string;
+  gender?: import("@/types").Gender;
 };
 
 export type AppUserProfileDTO = {
@@ -288,6 +290,10 @@ async function enrichAppUsersWithEmployeeProfiles(
       permanentAddress: directory.permanentAddress ?? "",
       joinedDate: directory.joinedDate ?? "",
       bayNumber: typeof employee.bayNumber === "string" ? employee.bayNumber : "",
+      gender:
+        typeof employee.gender === "string" && employee.gender.length > 0
+          ? employee.gender
+          : "male",
     };
   });
 }
@@ -426,6 +432,7 @@ export async function createAppUser(
     roleRegistry.get(normalizeAppRole(input.appRole))?.name ?? "Employee";
 
   const employeeObjectId = new ObjectId();
+  const nextGender = input.gender ?? "male";
   await employeeCol.insertOne({
     _id: employeeObjectId,
     employeeId,
@@ -433,6 +440,7 @@ export async function createAppUser(
     name: input.name.trim(),
     role: employeeRole,
     team,
+    gender: nextGender,
     imageUrl: input.imageUrl?.trim() ?? "",
     bayNumber,
     projectIds: [],
@@ -589,6 +597,7 @@ export async function updateAppUser(
     imageUrl: nextImageUrl,
     email: current.email,
     bayNumber: nextBayNumber,
+    ...(input.gender !== undefined ? { gender: input.gender } : {}),
     "directory.workEmail": nextWorkEmail,
     "directory.phone": nextPhone,
     "directory.location": nextDirectory.location ?? "",
@@ -618,6 +627,7 @@ export async function updateAppUser(
       name: nextName,
       role: employeeRole,
       team: nextTeam,
+      gender: input.gender ?? "male",
       imageUrl: nextImageUrl,
       bayNumber: nextBayNumber,
       projectIds: [],

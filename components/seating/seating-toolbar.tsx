@@ -13,11 +13,21 @@ import {
 import type { SeatingStats } from "@/lib/seating-utils";
 import { teamTabLabel } from "@/lib/team-utils";
 
+type RoleFilterOption = {
+  value: string;
+  label: string;
+};
+
 type Props = {
   search: string;
   onSearchChange: (v: string) => void;
   teamFilter: string;
   onTeamFilterChange: (v: string) => void;
+  roleFilter: string;
+  onRoleFilterChange: (v: string) => void;
+  roleFilterOptions: RoleFilterOption[];
+  genderFilter: string;
+  onGenderFilterChange: (v: string) => void;
   viewMode: "all" | "occupied" | "available";
   onViewModeChange: (v: "all" | "occupied" | "available") => void;
   teamNames: string[];
@@ -32,6 +42,11 @@ export function SeatingToolbar({
   onSearchChange,
   teamFilter,
   onTeamFilterChange,
+  roleFilter,
+  onRoleFilterChange,
+  roleFilterOptions,
+  genderFilter,
+  onGenderFilterChange,
   viewMode,
   onViewModeChange,
   teamNames,
@@ -65,6 +80,29 @@ export function SeatingToolbar({
                   {teamTabLabel(t)}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select value={roleFilter} onValueChange={onRoleFilterChange}>
+            <SelectTrigger className="h-10 w-[150px] rounded-xl border-border/70 bg-background">
+              <SelectValue placeholder="Role" />
+            </SelectTrigger>
+            <SelectContent className="rounded-2xl border-border/60">
+              {roleFilterOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label === "All" ? "All roles" : option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={genderFilter} onValueChange={onGenderFilterChange}>
+            <SelectTrigger className="h-10 w-[130px] rounded-xl border-border/70 bg-background">
+              <SelectValue placeholder="Gender" />
+            </SelectTrigger>
+            <SelectContent className="rounded-2xl border-border/60">
+              <SelectItem value="all">All genders</SelectItem>
+              <SelectItem value="male">Male</SelectItem>
+              <SelectItem value="female">Female</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
             </SelectContent>
           </Select>
           <Select value={viewMode} onValueChange={(v) => onViewModeChange(v as Props["viewMode"])}>

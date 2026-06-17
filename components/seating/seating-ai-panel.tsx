@@ -14,6 +14,10 @@ function formatAiError(error: unknown): string {
 }
 
 const EXAMPLE_PROMPTS = [
+  "add 4 pillars in A row",
+  "remove all G rows",
+  "remove the pillars in E rows",
+  "add 8 seats to B row",
   "20 seats in 4 rows of 5, with a pillar in the middle",
   "30 seats in a U-shape arrangement with an aisle in the center",
   "16 seats in 2 clusters of 8, facing each other with aisle between",
@@ -29,6 +33,9 @@ type Props = {
   suggestion: SeatingAiSuggestion | null;
   onGenerateText: (prompt: string) => Promise<void>;
   onBackToColan: () => void;
+  onApplyColanPrompt?: (prompt: string) => void;
+  colanPromptSummary?: string | null;
+  colanPromptWarnings?: string[];
 };
 
 export function SeatingAiPanel({
@@ -38,8 +45,12 @@ export function SeatingAiPanel({
   suggestion,
   onGenerateText,
   onBackToColan,
+  onApplyColanPrompt,
+  colanPromptSummary = null,
+  colanPromptWarnings = [],
 }: Props) {
   const [prompt, setPrompt] = React.useState("");
+  const [colanPrompt, setColanPrompt] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
 
   const runText = async () => {
@@ -91,6 +102,61 @@ export function SeatingAiPanel({
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to Colan arrangement
           </Button>
+        )}
+
+        {onApplyColanPrompt && (
+          <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-4">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-foreground">Edit Colan layout (prompt)</p>
+              <p className="text-xs text-muted-foreground">
+                Examples: add 4 pillars in A row · remove the pillars in E rows · remove all G rows.
+                Each prompt builds on your current layout.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="colan-layout-prompt">Describe the changes</Label>
+              <Textarea
+                id="colan-layout-prompt"
+                value={colanPrompt}
+                onChange={(event) => setColanPrompt(event.target.value)}
+                placeholder='e.g. "remove all G rows"'
+                className="min-h-[96px] rounded-2xl border-border/70"
+                disabled={loading}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-2xl"
+                disabled={loading || colanPrompt.trim().length < 5}
+                onClick={() => onApplyColanPrompt(colanPrompt)}
+              >
+                Apply changes
+              </Button>
+              <button
+                type="button"
+                className="text-xs font-medium text-muted-foreground underline-offset-4 hover:underline"
+                onClick={() => setColanPrompt("")}
+                disabled={loading}
+              >
+                Clear
+              </button>
+            </div>
+
+            {colanPromptSummary && (
+              <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+                {colanPromptSummary}
+              </div>
+            )}
+            {colanPromptWarnings.length > 0 && (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-900 dark:text-amber-200">
+                {colanPromptWarnings.map((warning) => (
+                  <p key={warning}>{warning}</p>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         <div className="space-y-3">

@@ -34,12 +34,12 @@ export function SeatingLayoutCanvas({
       className="w-max origin-top transition-transform duration-200 ease-out"
       style={{ transform: `scale(${zoom})` }}
     >
-      <div className="mx-auto min-w-max rounded-[34px] border border-violet-300/30 bg-gradient-to-br from-slate-100 via-white to-slate-50 p-6 shadow-[0_22px_54px_rgba(15,23,42,0.12)] dark:from-slate-900 dark:via-slate-950 dark:to-slate-900 sm:p-8 lg:p-10">
+      <div className="mx-auto min-w-max rounded-[34px] border border-slate-200/90 bg-gradient-to-br from-slate-50 via-white to-slate-100 p-6 shadow-[0_18px_40px_rgba(15,23,42,0.08)] sm:p-8 lg:p-10">
         <div className="space-y-8">
           {zones.map((zone) => (
             <section key={zone.id} className="w-max space-y-3" data-layout-zone={zone.id}>
               <div className="flex items-center gap-3">
-                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-violet-800 dark:text-violet-200">
+                <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-violet-700">
                   {zone.label}
                 </h3>
                 <span className="rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-0.5 text-xs text-muted-foreground">

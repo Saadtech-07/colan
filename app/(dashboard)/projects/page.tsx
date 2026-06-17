@@ -31,7 +31,6 @@ import { AddProjectDialog } from "@/components/features/add-project-dialog";
 import { AddTeamDialog } from "@/components/features/add-team-dialog";
 import { TeamActionsMenu } from "@/components/features/team-actions-menu";
 import { ProjectStatusSelect } from "@/components/features/project-status-select";
-import { LOADING_PRESETS } from "@/lib/loading-presets";
 import {
   formatProjectDate,
   projectPriority,
@@ -45,6 +44,7 @@ import {
   UNASSIGNED_PROJECTS_SECTION,
 } from "@/lib/project-teams";
 import { canViewAllWorkspaceProjects } from "@/lib/permissions";
+import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { teamTabLabel } from "@/lib/team-utils";
 import { cn } from "@/lib/utils";
 import { parseApiError, useAppState } from "@/providers/app-state";
@@ -223,93 +223,70 @@ export default function ProjectsPage() {
       onValueChange={isBroadViewer ? setTab : () => undefined}
       className="space-y-6"
     >
-      <section className="overflow-hidden rounded-[28px] border border-border/70 bg-background/75 p-5 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-6">
-        <div className="space-y-5">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-                <FolderKanban className="h-3.5 w-3.5" />
-                Team delivery workspace
-              </div>
-              <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-                Team Projects
-              </h2>
-              <p className="max-w-2xl text-sm text-muted-foreground">
-                Browse delivery work by squad, manage project status, and keep the portfolio
-                aligned with the same modern workspace styling as the dashboard.
-              </p>
-            </div>
+      {(isAdmin || access?.canManageProjects) && (
+        <div className="flex justify-end gap-2">
+          {isAdmin && <AddTeamDialog />}
+          {access?.canManageProjects && (
+            <AddProjectDialog
+              teamOptions={teamNames}
+              onCreate={async (input) =>
+                withLoading(
+                  "project-create",
+                  LOADING_PRESETS.creatingProject,
+                  () => addProject(input),
+                )
+              }
+              lockedTeam={access.role === "lead" ? user?.team : undefined}
+            />
+          )}
+        </div>
+      )}
 
-            {(isAdmin || access?.canManageProjects) && (
-              <div className="flex flex-wrap items-center gap-2">
-                {isAdmin && <AddTeamDialog />}
-                {access?.canManageProjects && (
-                  <AddProjectDialog
-                    teamOptions={teamNames}
-                    onCreate={async (input) =>
-                      withLoading(
-                        "project-create",
-                        LOADING_PRESETS.creatingProject,
-                        () => addProject(input),
-                      )
-                    }
-                    lockedTeam={access.role === "lead" ? user?.team : undefined}
-                  />
-                )}
-              </div>
-            )}
+      {isBroadViewer ? (
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="hidden h-10 w-10 shrink-0 rounded-2xl border-border/70 bg-background/80 shadow-sm sm:inline-flex"
+            onClick={() => tabRailRef.current?.scrollBy({ left: -220, behavior: "smooth" })}
+            aria-label="Scroll team filters left"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+
+          <div ref={tabRailRef} className="min-w-0 flex-1 overflow-x-auto scroll-smooth">
+            <TabsList className="inline-flex h-11 min-w-max flex-nowrap items-center gap-1 rounded-2xl border border-border/70 bg-muted/40 p-1 shadow-sm">
+              <TabsTrigger
+                value={ALL_TAB}
+                className="rounded-xl px-4 data-[state=active]:shadow-sm"
+              >
+                All teams
+              </TabsTrigger>
+              {teamsToShow.map((team) => (
+                <TabsTrigger
+                  key={team}
+                  value={team}
+                  className="rounded-xl px-4 data-[state=active]:shadow-sm"
+                >
+                  {teamTabLabel(team)}
+                </TabsTrigger>
+              ))}
+            </TabsList>
           </div>
 
-          {isBroadViewer ? (
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="hidden h-10 w-10 shrink-0 rounded-2xl border-border/70 bg-background/80 shadow-sm sm:inline-flex"
-                onClick={() => tabRailRef.current?.scrollBy({ left: -220, behavior: "smooth" })}
-                aria-label="Scroll team filters left"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-
-              <div
-                ref={tabRailRef}
-                className="min-w-0 flex-1 overflow-x-auto scroll-smooth"
-              >
-                <TabsList className="inline-flex h-11 min-w-max flex-nowrap items-center gap-1 rounded-2xl border border-border/70 bg-muted/40 p-1 shadow-sm">
-                  <TabsTrigger
-                    value={ALL_TAB}
-                    className="rounded-xl px-4 data-[state=active]:shadow-sm"
-                  >
-                    All teams
-                  </TabsTrigger>
-                  {teamsToShow.map((team) => (
-                    <TabsTrigger
-                      key={team}
-                      value={team}
-                      className="rounded-xl px-4 data-[state=active]:shadow-sm"
-                    >
-                      {teamTabLabel(team)}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                className="hidden h-10 w-10 shrink-0 rounded-2xl border-border/70 bg-background/80 shadow-sm sm:inline-flex"
-                onClick={() => tabRailRef.current?.scrollBy({ left: 220, behavior: "smooth" })}
-                aria-label="Scroll team filters right"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="hidden h-10 w-10 shrink-0 rounded-2xl border-border/70 bg-background/80 shadow-sm sm:inline-flex"
+            onClick={() => tabRailRef.current?.scrollBy({ left: 220, behavior: "smooth" })}
+            aria-label="Scroll team filters right"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
-      </section>
+      ) : null}
 
       {teamActionError && (
         <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-sm">
