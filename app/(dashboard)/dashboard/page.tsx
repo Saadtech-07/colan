@@ -59,7 +59,6 @@ type DashboardScope = "company" | "team" | "personal";
 type SummaryCardData = {
   title: string;
   value: string;
-  hint: string;
   icon: React.ComponentType<{ className?: string }>;
   toneClass: string;
 };
@@ -379,12 +378,6 @@ function buildSummaryCards(args: {
     {
       title: args.scope === "personal" ? "Assigned Projects" : "Active Projects",
       value: String(activeProjects),
-      hint:
-        args.scope === "company"
-          ? "Open delivery initiatives"
-          : args.scope === "team"
-            ? "Open work in your squad"
-            : "Projects currently on your plate",
       icon: BriefcaseBusiness,
       toneClass:
         "from-indigo-500/12 via-indigo-500/6 to-transparent text-indigo-600 dark:text-indigo-300",
@@ -392,7 +385,6 @@ function buildSummaryCards(args: {
     {
       title: "Completed Projects",
       value: String(completedProjects),
-      hint: "Closed in the current dashboard scope",
       icon: CheckCircle2,
       toneClass:
         "from-emerald-500/12 via-emerald-500/6 to-transparent text-emerald-600 dark:text-emerald-300",
@@ -400,10 +392,6 @@ function buildSummaryCards(args: {
     {
       title: "Pending Tasks",
       value: String(pendingTasks),
-      hint:
-        args.scope === "personal"
-          ? "Outstanding assigned work"
-          : "Open delivery assignments",
       icon: ListTodo,
       toneClass:
         "from-cyan-500/12 via-cyan-500/6 to-transparent text-cyan-600 dark:text-cyan-300",
@@ -411,7 +399,6 @@ function buildSummaryCards(args: {
     {
       title: "Deadlines This Week",
       value: String(args.deadlinesThisWeek),
-      hint: args.delayedCount > 0 ? `${args.delayedCount} delayed projects flagged` : "No delayed deadlines in scope",
       icon: CalendarClock,
       toneClass:
         "from-amber-500/12 via-amber-500/6 to-transparent text-amber-700 dark:text-amber-300",
@@ -422,10 +409,6 @@ function buildSummaryCards(args: {
     cards.splice(2, 0, {
       title: "Active Teams",
       value: String(args.teams.length),
-      hint:
-        args.scope === "company"
-          ? "Squads engaged this cycle"
-          : "Team spaces in your current view",
       icon: Workflow,
       toneClass:
         "from-violet-500/12 via-violet-500/6 to-transparent text-violet-600 dark:text-violet-300",
@@ -434,10 +417,6 @@ function buildSummaryCards(args: {
     cards.push({
       title: "Total Employees",
       value: String(args.employees.length),
-      hint:
-        args.scope === "company"
-          ? "Visible workspace headcount"
-          : "People in your assigned squad",
       icon: Users2,
       toneClass:
         "from-slate-500/12 via-slate-500/6 to-transparent text-slate-600 dark:text-slate-300",
@@ -892,11 +871,6 @@ export default function DashboardPage() {
           <section className="space-y-5">
             <SectionHeader
               title={dashboardScope === "personal" ? "Assigned projects" : "Team-based projects"}
-              description={
-                dashboardScope === "personal"
-                  ? "Projects currently assigned to your profile."
-                  : "Projects grouped by squad for a quick overview of team delivery work."
-              }
             />
 
             {dashboardScope === "personal" ? (
@@ -971,7 +945,7 @@ function SectionHeader({ title, description }: { title: string; description?: st
   );
 }
 
-function SummaryCard({ title, value, hint, icon: Icon, toneClass }: SummaryCardData) {
+function SummaryCard({ title, value, icon: Icon, toneClass }: SummaryCardData) {
   return (
     <Card className="group relative overflow-hidden border-border/70 bg-background/70 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_50px_-30px_rgba(15,23,42,0.45)]">
       <div className={cn("absolute inset-0 bg-gradient-to-br", toneClass)} />
@@ -985,7 +959,6 @@ function SummaryCard({ title, value, hint, icon: Icon, toneClass }: SummaryCardD
             <Icon className="h-5 w-5" />
           </div>
         </div>
-        <p className="mt-4 text-xs text-muted-foreground">{hint}</p>
       </CardContent>
     </Card>
   );

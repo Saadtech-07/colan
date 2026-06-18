@@ -9,7 +9,6 @@ import {
   MoreHorizontal,
   Pencil,
   Search,
-  Sparkles,
   Trash2,
   UploadCloud,
   X,
@@ -776,27 +775,10 @@ export default function GalleryPage() {
       <section className="overflow-hidden rounded-[32px] border border-border/60 bg-gradient-to-br from-background via-background to-muted/40 p-6 shadow-sm sm:p-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="space-y-4">
-            <Badge
-              variant="muted"
-              className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground"
-            >
-              Company showcase
-            </Badge>
-
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm text-primary">
-                <Sparkles className="h-4 w-4" />
-                Curated moments across culture, collaboration, and innovation
-              </div>
               <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
                 Gallery
               </h1>
-              <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                A premium visual wall for company culture, workspace life, learning
-                sessions, celebrations, and technical events. All existing gallery
-                actions remain intact, with a cleaner and more modern browsing
-                experience.
-              </p>
             </div>
 
             <div className="flex flex-wrap gap-3">

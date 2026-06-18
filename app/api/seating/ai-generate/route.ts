@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { ensureServerEnvLoaded, isOpenRouterConfigured } from "@/lib/openrouter-env";
+import { ensureServerEnvLoaded, isSeatingAiConfigured } from "@/lib/openai-env";
 import {
+  generateSeatingFromImage,
   generateSeatingFromTextPrompt,
   SeatingAiGenerationError,
 } from "@/lib/seating-ai-generator";
@@ -14,11 +15,11 @@ export const maxDuration = 120;
 export async function POST(req: Request) {
   ensureServerEnvLoaded();
 
-  if (!isOpenRouterConfigured()) {
+  if (!isSeatingAiConfigured()) {
     return NextResponse.json(
       {
         error:
-          "OPENROUTER_API_KEY is not configured. Add it to .env.local, save the file, and restart the dev server.",
+          "No AI provider configured. Add OPENROUTER_API_KEY to .env.local (recommended), save, and restart the dev server.",
       },
       { status: 503 },
     );
@@ -51,9 +52,17 @@ export async function POST(req: Request) {
   }
 
   try {
-    const suggestion = await generateSeatingFromTextPrompt({
-      prompt: parsed.data.prompt,
-    });
+    const suggestion =
+      parsed.data.mode === "text"
+        ? await generateSeatingFromTextPrompt({ prompt: parsed.data.prompt })
+        : await generateSeatingFromImage({
+            imageBytes: Buffer.from(
+              parsed.data.imageBase64.replace(/^data:[^;]+;base64,/, ""),
+              "base64",
+            ),
+            mimeType: parsed.data.mimeType,
+            notes: parsed.data.notes,
+          });
     return NextResponse.json(suggestion);
   } catch (error) {
     if (error instanceof SeatingAiGenerationError) {

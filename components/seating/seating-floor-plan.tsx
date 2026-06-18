@@ -4,7 +4,12 @@ import * as React from "react";
 import { SEATING_ROWS, type SeatingRowConfig } from "@/lib/seating-layout";
 import { SeatingAiCanvas } from "@/components/seating/seating-ai-canvas";
 import { SeatingLayoutCanvas } from "@/components/seating/seating-layout-canvas";
+import { SeatingFloor3DScene } from "@/components/seating/seating-3d";
+import { SeatingCabinRow } from "@/components/seating/seating-cabin-row";
+import { SeatingSideCabins } from "@/components/seating/seating-side-cabins";
 import { SeatingRowBlock } from "@/components/seating/seating-row-block";
+import { SeatingZoomFrame } from "@/components/seating/seating-zoom-frame";
+import { CABINS_AFTER_G_ROW, CABINS_BEFORE_A_ROW } from "@/lib/seating-cabins";
 import type { GeneratedSeatingLayout } from "@/lib/seating-layout-types";
 import type { SeatingAiZone } from "@/lib/seating-ai-types";
 import type { Employee } from "@/types";
@@ -24,6 +29,7 @@ type Props = {
   viewMode: "all" | "occupied" | "available";
   canAssign: boolean;
   zoom: number;
+  showCabins?: boolean;
   onSeatClick: (seatId: string) => void;
   onAssignSeat: (seatId: string, employeeId: string) => void;
 };
@@ -43,6 +49,7 @@ export function SeatingFloorPlan({
   viewMode,
   canAssign,
   zoom,
+  showCabins = true,
   onSeatClick,
   onAssignSeat,
 }: Props) {
@@ -74,21 +81,14 @@ export function SeatingFloorPlan({
 
   if (layoutMode && generatedLayout) {
     return (
-      <div
-        className="w-max origin-top transition-transform duration-200 ease-out"
-        style={{
-          width: generatedLayout.room.width * zoom,
-          height: generatedLayout.room.height * zoom,
-        }}
-      >
+      <SeatingZoomFrame zoom={zoom}>
         <SeatingAiCanvas
           layout={generatedLayout}
           occupancy={occupancy}
           selectedSeat={selectedSeat}
-          zoom={zoom}
           onSeatClick={onSeatClick}
         />
-      </div>
+      </SeatingZoomFrame>
     );
   }
 
@@ -108,38 +108,46 @@ export function SeatingFloorPlan({
   }
 
   return (
-    <div
-      className="w-max origin-top transition-transform duration-200 ease-out"
-      style={{ transform: `scale(${zoom})` }}
-    >
-      <div className="mx-auto min-w-max rounded-[34px] border border-slate-200/90 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.95),_rgba(248,250,252,0.9)_42%),linear-gradient(180deg,_#f8fafc_0%,_#f1f5f9_100%)] p-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_18px_40px_rgba(15,23,42,0.08)] sm:p-8 lg:p-10">
-        {rows.map((row) => (
-          <div key={row.key} data-row={row.key} className="w-max">
-            <SeatingRowBlock
-              top={row.top}
-              bottom={row.bottom}
-              occupancy={occupancy}
-              selectedSeat={selectedSeat}
-              highlightSeats={highlightSeats}
-              layoutMode={layoutMode}
-              layoutSeats={layoutSeats}
-              zoneBySeat={zoneBySeat}
-              dimSeat={dimSeat}
-              hideSeat={hideSeat}
-              canAssign={canAssign}
-              onSeatClick={onSeatClick}
-              onSeatDrop={(seatId) => {
-                if (dragEmployeeId) {
-                  onAssignSeat(seatId, dragEmployeeId);
-                  setDragEmployeeId(null);
-                }
-              }}
-              dragEmployeeId={dragEmployeeId}
-              onDragStart={(id) => setDragEmployeeId(id)}
-            />
+    <SeatingZoomFrame zoom={zoom} className="pb-6">
+      <SeatingFloor3DScene>
+        <div className="flex w-max items-start gap-3 overflow-visible">
+          {showCabins && <SeatingSideCabins />}
+          <div className="min-w-0">
+            {showCabins && (
+              <SeatingCabinRow cabins={CABINS_BEFORE_A_ROW} className="mb-6" />
+            )}
+            {rows.map((row) => (
+              <div key={row.key} data-row={row.key} className="w-max">
+                <SeatingRowBlock
+                  top={row.top}
+                  bottom={row.bottom}
+                  occupancy={occupancy}
+                  selectedSeat={selectedSeat}
+                  highlightSeats={highlightSeats}
+                  layoutMode={layoutMode}
+                  layoutSeats={layoutSeats}
+                  zoneBySeat={zoneBySeat}
+                  dimSeat={dimSeat}
+                  hideSeat={hideSeat}
+                  canAssign={canAssign}
+                  onSeatClick={onSeatClick}
+                  onSeatDrop={(seatId) => {
+                    if (dragEmployeeId) {
+                      onAssignSeat(seatId, dragEmployeeId);
+                      setDragEmployeeId(null);
+                    }
+                  }}
+                  dragEmployeeId={dragEmployeeId}
+                  onDragStart={(id) => setDragEmployeeId(id)}
+                />
+              </div>
+            ))}
+            {showCabins && (
+              <SeatingCabinRow cabins={CABINS_AFTER_G_ROW} className="mt-2" />
+            )}
           </div>
-        ))}
-      </div>
-    </div>
+        </div>
+      </SeatingFloor3DScene>
+    </SeatingZoomFrame>
   );
 }

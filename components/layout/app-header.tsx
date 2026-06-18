@@ -25,62 +25,50 @@ import { useAppState } from "@/providers/app-state";
 const PAGE_META: Array<{
   match: RegExp;
   title: string;
-  subtitle: string;
 }> = [
   {
     match: /^\/dashboard$/,
     title: "Dashboard",
-    subtitle: "Company-wide project pulse and team workload.",
   },
   {
     match: /^\/projects$/,
     title: "Team Projects",
-    subtitle: "",
   },
   {
     match: /^\/projects\/.+$/,
     title: "Project details",
-    subtitle: "Review delivery status, members, and timeline information.",
   },
   {
     match: /^\/team-members$/,
     title: "Team members",
-    subtitle: "Browse employees, roles, and workspace teams.",
   },
   {
     match: /^\/team-members\/.+$/,
     title: "Employee profile",
-    subtitle: "View employee details, assignments, and project access.",
   },
   {
     match: /^\/chat$/,
     title: "Messages",
-    subtitle: "Real-time chat with workspace admin or employees.",
   },
   {
     match: /^\/gallery$/,
     title: "Gallery",
-    subtitle: "Manage uploaded images and workspace highlights.",
   },
   {
     match: /^\/seating$/,
     title: "Seating arrangement",
-    subtitle: "Manage floor plan seating, assignments, and capacity.",
   },
   {
     match: /^\/roles$/,
     title: "Roles & access",
-    subtitle: "Manage workspace permissions and role policies.",
   },
   {
     match: /^\/app-users$/,
     title: "App account management",
-    subtitle: "Create and manage login accounts for the workspace.",
   },
   {
     match: /^\/profile-settings$/,
     title: "Profile settings",
-    subtitle: "Complete your first-login setup and secure your account.",
   },
 ];
 
@@ -88,7 +76,6 @@ function headerMetaForPath(pathname: string) {
   return (
     PAGE_META.find((item) => item.match.test(pathname)) ?? {
       title: "Colan Infotech",
-      subtitle: "Employee and project workspace.",
     }
   );
 }
@@ -138,11 +125,6 @@ export function AppHeader() {
           <p className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg">
             {pageMeta.title}
           </p>
-          {pageMeta.subtitle ? (
-            <p className="truncate text-[11px] text-muted-foreground sm:text-xs">
-              {pageMeta.subtitle}
-            </p>
-          ) : null}
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">

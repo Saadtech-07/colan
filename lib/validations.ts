@@ -333,10 +333,18 @@ export const bayAssignSchema = z.object({
 
 
 
-export const seatingAiGenerateSchema = z.object({
-  mode: z.literal("text"),
-  prompt: z.string().trim().min(10).max(2000),
-});
+export const seatingAiGenerateSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("text"),
+    prompt: z.string().trim().min(10).max(2000),
+  }),
+  z.object({
+    mode: z.literal("image"),
+    imageBase64: z.string().min(64).max(7_000_000),
+    mimeType: z.enum(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]),
+    notes: z.string().trim().max(500).optional(),
+  }),
+]);
 
 
 

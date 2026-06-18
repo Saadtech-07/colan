@@ -111,6 +111,17 @@ LAYOUT STRATEGIES:
 - "aisle": 80px gap between seat clusters.
 - "facing each other": Two row-groups facing each other with aisle between.
 
+AUDITORIUM / THEATER (two seat blocks + central aisle + optional stage):
+- Use COLUMN-SPLIT strategy. Count seats in LEFT block and RIGHT block separately.
+- Do NOT use this for labeled office rows (A-ROW, B-ROW) with pillars — those are office_grid.
+
+OFFICE GRID (labeled rows A-G with pillars, entrances, variable seat counts):
+- Preserve every pillar block, entrance block, and gap exactly as shown.
+- Each row may have a different seat count (e.g. A=32, B=24, D=18).
+- Use pillar elements in JSON (not seats) for gray PILLAR blocks.
+- Use pillar with label "ENTRANCE" for entrance areas.
+- Leave aisle/gap space empty between seat groups — do not place seats in gaps.
+
 VERIFICATION STEP (do this mentally before outputting):
 1. Count seats in JSON — must equal the number user requested exactly.
 2. For every seat s and every pillar p, confirm no overlap:
@@ -128,4 +139,41 @@ Requirements:
 - For U-shape: compute top = ceil(N/3), left = floor((N - top)/2), right = N - top - left. Verify sum = N.
 - All pillars must be perfectly grid-aligned (same x,y math as seats).
 - Return ONLY the JSON object, nothing else.`;
+}
+
+export function buildImageUserPrompt(notes?: string): string {
+  const userNotes = notes?.trim()
+    ? `User notes: ${notes.trim()}`
+    : "Recreate the full diagram exactly — include every seat block, aisle, and stage.";
+
+  return `Analyze the uploaded floor plan / seating diagram and generate seating layout JSON that matches it EXACTLY.
+
+Instructions:
+- Count EVERY seat icon in the diagram. Output EXACTLY that many seats in the JSON.
+- If the diagram shows TWO blocks of seats with a central aisle (auditorium/theater style), use COLUMN-SPLIT:
+  * left block cols + 80px aisle + right block cols
+  * same number of rows in both blocks
+  * do NOT merge into one solid grid
+- Detect rows, columns, aisles, central gaps, stage/podium/screen at the top, and pillars or walls.
+- If the image shows multiple layout options side by side, use the LEFT option unless user notes say otherwise.
+- Label rows A, B, C… from top to bottom. Number seats left to right within each row (A1, A2, … continuing across the aisle).
+- Room width/height must tightly fit all seats, walls, and stage with 60px padding — no huge empty canvas.
+- ${userNotes}
+
+Return ONLY the JSON object, nothing else.`;
+}
+
+export function buildImageLayoutFromDescriptionPrompt(description: string, notes?: string): string {
+  return `Generate seating layout JSON from this floor plan analysis:
+
+${description}
+
+${notes?.trim() ? `User notes: ${notes.trim()}` : ""}
+
+Requirements:
+- Match the EXACT total seat count and block structure from the analysis.
+- For auditorium/theater layouts with two blocks and a central aisle, use COLUMN-SPLIT (80px aisle between blocks).
+- Include stage/podium as a wall element if described.
+- Room size must fit content with 60px padding only — no oversized empty room.
+- Return ONLY the JSON object.`;
 }

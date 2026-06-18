@@ -4,16 +4,25 @@ export type SeatingLayoutPromptResult = {
   rows: SeatingRowConfig[];
   summary: string;
   warnings: string[];
+  /** Pairs of seat IDs whose occupants should be exchanged (preview only). */
+  occupancySwaps: Array<[string, string]>;
 };
 
 /** Each pillar block is ~2 seat widths on the floor plan. */
 const SEATS_PER_PILLAR = 2;
 
+/** Seat-equivalent width per band — matches A/C rows (16 seats) and B/E rows (12 seats + 2 pillars). */
+const STANDARD_BAND_WIDTH = 16;
+
 type PromptAction =
   | { type: "remove_row"; row: string }
-  | { type: "remove_pillars"; row: string }
+  | { type: "remove_pillars"; row: string; count?: number }
+  | { type: "remove_all_pillars"; rows?: string[] }
   | { type: "add_pillars"; row: string; count: number }
-  | { type: "add_seats"; row: string; count: number };
+  | { type: "add_seats"; row: string; count: number }
+  | { type: "create_row"; row: string; afterRow: string; beforeRow: string; pillars: number }
+  | { type: "replace_row"; targetRow: string; sourceRow: string }
+  | { type: "swap_row_seats"; rowA: string; rowB: string };
 
 function cloneRows(rows: SeatingRowConfig[]): SeatingRowConfig[] {
   return rows.map((row) => ({
@@ -124,6 +133,16 @@ function insertPillarsAtIndices(seatCells: FloorCell[], indices: number[]): Floo
   return result;
 }
 
+function countPillarsInBand(body: FloorCell[]): number {
+  return body.filter((cell) => cell.kind === "pillar").length;
+}
+
+function trimSeatsForPillars(seatCells: FloorCell[], seatsToRemove: number): FloorCell[] {
+  if (seatsToRemove <= 0) return seatCells;
+  const keep = Math.max(1, seatCells.length - seatsToRemove);
+  return seatCells.slice(0, keep);
+}
+
 function addPillarsToRow(row: SeatingRowConfig, count: number, warnings: string[]): SeatingRowConfig {
   const topBand = splitBand(row.top);
   const bottomBand = splitBand(row.bottom);
@@ -135,22 +154,42 @@ function addPillarsToRow(row: SeatingRowConfig, count: number, warnings: string[
     return row;
   }
 
-  const topPillars = Math.ceil(count / 2);
-  const bottomPillars = count - topPillars;
+  const topPillarsToAdd = Math.ceil(count / 2);
+  const bottomPillarsToAdd = count - topPillarsToAdd;
+  const topExistingPillars = countPillarsInBand(topBand.body);
+  const bottomExistingPillars = countPillarsInBand(bottomBand.body);
 
-  const topIndices = computePillarInsertIndices(topSeatCells.length, topPillars);
+  const topSeatsToRemove = topPillarsToAdd * SEATS_PER_PILLAR;
+  const bottomSeatsToRemove = bottomPillarsToAdd * SEATS_PER_PILLAR;
+
+  if (
+    topSeatCells.length - topSeatsToRemove < 1 ||
+    bottomSeatCells.length - bottomSeatsToRemove < 1
+  ) {
+    warnings.push(
+      `Row ${row.key} does not have enough seats to add ${count} pillar(s) (each pillar needs ${SEATS_PER_PILLAR} seats removed).`,
+    );
+    return row;
+  }
+
+  const topSeatsReduced = trimSeatsForPillars(topSeatCells, topSeatsToRemove);
+  const bottomSeatsReduced = trimSeatsForPillars(bottomSeatCells, bottomSeatsToRemove);
+  const topTotalPillars = topExistingPillars + topPillarsToAdd;
+  const bottomTotalPillars = bottomExistingPillars + bottomPillarsToAdd;
+
+  const topIndices = computePillarInsertIndices(topSeatsReduced.length, topTotalPillars);
   const bottomIndices =
-    topSeatCells.length === bottomSeatCells.length && topPillars === bottomPillars
+    topSeatsReduced.length === bottomSeatsReduced.length && topTotalPillars === bottomTotalPillars
       ? topIndices
-      : computePillarInsertIndices(bottomSeatCells.length, bottomPillars);
+      : computePillarInsertIndices(bottomSeatsReduced.length, bottomTotalPillars);
 
   const topBody = [
     ...extractFixedPrefix(topBand.body),
-    ...insertPillarsAtIndices(topSeatCells, topIndices),
+    ...insertPillarsAtIndices(topSeatsReduced, topIndices),
   ];
   const bottomBody = [
     ...extractFixedPrefix(bottomBand.body),
-    ...insertPillarsAtIndices(bottomSeatCells, bottomIndices),
+    ...insertPillarsAtIndices(bottomSeatsReduced, bottomIndices),
   ];
 
   const seatTotal = seatCountForRow({
@@ -159,8 +198,9 @@ function addPillarsToRow(row: SeatingRowConfig, count: number, warnings: string[
     bottom: [...bottomBand.label, ...bottomBody],
   });
 
+  const seatsRemoved = topSeatsToRemove + bottomSeatsToRemove;
   warnings.push(
-    `Added ${count} pillar(s) to row ${row.key} (aligned with Colan B/E column grid).`,
+    `Added ${count} pillar(s) to row ${row.key} and removed ${seatsRemoved} seat(s) to keep row width aligned (${seatTotal} seats remaining).`,
   );
 
   return {
@@ -206,6 +246,14 @@ function addSeatsToRow(row: SeatingRowConfig, count: number, warnings: string[])
 
 function seatNumber(seatId: string, prefix: string): number {
   return Number.parseInt(seatId.slice(prefix.length), 10);
+}
+
+function collectSeatIdsInFloorOrder(row: SeatingRowConfig): string[] {
+  const ids: string[] = [];
+  for (const cell of [...row.top, ...row.bottom]) {
+    if (cell.kind === "seat") ids.push(cell.id);
+  }
+  return ids;
 }
 
 function collectSeatIdsSorted(row: SeatingRowConfig): string[] {
@@ -283,6 +331,502 @@ function removePillarsAndFillWithSeats(
   };
 }
 
+function removeNPillarsFromRow(
+  row: SeatingRowConfig,
+  count: number,
+  warnings: string[],
+): SeatingRowConfig {
+  const topBand = splitBand(row.top);
+  const bottomBand = splitBand(row.bottom);
+  const prefix = row.key.toUpperCase();
+  let nextSeatNumber = maxSeatNumber(row) + 1;
+  let remaining = Math.max(1, count);
+
+  const replacePillarsInBand = (body: FloorCell[]): FloorCell[] => {
+    const result: FloorCell[] = [];
+    for (const cell of body) {
+      if (cell.kind === "pillar" && remaining > 0) {
+        result.push({ kind: "seat", id: `${prefix}${nextSeatNumber++}` });
+        result.push({ kind: "seat", id: `${prefix}${nextSeatNumber++}` });
+        remaining -= 1;
+      } else {
+        result.push(cell);
+      }
+    }
+    return result;
+  };
+
+  const topBody = replacePillarsInBand(topBand.body);
+  const bottomBody = replacePillarsInBand(bottomBand.body);
+  const removed = count - remaining;
+
+  if (removed === 0) {
+    warnings.push(`Row ${row.key} has no pillars to remove.`);
+    return row;
+  }
+
+  if (remaining > 0) {
+    warnings.push(
+      `Row ${row.key} only had ${removed} pillar(s); removed all available pillars.`,
+    );
+  }
+
+  const top = [...topBand.label, ...topBody];
+  const bottom = [...bottomBand.label, ...bottomBody];
+  const seatTotal = seatCountForRow({ ...row, top, bottom });
+
+  warnings.push(
+    `Removed ${removed} pillar(s) from row ${row.key} and added ${removed * SEATS_PER_PILLAR} seat(s) (${seatTotal} total).`,
+  );
+
+  return {
+    ...row,
+    seatCount: seatTotal,
+    top: updateRowLabel(top, seatTotal, row.key),
+    bottom,
+  };
+}
+
+function parseRowLettersFromList(text: string): string[] {
+  const found = text.match(/\b[a-z]\b/gi);
+  if (!found) return [];
+  return [...new Set(found.map((letter) => letter.toUpperCase()))];
+}
+
+function parseWordOrNumber(value: string): number {
+  const wordMap: Record<string, number> = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+  };
+  const lower = value.toLowerCase().trim();
+  if (wordMap[lower] !== undefined) return wordMap[lower];
+  const parsed = Number.parseInt(lower, 10);
+  return Number.isNaN(parsed) ? -1 : parsed;
+}
+
+function parsePillarCountFromPrompt(lower: string): number {
+  if (/\b(?:with\s+)?no\s+pillars?\b/.test(lower)) return 0;
+
+  const patterns = [
+    /\b(?:need|want|require)\s+(?:only\s+)?(\d+|one|two|three|four|five|six|seven|eight)\s+pillars?\b/,
+    /\b(?:with\s+)?(?:only\s+)?(\d+|one|two|three|four|five|six|seven|eight)\s+pillars?\s*(?:only)?\b/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = lower.match(pattern);
+    if (!match) continue;
+    const count = parseWordOrNumber(match[1]);
+    if (count >= 0) return count;
+  }
+
+  return 0;
+}
+
+function buildRowWithPillars(rowKey: string, pillarCount: number): SeatingRowConfig {
+  const prefix = rowKey.toUpperCase();
+  const topPillars = Math.ceil(pillarCount / 2);
+  const bottomPillars = pillarCount - topPillars;
+  const topSeatCount = STANDARD_BAND_WIDTH - topPillars * SEATS_PER_PILLAR;
+  const bottomSeatCount = STANDARD_BAND_WIDTH - bottomPillars * SEATS_PER_PILLAR;
+  const seatTotal = topSeatCount + bottomSeatCount;
+
+  const topSeatIds = Array.from({ length: topSeatCount }, (_, index) => `${prefix}${index + 1}`);
+  const bottomSeatIds = Array.from(
+    { length: bottomSeatCount },
+    (_, index) => `${prefix}${topSeatCount + index + 1}`,
+  );
+
+  const topIndices = computePillarInsertIndices(topSeatCount, topPillars);
+  const bottomIndices =
+    topSeatCount === bottomSeatCount && topPillars === bottomPillars
+      ? topIndices
+      : computePillarInsertIndices(bottomSeatCount, bottomPillars);
+
+  const topBody = insertPillarsAtIndices(toSeatCells(topSeatIds), topIndices);
+  const bottomBody = insertPillarsAtIndices(
+    toSeatCells([...bottomSeatIds].reverse()),
+    bottomIndices,
+  );
+
+  return {
+    key: prefix,
+    label: `${prefix}-ROW`,
+    seatCount: seatTotal,
+    top: [{ kind: "label", text: `${prefix}-ROW (${seatTotal})` }, ...topBody],
+    bottom: [{ kind: "label", text: "" }, ...bottomBody],
+  };
+}
+
+function insertRowBetween(
+  rows: SeatingRowConfig[],
+  newRow: SeatingRowConfig,
+  afterRow: string,
+  beforeRow: string,
+  warnings: string[],
+): SeatingRowConfig[] {
+  const afterIndex = rows.findIndex((row) => row.key.toUpperCase() === afterRow.toUpperCase());
+  if (afterIndex === -1) {
+    warnings.push(`Row ${afterRow} was not found — could not insert row ${newRow.key}.`);
+    return rows;
+  }
+
+  const beforeIndex = beforeRow
+    ? rows.findIndex((row) => row.key.toUpperCase() === beforeRow.toUpperCase())
+    : afterIndex + 1;
+
+  if (beforeRow && beforeIndex === -1) {
+    warnings.push(`Row ${beforeRow} was not found — could not insert row ${newRow.key}.`);
+    return rows;
+  }
+
+  if (beforeRow && beforeIndex !== afterIndex + 1) {
+    warnings.push(
+      `Row ${beforeRow} is not directly after row ${afterRow}; inserted ${newRow.key} after ${afterRow} anyway.`,
+    );
+  }
+
+  if (existingRowKeys(rows).has(newRow.key.toUpperCase())) {
+    warnings.push(`Row ${newRow.key} already exists.`);
+    return rows;
+  }
+
+  const next = [...rows];
+  next.splice(afterIndex + 1, 0, newRow);
+  return next;
+}
+
+function parseCreateRowActions(lower: string): PromptAction[] {
+  const actions: PromptAction[] = [];
+  const pillarCount = parsePillarCountFromPrompt(lower);
+  const pillarSegment =
+    String.raw`\s+with\s+(?:\d+|one|two|three|four|five|six|seven|eight)\s+pillars?`;
+  const optionalPillarSegment = `${pillarSegment}?`;
+
+  const patterns: RegExp[] = [
+    new RegExp(
+      String.raw`\b(?:create|add|insert)\s+(?:an?\s+)?([a-z])\s+rows?${optionalPillarSegment}\s+between\s+([a-z])\s+and\s+([a-z])(?:\s+rows?)?\b`,
+      "g",
+    ),
+    new RegExp(
+      String.raw`\b(?:create|add|insert)\s+(?:an?\s+)?([a-z])\s+rows?\s+between\s+([a-z])\s+and\s+([a-z])(?:\s+rows?)?${optionalPillarSegment}\b`,
+      "g",
+    ),
+    new RegExp(
+      String.raw`\b(?:create|add|insert)\s+(?:an?\s+)?([a-z])\s+rows?${optionalPillarSegment}\s+after\s+([a-z])(?:\s+rows?)?\b`,
+      "g",
+    ),
+    new RegExp(
+      String.raw`\b(?:create|add|insert)\s+(?:an?\s+)?([a-z])\s+rows?\s+after\s+([a-z])(?:\s+rows?)?${optionalPillarSegment}\b`,
+      "g",
+    ),
+  ];
+
+  for (const pattern of patterns.slice(0, 2)) {
+    for (const match of lower.matchAll(pattern)) {
+      actions.push({
+        type: "create_row",
+        row: match[1].toUpperCase(),
+        afterRow: match[2].toUpperCase(),
+        beforeRow: match[3].toUpperCase(),
+        pillars: pillarCount,
+      });
+    }
+    if (actions.length > 0) return actions;
+  }
+
+  for (const pattern of patterns.slice(2)) {
+    for (const match of lower.matchAll(pattern)) {
+      actions.push({
+        type: "create_row",
+        row: match[1].toUpperCase(),
+        afterRow: match[2].toUpperCase(),
+        beforeRow: "",
+        pillars: pillarCount,
+      });
+    }
+    if (actions.length > 0) return actions;
+  }
+
+  return actions;
+}
+
+function parseRowLetter(value: string): string {
+  return value.toUpperCase();
+}
+
+type BodyPatternCell =
+  | { kind: "seat" }
+  | { kind: "pillar" }
+  | { kind: "entrance"; text: string }
+  | { kind: "gap" };
+
+function extractBodyPattern(body: FloorCell[]): BodyPatternCell[] {
+  return body
+    .filter((cell) => cell.kind !== "label")
+    .map((cell) => {
+      if (cell.kind === "seat") return { kind: "seat" as const };
+      if (cell.kind === "pillar") return { kind: "pillar" as const };
+      if (cell.kind === "entrance") return { kind: "entrance", text: cell.text };
+      return { kind: "gap" as const };
+    });
+}
+
+function rebuildBandBody(pattern: BodyPatternCell[], seatIds: string[]): FloorCell[] {
+  let seatIndex = 0;
+  const body: FloorCell[] = [];
+
+  for (const cell of pattern) {
+    if (cell.kind === "seat") {
+      body.push({ kind: "seat", id: seatIds[seatIndex] ?? `?${seatIndex}` });
+      seatIndex += 1;
+    } else if (cell.kind === "pillar") {
+      body.push({ kind: "pillar" });
+    } else if (cell.kind === "entrance") {
+      body.push({ kind: "entrance", text: cell.text });
+    } else {
+      body.push({ kind: "gap" });
+    }
+  }
+
+  return body;
+}
+
+function countPillarsInRow(row: SeatingRowConfig): number {
+  return [...row.top, ...row.bottom].filter((cell) => cell.kind === "pillar").length;
+}
+
+function cloneRowLayoutFromSource(source: SeatingRowConfig, targetKey: string): SeatingRowConfig {
+  const prefix = targetKey.toUpperCase();
+  const topBand = splitBand(source.top);
+  const bottomBand = splitBand(source.bottom);
+  const topPattern = extractBodyPattern(topBand.body);
+  const bottomPattern = extractBodyPattern(bottomBand.body);
+  const topSeatCount = topPattern.filter((cell) => cell.kind === "seat").length;
+  const bottomSeatCount = bottomPattern.filter((cell) => cell.kind === "seat").length;
+  const seatTotal = topSeatCount + bottomSeatCount;
+
+  const allSeatIds = Array.from({ length: seatTotal }, (_, index) => `${prefix}${index + 1}`);
+  const topBody = rebuildBandBody(topPattern, allSeatIds.slice(0, topSeatCount));
+  const bottomBody = rebuildBandBody(bottomPattern, allSeatIds.slice(topSeatCount));
+
+  return {
+    key: prefix,
+    label: `${prefix}-ROW`,
+    seatCount: seatTotal,
+    top: [{ kind: "label", text: `${prefix}-ROW (${seatTotal})` }, ...topBody],
+    bottom: [{ kind: "label", text: "" }, ...bottomBody],
+  };
+}
+
+function replaceRowWithSource(
+  rows: SeatingRowConfig[],
+  targetRow: string,
+  sourceRow: string,
+  warnings: string[],
+): SeatingRowConfig[] {
+  const target = targetRow.toUpperCase();
+  const source = sourceRow.toUpperCase();
+
+  if (target === source) {
+    warnings.push(`Row ${target} already uses its own layout.`);
+    return rows;
+  }
+
+  const sourceRowConfig = rows.find((row) => row.key.toUpperCase() === source);
+  const targetExists = rows.some((row) => row.key.toUpperCase() === target);
+
+  if (!sourceRowConfig) {
+    warnings.push(`Source row ${source} was not found.`);
+    return rows;
+  }
+  if (!targetExists) {
+    warnings.push(`Target row ${target} was not found.`);
+    return rows;
+  }
+
+  const cloned = cloneRowLayoutFromSource(sourceRowConfig, target);
+  const pillars = countPillarsInRow(cloned);
+  warnings.push(
+    `Replaced row ${target} with the layout from row ${source} (${cloned.seatCount} seats${pillars > 0 ? `, ${pillars} pillar(s)` : ""}).`,
+  );
+
+  return rows.map((row) => (row.key.toUpperCase() === target ? cloned : row));
+}
+
+function swapRowLayoutsAndSeats(
+  rows: SeatingRowConfig[],
+  rowA: string,
+  rowB: string,
+  warnings: string[],
+  occupancySwaps: Array<[string, string]>,
+): SeatingRowConfig[] {
+  const a = rowA.toUpperCase();
+  const b = rowB.toUpperCase();
+
+  if (a === b) {
+    warnings.push(`Row ${a} cannot be swapped with itself.`);
+    return rows;
+  }
+
+  const configA = rows.find((row) => row.key.toUpperCase() === a);
+  const configB = rows.find((row) => row.key.toUpperCase() === b);
+
+  if (!configA) {
+    warnings.push(`Row ${a} was not found.`);
+    return rows;
+  }
+  if (!configB) {
+    warnings.push(`Row ${b} was not found.`);
+    return rows;
+  }
+
+  const aSeats = collectSeatIdsInFloorOrder(configA);
+  const bSeats = collectSeatIdsInFloorOrder(configB);
+  const pairCount = Math.min(aSeats.length, bSeats.length);
+
+  for (let index = 0; index < pairCount; index += 1) {
+    occupancySwaps.push([aSeats[index], bSeats[index]]);
+  }
+
+  const newA = cloneRowLayoutFromSource(configB, a);
+  const newB = cloneRowLayoutFromSource(configA, b);
+
+  warnings.push(
+    `Swapped row ${a} and row ${b} — layouts exchanged and ${pairCount} seat assignment(s) switched.`,
+  );
+
+  if (aSeats.length !== bSeats.length) {
+    warnings.push(
+      `Rows ${a} (${aSeats.length} seats) and ${b} (${bSeats.length} seats) had different seat counts; only the first ${pairCount} positions were paired.`,
+    );
+  }
+
+  return rows.map((row) => {
+    if (row.key.toUpperCase() === a) return newA;
+    if (row.key.toUpperCase() === b) return newB;
+    return row;
+  });
+}
+
+/** Apply seat-ID swap pairs on top of a base occupancy map (for prompt preview). */
+export function applyOccupancySwaps<T>(
+  base: Map<string, T>,
+  swaps: Array<[string, string]>,
+): Map<string, T> {
+  const next = new Map(base);
+  for (const [seatA, seatB] of swaps) {
+    const valueA = next.get(seatA);
+    const valueB = next.get(seatB);
+    if (valueA) next.set(seatB, valueA);
+    else next.delete(seatB);
+    if (valueB) next.set(seatA, valueB);
+    else next.delete(seatA);
+  }
+  return next;
+}
+
+function parseSwapRowSeatsActions(lower: string): PromptAction[] {
+  const actions: PromptAction[] = [];
+  const patterns = [
+    /\b(?:replace|switch|exchange)\s+(?:the\s+)?([a-z])\s+rows?\s+with\s+(?:the\s+)?([a-z])\s+rows?\b/g,
+    /\bswap\s+(?:the\s+)?([a-z])\s+and\s+([a-z])\s+rows?\b/g,
+    /\bswap\s+(?:the\s+)?rows?\s+([a-z])\s+and\s+([a-z])\b/g,
+    /\bexchange\s+(?:the\s+)?([a-z])\s+and\s+([a-z])\s+rows?\b/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of lower.matchAll(pattern)) {
+      actions.push({
+        type: "swap_row_seats",
+        rowA: parseRowLetter(match[1]),
+        rowB: parseRowLetter(match[2]),
+      });
+    }
+  }
+
+  return actions;
+}
+
+function parseReplaceRowActions(lower: string): PromptAction[] {
+  const actions: PromptAction[] = [];
+  const patterns = [
+    /\b(?:copy|convert)\s+(?:the\s+)?([a-z])\s+rows?\s+(?:to|into)\s+(?:the\s+)?([a-z])\s+rows?\b/g,
+    /\bmake\s+(?:the\s+)?([a-z])\s+rows?\s+(?:like|same\s+as|match)\s+(?:the\s+)?([a-z])\s+rows?\b/g,
+    /\b(?:update|change)\s+(?:the\s+)?([a-z])\s+rows?\s+to\s+match\s+(?:the\s+)?([a-z])\s+rows?\b/g,
+    /\b(?:copy|update|change)\s+(?:the\s+)?([a-z])\s+rows?\s+(?:layout|structure)\s+(?:with|from|to)\s+(?:the\s+)?([a-z])\s+rows?\b/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of lower.matchAll(pattern)) {
+      actions.push({
+        type: "replace_row",
+        targetRow: parseRowLetter(match[1]),
+        sourceRow: parseRowLetter(match[2]),
+      });
+    }
+  }
+
+  return actions;
+}
+
+function parseRemoveRowActions(lower: string): PromptAction[] {
+  const actions: PromptAction[] = [];
+  const seen = new Set<string>();
+
+  const patterns = [
+    /\b(?:remove|delete|drop)\s+(?:all\s+)?(?:the\s+)?(?:rows?\s+)?(.+?)\s+rows?\b/g,
+    /\b(?:remove|delete|drop)\s+(?:the\s+)?rows?\s+([a-z][\w\s,&]*)\b/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of lower.matchAll(pattern)) {
+      const phrase = match[0];
+      if (/\bpillars?\b/.test(phrase)) continue;
+      for (const row of parseRowLettersFromList(match[1])) {
+        if (seen.has(row)) continue;
+        seen.add(row);
+        actions.push({ type: "remove_row", row });
+      }
+    }
+  }
+
+  return actions;
+}
+
+function parseRemoveAllPillarsActions(lower: string): PromptAction[] {
+  const specificMatch = lower.match(
+    /\bremove\s+all\s+(?:the\s+)?pillars?\s+from\s+(?:the\s+)?([a-z][\w\s,&]*)\s+rows?\b/,
+  );
+  if (specificMatch) {
+    const rows = parseRowLettersFromList(specificMatch[1]);
+    if (rows.length > 0) {
+      return [{ type: "remove_all_pillars", rows }];
+    }
+  }
+
+  const globalPatterns = [
+    /\bremove\s+all\s+(?:the\s+)?pillars?\s+from\s+(?:the\s+)?rows?\b/,
+    /\bremove\s+all\s+(?:the\s+)?pillars?\b/,
+    /\bremove\s+pillars?\s+from\s+all\s+rows?\b/,
+    /\bremove\s+pillars?\s+from\s+(?:the\s+)?rows?\b/,
+    /\bclear\s+all\s+(?:the\s+)?pillars?\b/,
+  ];
+
+  for (const pattern of globalPatterns) {
+    if (pattern.test(lower)) {
+      return [{ type: "remove_all_pillars" }];
+    }
+  }
+
+  return [];
+}
+
 function parsePromptActions(prompt: string): PromptAction[] {
   const lower = prompt.toLowerCase();
   const actions: PromptAction[] = [];
@@ -294,6 +838,14 @@ function parsePromptActions(prompt: string): PromptAction[] {
     seen.add(key);
     actions.push(action);
   };
+
+  for (const action of parseRemoveAllPillarsActions(lower)) {
+    push(action);
+  }
+
+  if (actions.some((action) => action.type === "remove_all_pillars")) {
+    return actions;
+  }
 
   for (const match of lower.matchAll(
     /\badd\s+(\d+)\s+pillars?\s+(?:in|to)\s+(?:the\s+)?([a-z])\s+rows?\b/g,
@@ -314,9 +866,13 @@ function parsePromptActions(prompt: string): PromptAction[] {
   }
 
   for (const match of lower.matchAll(
-    /\bremove\s+all\s+([a-z])\s+rows?\b/g,
+    /\bremove\s+(\d+)\s+pillars?\s+(?:in|from)\s+(?:the\s+)?([a-z])\s+rows?\b/g,
   )) {
-    push({ type: "remove_row", row: match[1].toUpperCase() });
+    push({
+      type: "remove_pillars",
+      row: match[2].toUpperCase(),
+      count: Number.parseInt(match[1], 10),
+    });
   }
 
   for (const match of lower.matchAll(
@@ -337,13 +893,27 @@ function parsePromptActions(prompt: string): PromptAction[] {
     push({ type: "remove_pillars", row: match[1].toUpperCase() });
   }
 
-  for (const match of lower.matchAll(
-    /\bremove\s+(?:the\s+)?([a-z])\s+rows?\b/g,
-  )) {
-    const row = match[1].toUpperCase();
-    if (actions.some((action) => action.type === "remove_pillars" && action.row === row)) continue;
-    if (actions.some((action) => action.type === "add_pillars" && action.row === row)) continue;
-    push({ type: "remove_row", row });
+  for (const action of parseSwapRowSeatsActions(lower)) {
+    push(action);
+  }
+
+  for (const action of parseReplaceRowActions(lower)) {
+    push(action);
+  }
+
+  for (const action of parseCreateRowActions(lower)) {
+    push(action);
+  }
+
+  for (const action of parseRemoveRowActions(lower)) {
+    if (action.type !== "remove_row") continue;
+    if (actions.some((entry) => entry.type === "remove_pillars" && entry.row === action.row)) {
+      continue;
+    }
+    if (actions.some((entry) => entry.type === "add_pillars" && entry.row === action.row)) {
+      continue;
+    }
+    push(action);
   }
 
   return actions;
@@ -353,6 +923,7 @@ function applyAction(
   rows: SeatingRowConfig[],
   action: PromptAction,
   warnings: string[],
+  occupancySwaps: Array<[string, string]>,
 ): SeatingRowConfig[] {
   const known = existingRowKeys(rows);
 
@@ -365,6 +936,41 @@ function applyAction(
     return rows.filter((row) => row.key.toUpperCase() !== action.row);
   }
 
+  if (action.type === "create_row") {
+    const newRow = buildRowWithPillars(action.row, action.pillars);
+    const pillarNote =
+      action.pillars > 0
+        ? ` with ${action.pillars} pillar(s)`
+        : " with no pillars";
+    warnings.push(
+      `Created row ${action.row}${pillarNote} (${newRow.seatCount} seats, width aligned with other rows).`,
+    );
+    return insertRowBetween(rows, newRow, action.afterRow, action.beforeRow, warnings);
+  }
+
+  if (action.type === "replace_row") {
+    return replaceRowWithSource(rows, action.targetRow, action.sourceRow, warnings);
+  }
+
+  if (action.type === "swap_row_seats") {
+    return swapRowLayoutsAndSeats(rows, action.rowA, action.rowB, warnings, occupancySwaps);
+  }
+
+  if (action.type === "remove_all_pillars") {
+    const targetRows = action.rows ? new Set(action.rows.map((row) => row.toUpperCase())) : null;
+
+    return rows.map((entry) => {
+      if (targetRows && !targetRows.has(entry.key.toUpperCase())) {
+        return entry;
+      }
+
+      const pillarCount = countPillarsInRow(entry);
+      if (pillarCount === 0) return entry;
+
+      return removePillarsAndFillWithSeats(entry, warnings);
+    });
+  }
+
   const row = rows.find((entry) => entry.key.toUpperCase() === action.row);
   if (!row) {
     warnings.push(`Row ${action.row} was not found.`);
@@ -374,7 +980,9 @@ function applyAction(
   if (action.type === "remove_pillars") {
     return rows.map((entry) =>
       entry.key.toUpperCase() === action.row
-        ? removePillarsAndFillWithSeats(entry, warnings)
+        ? action.count !== undefined
+          ? removeNPillarsFromRow(entry, action.count, warnings)
+          : removePillarsAndFillWithSeats(entry, warnings)
         : entry,
     );
   }
@@ -400,11 +1008,13 @@ export function applySeatingLayoutPrompt(
 ): SeatingLayoutPromptResult {
   const normalized = prompt.trim();
   const warnings: string[] = [];
+  const occupancySwaps: Array<[string, string]> = [];
   if (!normalized) {
     return {
       rows: cloneRows(baseRows),
       summary: "No changes applied.",
       warnings,
+      occupancySwaps,
     };
   }
 
@@ -414,14 +1024,15 @@ export function applySeatingLayoutPrompt(
       rows: cloneRows(baseRows),
       summary: "No layout changes were applied.",
       warnings: [
-        'Could not parse that prompt. Try: "add 4 pillars in A row", "remove the pillars in E rows", or "remove all G rows".',
+        'Could not parse that prompt. Try: "add X row with 4 pillars between A and B row", "remove all pillars from the rows", "replace A row with B row", or "remove G and E rows".',
       ],
+      occupancySwaps,
     };
   }
 
   let rows = cloneRows(baseRows);
   for (const action of actions) {
-    rows = applyAction(rows, action, warnings);
+    rows = applyAction(rows, action, warnings, occupancySwaps);
   }
 
   const totalSeats = rows.reduce((sum, row) => sum + seatCountForRow(row), 0);
@@ -430,5 +1041,6 @@ export function applySeatingLayoutPrompt(
     rows,
     summary: `Applied ${actions.length} change(s) — ${totalSeats} seats across ${rows.length} row(s).`,
     warnings,
+    occupancySwaps,
   };
 }

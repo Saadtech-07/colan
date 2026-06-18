@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, Download, Expand, LayoutGrid, Sparkles } from "lucide-react";
+import { ArrowLeft, Download, Expand, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SeatingAnalyticsOverview } from "@/components/seating/seating-analytics-overview";
 import { SeatingAssignmentDialog } from "@/components/seating/seating-assignment-dialog";
@@ -21,7 +21,7 @@ import {
   isAiLayoutMode,
 } from "@/lib/seating-ai-preview";
 import { ALL_SEAT_IDS, SEATING_ROWS, type SeatingRowConfig } from "@/lib/seating-layout";
-import { applySeatingLayoutPrompt } from "@/lib/seating-layout-prompt";
+import { applyOccupancySwaps, applySeatingLayoutPrompt } from "@/lib/seating-layout-prompt";
 import { jsPDF } from "jspdf";
 import {
   computeSeatingStats,
@@ -43,7 +43,7 @@ export default function SeatingPage() {
   const [roleFilter, setRoleFilter] = React.useState("all");
   const [genderFilter, setGenderFilter] = React.useState("all");
   const [viewMode, setViewMode] = React.useState<"all" | "occupied" | "available">("all");
-  const [zoom, setZoom] = React.useState(0.88);
+  const [zoom, setZoom] = React.useState(0.95);
   const [fullscreenOpen, setFullscreenOpen] = React.useState(false);
   const [selectedSeat, setSelectedSeat] = React.useState<string | null>(null);
   const [dialogSeat, setDialogSeat] = React.useState<string | null>(null);
@@ -54,6 +54,9 @@ export default function SeatingPage() {
   const [promptRows, setPromptRows] = React.useState<SeatingRowConfig[] | null>(null);
   const [promptSummary, setPromptSummary] = React.useState<string | null>(null);
   const [promptWarnings, setPromptWarnings] = React.useState<string[]>([]);
+  const [promptOccupancySwaps, setPromptOccupancySwaps] = React.useState<
+    Array<[string, string]>
+  >([]);
 
   const saving = isLoadingKey("seating-assign");
   const aiGenerating = isLoadingKey("seating-ai-generate");
@@ -93,8 +96,20 @@ export default function SeatingPage() {
       return buildLayoutCanvasOccupancy(employees, layoutSeats);
     }
     if (colanFrozen) return colanOccupancySnapshot;
+    if (promptLayoutActive && promptOccupancySwaps.length > 0) {
+      return applyOccupancySwaps(savedOccupancy, promptOccupancySwaps);
+    }
     return savedOccupancy;
-  }, [layoutMode, layoutSeats, colanFrozen, colanOccupancySnapshot, savedOccupancy, employees]);
+  }, [
+    layoutMode,
+    layoutSeats,
+    colanFrozen,
+    colanOccupancySnapshot,
+    savedOccupancy,
+    employees,
+    promptLayoutActive,
+    promptOccupancySwaps,
+  ]);
 
   const stats = React.useMemo(() => {
     if (layoutMode && layoutSeats) {
@@ -162,6 +177,7 @@ export default function SeatingPage() {
     setPromptRows(null);
     setPromptSummary(null);
     setPromptWarnings([]);
+    setPromptOccupancySwaps([]);
   }, []);
 
   const exitColanFrozenView = React.useCallback(() => {
@@ -203,6 +219,7 @@ export default function SeatingPage() {
       setPromptRows(result.rows);
       setPromptSummary(result.summary);
       setPromptWarnings(result.warnings);
+      setPromptOccupancySwaps((previous) => [...previous, ...result.occupancySwaps]);
       setSelectedSeat(null);
       setDialogSeat(null);
       setAiSuggestion(null);
@@ -223,6 +240,20 @@ export default function SeatingPage() {
   const handleGenerateText = async (prompt: string) => {
     await withLoading("seating-ai-generate", LOADING_PRESETS.seatingAiGenerate, async () => {
       const suggestion = await requestSeatingAiGeneration({ mode: "text", prompt });
+      freezeColanForLayout();
+      setAiSuggestion(suggestion);
+      setAiPanelOpen(true);
+      setViewMode("all");
+    });
+  };
+
+  const handleGenerateImage = async (payload: {
+    imageBase64: string;
+    mimeType: string;
+    notes?: string;
+  }) => {
+    await withLoading("seating-ai-generate", LOADING_PRESETS.seatingAiGenerate, async () => {
+      const suggestion = await requestSeatingAiGeneration({ mode: "image", ...payload });
       freezeColanForLayout();
       setAiSuggestion(suggestion);
       setAiPanelOpen(true);
@@ -330,17 +361,9 @@ export default function SeatingPage() {
       <section className="shrink-0 overflow-hidden rounded-[28px] border border-border/70 bg-background/80 p-5 shadow-sm backdrop-blur-xl sm:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Workspace
-            </div>
             <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
               Seating arrangement
             </h1>
-            <p className="max-w-2xl text-sm text-muted-foreground">
-              Assign bays on the floor plan. Scroll the map to view all rows; use zoom and filters
-              to focus on teams or availability.
-            </p>
           </div>
 
           {canAssign && (
@@ -421,6 +444,7 @@ export default function SeatingPage() {
           loading={aiGenerating}
           suggestion={aiSuggestion}
           onGenerateText={handleGenerateText}
+          onGenerateImage={handleGenerateImage}
           onBackToColan={clearAiLayout}
           onApplyColanPrompt={handleApplyColanPrompt}
           colanPromptSummary={promptSummary}
@@ -502,7 +526,7 @@ export default function SeatingPage() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)] scroll-smooth">
-          <div className="flex min-h-full items-start justify-center p-4 sm:p-6">
+          <div className="flex min-h-full min-w-full items-center justify-center p-4 sm:p-6">
             <SeatingFloorPlan
               occupancy={displayOccupancy}
               selectedSeat={selectedSeat}
@@ -518,6 +542,7 @@ export default function SeatingPage() {
               viewMode={viewMode}
               canAssign={canAssign && !promptLayoutActive}
               zoom={zoom}
+              showCabins={!layoutMode}
               onSeatClick={handleSeatClick}
               onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}
             />
@@ -556,6 +581,7 @@ export default function SeatingPage() {
         viewMode={viewMode}
         canAssign={canAssign && !promptLayoutActive}
         zoom={zoom}
+        showCabins={!layoutMode}
         onZoomChange={setZoom}
         onSeatClick={handleSeatClick}
         onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}

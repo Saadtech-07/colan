@@ -556,22 +556,10 @@ export default function AppUsersPage() {
       <section className="overflow-hidden rounded-[32px] border border-border/60 bg-gradient-to-br from-background via-background to-muted/40 p-6 shadow-sm sm:p-8">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="space-y-4">
-            <Badge
-              variant="muted"
-              className="rounded-full border border-border/60 bg-background/80 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground"
-            >
-              Workspace access
-            </Badge>
-
             <div className="space-y-2">
               <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
                 App Users
               </h1>
-              <p className="max-w-2xl text-sm leading-6 text-muted-foreground sm:text-base">
-                Manage login accounts, workspace roles, and employee access in a cleaner
-                admin workspace. Open the account modal whenever you need to create or
-                edit access.
-              </p>
             </div>
 
             <div className="flex flex-wrap gap-3">

@@ -28,6 +28,7 @@ type Props = {
   viewMode: "all" | "occupied" | "available";
   canAssign: boolean;
   zoom: number;
+  showCabins?: boolean;
   onZoomChange: (zoom: number) => void;
   onSeatClick: (seatId: string) => void;
   onAssignSeat: (seatId: string, employeeId: string) => void;
@@ -113,7 +114,7 @@ export function SeatingFloorPlanFullscreen({
       </header>
 
       <div className="min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)] scroll-smooth">
-        <div className="flex min-h-full items-start justify-center p-4 sm:p-8">
+        <div className="flex min-h-full min-w-full items-center justify-center p-4 sm:p-8">
           <SeatingFloorPlan zoom={zoom} {...floorPlanProps} />
         </div>
       </div>

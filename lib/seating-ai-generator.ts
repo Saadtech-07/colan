@@ -1,16 +1,40 @@
 import "server-only";
 
-import { SYSTEM_PROMPT, buildUserPrompt } from "@/lib/seating-layout-prompts";
+import { parseRobustJsonObject } from "@/lib/seating-ai-json";
+import {
+  getOpenRouterApiKey,
+  getSeatingAiProviderOrder,
+  type SeatingAiProvider,
+} from "@/lib/openai-env";
+import { SYSTEM_PROMPT, buildImageLayoutFromDescriptionPrompt, buildImageUserPrompt, buildUserPrompt } from "@/lib/seating-layout-prompts";
+import {
+  buildAuditoriumLayout,
+  parseLayoutDescription,
+} from "@/lib/seating-auditorium-layout";
+import {
+  convertRowsToAiLayout,
+  parseOfficeLayoutDescription,
+  resolveOfficeRowsFromImage,
+} from "@/lib/seating-rows-to-ai-layout";
+import { normalizeAiLayoutGeometry } from "@/lib/seating-layout-normalize";
 import type { AILayoutSchema, GeneratedSeatingLayout } from "@/lib/seating-layout-types";
 import type { SeatingAiSuggestion } from "@/lib/seating-ai-types";
+import {
+  getTextModelFallbacks,
+  getVisionModelFallbacks,
+  runOpenAiTextGeneration,
+  runOpenAiVisionLayoutGeneration,
+  OpenAiInferenceError,
+} from "@/services/openai-inference";
+import {
+  getOpenRouterTextModelFallbacks,
+  getOpenRouterVisionModelFallbacks,
+  runOpenRouterImageDescribe,
+  runOpenRouterTextGeneration,
+  runOpenRouterVisionLayoutGeneration,
+} from "@/services/openrouter-inference";
 
-const OPENROUTER_MODELS = [
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "google/gemma-4-31b-it:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "openai/gpt-oss-20b:free",
-  "nousresearch/hermes-3-llama-3.1-405b:free",
-] as const;
+const LAYOUT_MAX_TOKENS = 8192;
 
 export class SeatingAiGenerationError extends Error {
   status: number;
@@ -22,13 +46,111 @@ export class SeatingAiGenerationError extends Error {
   }
 }
 
-function extractJSON(raw: string): string {
-  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) return fenceMatch[1].trim();
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start !== -1 && end !== -1 && end > start) return raw.slice(start, end + 1).trim();
-  return raw.trim();
+function isBillingOrQuotaError(error: unknown): boolean {
+  if (!(error instanceof OpenAiInferenceError)) return false;
+  if (error.status === 429 || error.status === 402) return true;
+  const message = `${error.message} ${error.details ?? ""}`.toLowerCase();
+  return /quota|billing|insufficient|exceeded your current/.test(message);
+}
+
+function formatFinalGenerationError(lastError: string, vision: boolean): never {
+  const quotaHit = /quota|billing|exceeded your current/i.test(lastError);
+  const hasOpenRouter = getOpenRouterApiKey() !== null;
+
+  if (!hasOpenRouter && quotaHit) {
+    throw new SeatingAiGenerationError(
+      "OpenAI API quota exceeded. Set OPENROUTER_API_KEY in .env.local (and SEATING_AI_PROVIDER=openrouter), then restart the dev server.",
+      429,
+    );
+  }
+
+  if (!hasOpenRouter) {
+    throw new SeatingAiGenerationError(
+      "OPENROUTER_API_KEY is not configured. Add it to .env.local and restart the dev server.",
+      503,
+    );
+  }
+
+  if (quotaHit) {
+    throw new SeatingAiGenerationError(
+      `AI provider quota exceeded. ${lastError} Check credits at https://openrouter.ai/settings/credits`,
+      429,
+    );
+  }
+
+  throw new SeatingAiGenerationError(
+    `All ${vision ? "vision " : ""}models failed. Last error: ${lastError}`,
+    500,
+  );
+}
+
+function visionModelsForProvider(provider: SeatingAiProvider): string[] {
+  return provider === "openrouter"
+    ? getOpenRouterVisionModelFallbacks()
+    : getVisionModelFallbacks();
+}
+
+function textModelsForProvider(provider: SeatingAiProvider): string[] {
+  return provider === "openrouter" ? getOpenRouterTextModelFallbacks() : getTextModelFallbacks();
+}
+
+async function callVisionModel(
+  provider: SeatingAiProvider,
+  model: string,
+  imageBytes: Buffer,
+  mimeType: string,
+  userText: string,
+  jsonMode: boolean,
+): Promise<string> {
+  if (provider === "openrouter") {
+    return runOpenRouterVisionLayoutGeneration({
+      model,
+      system: SYSTEM_PROMPT,
+      userText,
+      imageBytes,
+      mimeType,
+      temperature: 0.1,
+      maxNewTokens: LAYOUT_MAX_TOKENS,
+      jsonMode,
+    });
+  }
+
+  return runOpenAiVisionLayoutGeneration({
+    model,
+    system: SYSTEM_PROMPT,
+    userText,
+    imageBytes,
+    mimeType,
+    temperature: 0.1,
+    maxNewTokens: LAYOUT_MAX_TOKENS,
+    jsonMode,
+  });
+}
+
+async function callTextModel(
+  provider: SeatingAiProvider,
+  model: string,
+  prompt: string,
+): Promise<string> {
+  if (provider === "openrouter") {
+    return runOpenRouterTextGeneration({
+      model,
+      system: SYSTEM_PROMPT,
+      user: buildUserPrompt(prompt),
+      temperature: 0.1,
+      maxNewTokens: LAYOUT_MAX_TOKENS,
+      jsonMode: true,
+    });
+  }
+
+  return runOpenAiTextGeneration({
+    model,
+    system: SYSTEM_PROMPT,
+    user: buildUserPrompt(prompt),
+    temperature: 0.1,
+    maxNewTokens: LAYOUT_MAX_TOKENS,
+    jsonMode: true,
+  });
 }
 
 function labelBySeatId(layout: GeneratedSeatingLayout): Map<string, string> {
@@ -77,91 +199,249 @@ function layoutToSuggestion(
   };
 }
 
-async function callOpenRouterModel(
-  apiKey: string,
-  model: string,
-  prompt: string,
-): Promise<{ aiData: AILayoutSchema; raw: string }> {
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "HTTP-Referer": process.env.NEXTAUTH_URL ?? "http://localhost:3000",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserPrompt(prompt) },
-      ],
-      temperature: 0.1,
-      max_tokens: 4096,
-    }),
-  });
-
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}));
-    const message =
-      (errBody as { error?: { message?: string } })?.error?.message ?? res.statusText;
-    throw new SeatingAiGenerationError(message, res.status);
+function parseAiLayout(raw: string, modelLabel: string): AILayoutSchema {
+  let aiData: AILayoutSchema;
+  try {
+    aiData = parseRobustJsonObject<AILayoutSchema>(raw);
+  } catch {
+    throw new SeatingAiGenerationError(
+      `Failed to parse layout JSON from ${modelLabel}.`,
+    );
   }
 
-  const data = await res.json();
-  const raw: string = data?.choices?.[0]?.message?.content ?? "";
-  if (!raw) {
-    throw new SeatingAiGenerationError(`Empty response from ${model}`);
-  }
-
-  const text = extractJSON(raw);
-  const aiData: AILayoutSchema = JSON.parse(text);
   if (!aiData.seats?.length) {
-    throw new SeatingAiGenerationError(`No seats in layout returned by ${model}`);
+    throw new SeatingAiGenerationError(`No seats in layout returned by ${modelLabel}`);
   }
 
-  return { aiData, raw };
+  if (!aiData.room) aiData.room = { width: 1200, height: 800 };
+  if (!aiData.pillars) aiData.pillars = [];
+  if (!aiData.walls) aiData.walls = [];
+
+  return normalizeAiLayoutGeometry(aiData);
+}
+
+function buildLayoutFromAiData(
+  aiData: AILayoutSchema,
+  sourceLabel: string,
+): GeneratedSeatingLayout {
+  return {
+    id: `layout_${Date.now()}`,
+    name: aiData.name || "Office Layout",
+    prompt: sourceLabel,
+    room: aiData.room,
+    seats: aiData.seats.map((seat) => ({ ...seat, status: "empty" as const })),
+    pillars: aiData.pillars || [],
+    walls: aiData.walls || [],
+    groups: aiData.groups || [],
+    createdAt: new Date().toISOString(),
+  };
+}
+
+async function generateTextRaw(prompt: string): Promise<{ raw: string; modelLabel: string }> {
+  const providers = getSeatingAiProviderOrder();
+  let lastError = "";
+
+  for (const provider of providers) {
+    for (const model of textModelsForProvider(provider)) {
+      try {
+        const raw = await callTextModel(provider, model, prompt);
+        return { raw, modelLabel: `${provider}/${model}` };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : `Unknown ${provider} error`;
+        console.warn(`Seating AI ${provider}/${model} text failed: ${lastError}`);
+        if (provider === "openai" && isBillingOrQuotaError(error)) break;
+      }
+    }
+    if (provider === "openai" && isBillingOrQuotaError(new Error(lastError))) {
+      console.warn("Skipping OpenAI — quota or billing limit.");
+    }
+  }
+
+  formatFinalGenerationError(lastError, false);
+}
+
+async function describeLayoutImage(
+  imageBytes: Buffer,
+  mimeType: string,
+  notes?: string,
+): Promise<string> {
+  const providers = getSeatingAiProviderOrder();
+  let lastError = "";
+
+  for (const provider of providers) {
+    for (const model of visionModelsForProvider(provider)) {
+      try {
+        if (provider === "openrouter") {
+          return await runOpenRouterImageDescribe({
+            model,
+            imageBytes,
+            mimeType,
+            notes,
+          });
+        }
+
+        const raw = await runOpenAiVisionLayoutGeneration({
+          model,
+          system:
+            "You analyze office seating floor plan images. Reply with a precise plain-text description only — no JSON.",
+          userText: `Describe this seating layout diagram with exact seat counts, rows, aisles, and podium position.
+${notes?.trim() ? `User notes: ${notes.trim()}` : ""}`,
+          imageBytes,
+          mimeType,
+          temperature: 0.1,
+          maxNewTokens: 1500,
+          jsonMode: false,
+        });
+        return raw;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : `Unknown ${provider} describe error`;
+        console.warn(`Seating AI ${provider}/${model} image describe failed: ${lastError}`);
+        if (provider === "openai" && isBillingOrQuotaError(error)) break;
+      }
+    }
+  }
+
+  throw new Error(lastError || "Could not describe layout image.");
+}
+
+async function generateVisionDirect(input: {
+  imageBytes: Buffer;
+  mimeType: string;
+  notes?: string;
+}): Promise<{ aiData: AILayoutSchema; modelLabel: string }> {
+  const providers = getSeatingAiProviderOrder();
+  const userText = buildImageUserPrompt(input.notes);
+  let lastParseError = "";
+  let lastApiError = "";
+
+  for (const provider of providers) {
+    for (const model of visionModelsForProvider(provider)) {
+      for (const jsonMode of [true, false] as const) {
+        const modelLabel = `${provider}/${model}${jsonMode ? "" : " (no-json-mode)"}`;
+        try {
+          const raw = await callVisionModel(
+            provider,
+            model,
+            input.imageBytes,
+            input.mimeType,
+            userText,
+            jsonMode,
+          );
+          try {
+            const aiData = parseAiLayout(raw, modelLabel);
+            return { aiData, modelLabel };
+          } catch (parseError) {
+            lastParseError =
+              parseError instanceof Error ? parseError.message : "JSON parse failed";
+            console.warn(`Seating AI ${modelLabel} returned unparseable layout: ${lastParseError}`);
+            console.warn(`Raw snippet: ${raw.slice(0, 300)}`);
+          }
+        } catch (apiError) {
+          lastApiError = apiError instanceof Error ? apiError.message : "Vision API failed";
+          console.warn(`Seating AI ${modelLabel} API failed: ${lastApiError}`);
+          if (provider === "openai" && isBillingOrQuotaError(apiError)) break;
+        }
+      }
+    }
+  }
+
+  throw new Error(lastParseError || lastApiError || "Direct vision layout generation failed.");
+}
+
+async function generateVisionTwoPhase(input: {
+  imageBytes: Buffer;
+  mimeType: string;
+  notes?: string;
+}): Promise<{ aiData: AILayoutSchema; modelLabel: string }> {
+  const description = await describeLayoutImage(
+    input.imageBytes,
+    input.mimeType,
+    input.notes,
+  );
+
+  const parsed = parseLayoutDescription(description);
+  const officeParsed = parseOfficeLayoutDescription(description);
+
+  if (officeParsed.layoutType === "office_grid") {
+    const rows = resolveOfficeRowsFromImage(description);
+    if (rows) {
+      const layout = convertRowsToAiLayout(rows, "Uploaded office floor plan");
+      return {
+        aiData: normalizeAiLayoutGeometry(layout),
+        modelLabel: "openrouter/office-grid-builder",
+      };
+    }
+  }
+
+  if (parsed.layoutType === "auditorium" && officeParsed.layoutType !== "office_grid") {
+    const auditorium = buildAuditoriumLayout(parsed);
+    if (auditorium && auditorium.seats.length > 0) {
+      return {
+        aiData: normalizeAiLayoutGeometry(auditorium),
+        modelLabel: "openrouter/auditorium-builder",
+      };
+    }
+  }
+
+  const prompt = buildImageLayoutFromDescriptionPrompt(description, input.notes);
+
+  const { raw, modelLabel } = await generateTextRaw(prompt);
+  const aiData = parseAiLayout(raw, `${modelLabel} (two-phase)`);
+  return { aiData, modelLabel: `${modelLabel} (two-phase)` };
+}
+
+async function generateVisionLayout(input: {
+  imageBytes: Buffer;
+  mimeType: string;
+  notes?: string;
+}): Promise<{ aiData: AILayoutSchema; modelLabel: string }> {
+  try {
+    return await generateVisionTwoPhase(input);
+  } catch (twoPhaseError) {
+    console.warn(
+      "Two-phase image layout failed; trying direct vision.",
+      twoPhaseError instanceof Error ? twoPhaseError.message : twoPhaseError,
+    );
+  }
+
+  try {
+    return await generateVisionDirect(input);
+  } catch (directError) {
+    const message =
+      directError instanceof Error ? directError.message : "Vision layout generation failed";
+    throw new SeatingAiGenerationError(
+      `Failed to parse layout JSON from the AI vision response. ${message}`,
+    );
+  }
 }
 
 export async function generateSeatingFromTextPrompt(input: {
   prompt: string;
 }): Promise<SeatingAiSuggestion> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new SeatingAiGenerationError("OPENROUTER_API_KEY not configured.", 503);
-  }
+  const { raw, modelLabel } = await generateTextRaw(input.prompt);
+  const aiData = parseAiLayout(raw, modelLabel);
+  const layout = buildLayoutFromAiData(aiData, input.prompt);
+  return layoutToSuggestion(
+    layout,
+    modelLabel,
+    aiData.description || "AI-generated seating layout.",
+  );
+}
 
-  let lastError = "";
+export async function generateSeatingFromImage(input: {
+  imageBytes: Buffer;
+  mimeType: string;
+  notes?: string;
+}): Promise<SeatingAiSuggestion> {
+  const sourceLabel = input.notes?.trim()
+    ? `Uploaded layout (${input.notes.trim()})`
+    : "Uploaded layout image";
 
-  for (const model of OPENROUTER_MODELS) {
-    try {
-      const { aiData } = await callOpenRouterModel(apiKey, model, input.prompt);
-
-      const layout: GeneratedSeatingLayout = {
-        id: `layout_${Date.now()}`,
-        name: aiData.name || "Office Layout",
-        prompt: input.prompt,
-        room: aiData.room,
-        seats: aiData.seats.map((seat) => ({ ...seat, status: "empty" as const })),
-        pillars: aiData.pillars || [],
-        walls: aiData.walls || [],
-        groups: aiData.groups || [],
-        createdAt: new Date().toISOString(),
-      };
-
-      return layoutToSuggestion(
-        layout,
-        model,
-        aiData.description || "AI-generated seating layout.",
-      );
-    } catch (error) {
-      if (error instanceof SyntaxError) {
-        lastError = `Failed to parse JSON from ${model}`;
-      } else {
-        lastError = error instanceof Error ? error.message : "Unknown model error";
-      }
-      console.warn(`Seating AI model ${model} failed: ${lastError}`);
-    }
-  }
-
-  throw new SeatingAiGenerationError(`All models failed. Last error: ${lastError}`, 500);
+  const { aiData, modelLabel } = await generateVisionLayout(input);
+  const layout = buildLayoutFromAiData(aiData, sourceLabel);
+  return layoutToSuggestion(
+    layout,
+    modelLabel,
+    aiData.description || "Layout generated from uploaded floor plan.",
+  );
 }

@@ -2,6 +2,7 @@
 
 import type { FloorCell } from "@/lib/seating-layout";
 import { SeatCard } from "@/components/seating/seat-card";
+import { SeatingStructuralBlock } from "@/components/seating/seating-3d";
 import type { Employee } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +12,7 @@ const CELL_GAP = 10;
 const LABEL_WIDTH = 128;
 const PILLAR_WIDTH = SEAT_WIDTH * 2 + CELL_GAP;
 const ENTRANCE_WIDTH = SEAT_WIDTH * 3 + CELL_GAP * 2;
+const ROW_LABEL_HEIGHT = SEAT_HEIGHT + 12;
 
 function renderCell(
   cell: FloorCell,
@@ -40,41 +42,44 @@ function renderCell(
       return (
         <div
           key={key}
-          className="flex shrink-0 items-center justify-end pr-4 text-right text-[11px] font-bold uppercase tracking-[0.24em] text-slate-500"
-          style={{ width: LABEL_WIDTH, height: SEAT_HEIGHT }}
+          className="flex shrink-0 items-center justify-end pr-4 text-right text-[11px] font-bold uppercase tracking-[0.24em] text-slate-500 drop-shadow-sm"
+          style={{ width: LABEL_WIDTH, height: ROW_LABEL_HEIGHT }}
         >
           {cell.text}
         </div>
       );
     case "pillar":
       return (
-        <div
+        <SeatingStructuralBlock
           key={key}
-          className="flex shrink-0 items-center justify-center rounded-[22px] border-2 border-slate-300/80 bg-gradient-to-br from-slate-100 to-slate-200/90 shadow-sm"
-          style={{ width: PILLAR_WIDTH, height: SEAT_HEIGHT }}
-          aria-hidden
+          variant="pillar"
+          width={PILLAR_WIDTH}
+          height={SEAT_HEIGHT}
         >
-          <span className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">
+          <span className="text-[10px] font-bold uppercase tracking-[0.28em] text-white/90 drop-shadow-sm">
             Pillar
           </span>
-        </div>
+        </SeatingStructuralBlock>
       );
     case "entrance":
       return (
-        <div
+        <SeatingStructuralBlock
           key={key}
-          className="flex shrink-0 items-center justify-center rounded-[22px] border-2 border-sky-200 bg-sky-50 px-4 text-center text-[10px] font-bold uppercase leading-tight tracking-[0.2em] text-sky-700 shadow-sm"
-          style={{ width: ENTRANCE_WIDTH, height: SEAT_HEIGHT }}
+          variant="entrance"
+          width={ENTRANCE_WIDTH}
+          height={SEAT_HEIGHT}
         >
-          {cell.text}
-        </div>
+          <span className="text-[10px] font-bold uppercase leading-tight tracking-[0.2em] text-sky-800">
+            {cell.text}
+          </span>
+        </SeatingStructuralBlock>
       );
     case "gap":
       return (
         <div
           key={key}
           className="shrink-0"
-          style={{ width: ENTRANCE_WIDTH, height: SEAT_HEIGHT }}
+          style={{ width: ENTRANCE_WIDTH, height: ROW_LABEL_HEIGHT }}
           aria-hidden
         />
       );
@@ -95,7 +100,7 @@ function renderCell(
           <div
             key={key}
             className="shrink-0 opacity-0"
-            style={{ width: SEAT_WIDTH, height: SEAT_HEIGHT }}
+            style={{ width: SEAT_WIDTH, height: ROW_LABEL_HEIGHT }}
             aria-hidden
           />
         );
@@ -152,11 +157,11 @@ export function SeatingRowBlock({
 }: Props) {
   const cellCtx = { ...ctx, layoutSeats, zoneBySeat, layoutMode };
   return (
-    <div className={cn("w-max", showAisle && "mb-8")}>
-      <div className="flex w-max items-stretch gap-2.5">
+    <div className={cn("w-max", showAisle && "mb-6")}>
+      <div className="flex w-max items-end gap-2.5 overflow-visible">
         {top.map((c, i) => renderCell(c, cellCtx, `t-${i}`))}
       </div>
-      <div className="mt-2.5 flex w-max items-stretch gap-2.5">
+      <div className="mt-2 flex w-max items-end gap-2.5 overflow-visible">
         {bottom.map((c, i) => renderCell(c, cellCtx, `b-${i}`))}
       </div>
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ArrowLeft, Loader2, Sparkles, Wand2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ImageUp, Loader2, Sparkles, Wand2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -14,8 +14,10 @@ function formatAiError(error: unknown): string {
 }
 
 const EXAMPLE_PROMPTS = [
+  "replace A row with B row",
+  "create X row between A and B with 2 pillars",
   "add 4 pillars in A row",
-  "remove all G rows",
+  "remove 2 pillars in B row",
   "remove the pillars in E rows",
   "add 8 seats to B row",
   "20 seats in 4 rows of 5, with a pillar in the middle",
@@ -26,12 +28,62 @@ const EXAMPLE_PROMPTS = [
   "12 seats along window with 8 seats in center island",
 ];
 
+const MAX_LAYOUT_IMAGE_BYTES = 5 * 1024 * 1024;
+
+const ACCEPTED_LAYOUT_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+]);
+
+type LayoutImagePayload = {
+  imageBase64: string;
+  mimeType: string;
+  fileName: string;
+  previewUrl: string;
+};
+
+async function readLayoutImage(file: File): Promise<LayoutImagePayload> {
+  if (!ACCEPTED_LAYOUT_IMAGE_TYPES.has(file.type)) {
+    throw new Error("Upload a PNG, JPG, WEBP, or GIF floor plan image.");
+  }
+  if (file.size > MAX_LAYOUT_IMAGE_BYTES) {
+    throw new Error("Image must be 5 MB or smaller.");
+  }
+
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Could not read the image file."));
+    reader.readAsDataURL(file);
+  });
+
+  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) {
+    throw new Error("Invalid image data.");
+  }
+
+  return {
+    mimeType: match[1],
+    imageBase64: match[2],
+    fileName: file.name,
+    previewUrl: dataUrl,
+  };
+}
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   loading: boolean;
   suggestion: SeatingAiSuggestion | null;
   onGenerateText: (prompt: string) => Promise<void>;
+  onGenerateImage: (payload: {
+    imageBase64: string;
+    mimeType: string;
+    notes?: string;
+  }) => Promise<void>;
   onBackToColan: () => void;
   onApplyColanPrompt?: (prompt: string) => void;
   colanPromptSummary?: string | null;
@@ -44,6 +96,7 @@ export function SeatingAiPanel({
   loading,
   suggestion,
   onGenerateText,
+  onGenerateImage,
   onBackToColan,
   onApplyColanPrompt,
   colanPromptSummary = null,
@@ -51,12 +104,43 @@ export function SeatingAiPanel({
 }: Props) {
   const [prompt, setPrompt] = React.useState("");
   const [colanPrompt, setColanPrompt] = React.useState("");
+  const [imageNotes, setImageNotes] = React.useState("");
+  const [layoutImage, setLayoutImage] = React.useState<LayoutImagePayload | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const runText = async () => {
     setError(null);
     try {
       await onGenerateText(prompt);
+    } catch (nextError) {
+      setError(formatAiError(nextError));
+    }
+  };
+
+  const runImage = async () => {
+    if (!layoutImage) return;
+    setError(null);
+    try {
+      await onGenerateImage({
+        imageBase64: layoutImage.imageBase64,
+        mimeType: layoutImage.mimeType,
+        notes: imageNotes.trim() || undefined,
+      });
+    } catch (nextError) {
+      setError(formatAiError(nextError));
+    }
+  };
+
+  const onImageSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setError(null);
+    try {
+      const next = await readLayoutImage(file);
+      setLayoutImage(next);
     } catch (nextError) {
       setError(formatAiError(nextError));
     }
@@ -74,8 +158,8 @@ export function SeatingAiPanel({
           </div>
           <CardTitle className="text-lg">Generate blank layout</CardTitle>
           <CardDescription>
-            Describe desks, rows, pillars, and aisles — the AI builds a precise floor plan with
-            coordinates. Seat assignments save to the database as you place people.
+            Upload a floor plan image or describe desks, rows, pillars, and aisles — the AI builds a
+            precise layout with coordinates.
           </CardDescription>
         </div>
         <Button
@@ -109,7 +193,7 @@ export function SeatingAiPanel({
             <div className="space-y-1">
               <p className="text-sm font-semibold text-foreground">Edit Colan layout (prompt)</p>
               <p className="text-xs text-muted-foreground">
-                Examples: add 4 pillars in A row · remove the pillars in E rows · remove all G rows.
+                Examples: replace A row with B row (swaps layouts + assignments) · create X row between A and B · remove G and E rows.
                 Each prompt builds on your current layout.
               </p>
             </div>
@@ -119,7 +203,7 @@ export function SeatingAiPanel({
                 id="colan-layout-prompt"
                 value={colanPrompt}
                 onChange={(event) => setColanPrompt(event.target.value)}
-                placeholder='e.g. "remove all G rows"'
+                placeholder='e.g. "replace A row with B row"'
                 className="min-h-[96px] rounded-2xl border-border/70"
                 disabled={loading}
               />
@@ -158,6 +242,94 @@ export function SeatingAiPanel({
             )}
           </div>
         )}
+
+        <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-4">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-foreground">Upload layout image</p>
+            <p className="text-xs text-muted-foreground">
+              Upload a seating diagram (PNG, JPG, WEBP). The AI reads rows, aisles, podiums, and desk
+              counts and builds a matching office layout. If the image shows two options side by side,
+              add a note to pick left or right.
+            </p>
+          </div>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+            className="hidden"
+            onChange={(event) => void onImageSelected(event)}
+            disabled={loading}
+          />
+
+          {layoutImage ? (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+              <div className="overflow-hidden rounded-2xl border border-border/70 bg-white p-2 dark:bg-zinc-950">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={layoutImage.previewUrl}
+                  alt="Uploaded floor plan preview"
+                  className="max-h-40 w-full max-w-[220px] object-contain"
+                />
+              </div>
+              <div className="min-w-0 flex-1 space-y-2">
+                <p className="truncate text-xs font-medium text-foreground">{layoutImage.fileName}</p>
+                <Label htmlFor="layout-image-notes">Optional notes</Label>
+                <Textarea
+                  id="layout-image-notes"
+                  value={imageNotes}
+                  onChange={(event) => setImageNotes(event.target.value)}
+                  placeholder='e.g. "Use the right layout with the center aisle"'
+                  className="min-h-[72px] rounded-2xl border-border/70"
+                  disabled={loading}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    className="rounded-2xl"
+                    disabled={loading}
+                    onClick={() => void runImage()}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Reading layout…
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="h-4 w-4" />
+                        Generate from image
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-2xl"
+                    disabled={loading}
+                    onClick={() => {
+                      setLayoutImage(null);
+                      setImageNotes("");
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/80 bg-muted/20 px-4 py-8 text-center transition hover:border-violet-500/40 hover:bg-violet-500/5"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading}
+            >
+              <ImageUp className="h-8 w-8 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground">Choose floor plan image</span>
+              <span className="text-xs text-muted-foreground">PNG, JPG, WEBP up to 5 MB</span>
+            </button>
+          )}
+        </div>
 
         <div className="space-y-3">
           <div className="space-y-2">
@@ -248,10 +420,11 @@ export function SeatingAiPanel({
   );
 }
 
-export async function requestSeatingAiGeneration(payload: {
-  mode: "text";
-  prompt: string;
-}): Promise<SeatingAiSuggestion> {
+export async function requestSeatingAiGeneration(
+  payload:
+    | { mode: "text"; prompt: string }
+    | { mode: "image"; imageBase64: string; mimeType: string; notes?: string },
+): Promise<SeatingAiSuggestion> {
   const res = await fetch("/api/seating/ai-generate", {
     method: "POST",
     credentials: "include",

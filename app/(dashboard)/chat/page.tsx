@@ -36,10 +36,6 @@ export default function ChatPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Messages</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Search any app user (admin, manager, employee, project manager, …) and start or continue a
-          conversation.
-        </p>
       </div>
       <ChatWorkspace />
     </div>

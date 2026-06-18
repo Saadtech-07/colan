@@ -6,7 +6,6 @@ import { useParams } from "next/navigation";
 import {
   ArrowLeft,
   CalendarClock,
-  FolderKanban,
   PencilLine,
   ShieldAlert,
   Sparkles,
@@ -140,10 +139,6 @@ function ProjectWorkspaceHero({
       <div className="relative space-y-6">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0 space-y-4">
-            <div className="inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-              <FolderKanban className="h-3.5 w-3.5" />
-              Project workspace
-            </div>
             <div className="space-y-3">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
                 {project.name}

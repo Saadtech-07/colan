@@ -105,30 +105,43 @@ function extractLayoutSeatsLoose(text: string): RawAiPayload | null {
   };
 }
 
-export function parseSeatingAiJson(rawText: string): RawAiPayload {
+function buildJsonCandidates(rawText: string): string[] {
   const cleaned = stripMarkdownFences(rawText);
+  const balanced = extractBalancedObject(cleaned);
   const candidates = [
     cleaned,
-    extractBalancedObject(cleaned),
-    extractBalancedObject(cleaned.replace(/^[\s\S]*?(\{)/, "$1")),
-    closeTruncatedJson(extractBalancedObject(cleaned) ?? cleaned),
-    repairCommonJsonIssues(extractBalancedObject(cleaned) ?? cleaned),
-    repairCommonJsonIssues(closeTruncatedJson(extractBalancedObject(cleaned) ?? cleaned)),
+    balanced,
+    balanced ? extractBalancedObject(cleaned.replace(/^[\s\S]*?(\{)/, "$1")) : null,
+    balanced ? closeTruncatedJson(balanced) : closeTruncatedJson(cleaned),
+    balanced ? repairCommonJsonIssues(balanced) : repairCommonJsonIssues(cleaned),
+    balanced
+      ? repairCommonJsonIssues(closeTruncatedJson(balanced))
+      : repairCommonJsonIssues(closeTruncatedJson(cleaned)),
   ].filter((value): value is string => Boolean(value?.trim()));
 
-  const unique = [...new Set(candidates)];
+  return [...new Set(candidates)];
+}
 
-  for (const candidate of unique) {
+/** Parse JSON from LLM output with fence stripping, truncation repair, and trailing-comma fixes. */
+export function parseRobustJsonObject<T extends object>(rawText: string): T {
+  for (const candidate of buildJsonCandidates(rawText)) {
     try {
-      const parsed = JSON.parse(candidate) as RawAiPayload;
+      const parsed = JSON.parse(candidate) as T;
       if (parsed && typeof parsed === "object") return parsed;
     } catch {
       // try next candidate
     }
   }
 
-  const loose = extractLayoutSeatsLoose(cleaned);
-  if (loose) return loose;
+  throw new Error("AI response was not valid JSON.");
+}
 
-  throw new Error("AI response was not valid JSON. Try a simpler prompt or retry.");
+export function parseSeatingAiJson(rawText: string): RawAiPayload {
+  try {
+    return parseRobustJsonObject<RawAiPayload>(rawText);
+  } catch {
+    const loose = extractLayoutSeatsLoose(stripMarkdownFences(rawText));
+    if (loose) return loose;
+    throw new Error("AI response was not valid JSON. Try a simpler prompt or retry.");
+  }
 }

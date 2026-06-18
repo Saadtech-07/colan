@@ -6,12 +6,72 @@ import type { Employee } from "@/types";
 
 const SEAT_SIZE = 60;
 const SEAT_RADIUS = 8;
+const BLOCK_DEPTH = 8;
+
+type BlockColors = {
+  top: string;
+  front: string;
+  side: string;
+  stroke: string;
+  lineWidth?: number;
+};
+
+function drawSeatBlock(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+  colors: BlockColors,
+  emphasis: "base" | "lifted",
+) {
+  const lift = emphasis === "lifted" ? 8 : 4;
+  const depth = emphasis === "lifted" ? BLOCK_DEPTH + 6 : BLOCK_DEPTH + 3;
+  drawExtrudedBlock(ctx, x, y - lift, w, h, depth, radius, colors);
+}
+
+function drawExtrudedBlock(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  depth: number,
+  radius: number,
+  colors: BlockColors,
+) {
+  ctx.fillStyle = "rgba(15,23,42,0.1)";
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h + depth * 0.6, w * 0.42, depth * 0.45, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = colors.front;
+  ctx.beginPath();
+  ctx.roundRect(x + 2, y + h - 1, w - 5, depth, Math.min(4, radius));
+  ctx.fill();
+
+  ctx.fillStyle = colors.side;
+  ctx.beginPath();
+  ctx.roundRect(x + w - 4, y + 3, 4, h - 2, 2);
+  ctx.fill();
+
+  ctx.fillStyle = colors.top;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, radius);
+  ctx.fill();
+
+  ctx.strokeStyle = colors.stroke;
+  ctx.lineWidth = colors.lineWidth ?? 1.5;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, radius);
+  ctx.stroke();
+}
 
 type Props = {
   layout: GeneratedSeatingLayout;
   occupancy: Map<string, Employee>;
   selectedSeat: string | null;
-  zoom: number;
   onSeatClick: (seatLabel: string) => void;
 };
 
@@ -19,18 +79,20 @@ export function SeatingAiCanvas({
   layout,
   occupancy,
   selectedSeat,
-  zoom,
   onSeatClick,
 }: Props) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const [hoveredSeat, setHoveredSeat] = React.useState<string | null>(null);
 
   const hitTest = React.useCallback(
     (clientX: number, clientY: number): string | null => {
       const canvas = canvasRef.current;
       if (!canvas) return null;
       const rect = canvas.getBoundingClientRect();
-      const x = (clientX - rect.left) / zoom;
-      const y = (clientY - rect.top) / zoom;
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (clientX - rect.left) * scaleX;
+      const y = (clientY - rect.top) * scaleY;
 
       for (const seat of layout.seats) {
         if (
@@ -44,7 +106,7 @@ export function SeatingAiCanvas({
       }
       return null;
     },
-    [layout.seats, zoom],
+    [layout.seats],
   );
 
   const draw = React.useCallback(() => {
@@ -56,7 +118,11 @@ export function SeatingAiCanvas({
     const { room, seats, pillars, walls } = layout;
 
     ctx.clearRect(0, 0, room.width, room.height);
-    ctx.fillStyle = "#f8fafc";
+    const floorGrad = ctx.createLinearGradient(0, 0, 0, room.height);
+    floorGrad.addColorStop(0, "#f4f6f8");
+    floorGrad.addColorStop(0.55, "#eceff3");
+    floorGrad.addColorStop(1, "#e2e6eb");
+    ctx.fillStyle = floorGrad;
     ctx.fillRect(0, 0, room.width, room.height);
 
     ctx.fillStyle = "rgba(148, 163, 184, 0.35)";
@@ -87,68 +153,55 @@ export function SeatingAiCanvas({
       const py = Math.round(pillar.y);
       const pw = Math.round(pillar.width);
       const ph = Math.round(pillar.height);
+      const isStage = pillar.label?.toUpperCase() === "STAGE";
+      const isEntrance = pillar.label?.toUpperCase() === "ENTRANCE";
 
-      ctx.shadowColor = "rgba(15,23,42,0.08)";
-      ctx.shadowBlur = 10;
-      ctx.shadowOffsetX = 2;
-      ctx.shadowOffsetY = 2;
-
-      const grad = ctx.createLinearGradient(px, py, px + pw, py + ph);
-      grad.addColorStop(0, "#e2e8f0");
-      grad.addColorStop(0.5, "#cbd5e1");
-      grad.addColorStop(1, "#94a3b8");
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.roundRect(px, py, pw, ph, 5);
-      ctx.fill();
-
-      ctx.shadowColor = "transparent";
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
-
-      ctx.strokeStyle = "#94a3b8";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.roundRect(px, py, pw, ph, 5);
-      ctx.stroke();
+      drawExtrudedBlock(ctx, px, py, pw, ph, BLOCK_DEPTH + 4, 6, {
+        top: isStage ? "#cbd5e1" : isEntrance ? "#bae6fd" : "#64748b",
+        front: isStage ? "#94a3b8" : isEntrance ? "#7dd3fc" : "#475569",
+        side: isStage ? "#64748b" : isEntrance ? "#38bdf8" : "#334155",
+        stroke: isStage ? "#475569" : isEntrance ? "#0284c7" : "#334155",
+        lineWidth: 1.5,
+      });
 
       if (pillar.label) {
-        ctx.fillStyle = "#64748b";
-        ctx.font = "bold 11px ui-monospace, monospace";
+        ctx.fillStyle = isEntrance ? "#0c4a6e" : "#f8fafc";
+        ctx.font = isEntrance
+          ? "bold 8px ui-monospace, monospace"
+          : "bold 10px ui-monospace, monospace";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(pillar.label, px + pw / 2, py + ph / 2);
+        const label = isEntrance ? "ENTRANCE" : pillar.label;
+        ctx.fillText(label, px + pw / 2, py + ph / 2);
       }
     });
 
     seats.forEach((seat) => {
       const occupant = occupancy.get(seat.label);
       const isSelected = selectedSeat === seat.label;
-      const fill = occupant ? "#ecfdf5" : isSelected ? "#eff6ff" : "#ffffff";
-      const stroke = occupant ? "#34d399" : isSelected ? "#60a5fa" : "#cbd5e1";
-      const textColor = occupant ? "#047857" : "#64748b";
+      const isHovered = hoveredSeat === seat.label;
+      const emphasis = isSelected || isHovered ? "lifted" : "base";
+      const top = occupant ? "#ede9fe" : isSelected ? "#eff6ff" : "#ffffff";
+      const stroke = occupant ? "#a78bfa" : isSelected ? "#60a5fa" : "#cbd5e1";
+      const textColor = occupant ? "#5b21b6" : "#64748b";
+      const lift = emphasis === "lifted" ? 8 : 4;
 
-      ctx.shadowColor = "rgba(15,23,42,0.08)";
-      ctx.shadowBlur = 6;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 2;
-
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      ctx.roundRect(seat.x, seat.y, SEAT_SIZE, SEAT_SIZE, SEAT_RADIUS);
-      ctx.fill();
-
-      ctx.shadowColor = "transparent";
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 0;
-
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = isSelected ? 2.5 : 1.5;
-      ctx.beginPath();
-      ctx.roundRect(seat.x, seat.y, SEAT_SIZE, SEAT_SIZE, SEAT_RADIUS);
-      ctx.stroke();
+      drawSeatBlock(
+        ctx,
+        seat.x,
+        seat.y,
+        SEAT_SIZE,
+        SEAT_SIZE,
+        SEAT_RADIUS,
+        {
+          top,
+          front: occupant ? "#c4b5fd" : "#cbd5e1",
+          side: occupant ? "#a78bfa" : "#94a3b8",
+          stroke,
+          lineWidth: isSelected ? 2.5 : 1.5,
+        },
+        emphasis,
+      );
 
       ctx.fillStyle = textColor;
       ctx.font = occupant ? "600 9px ui-monospace, monospace" : "600 12px ui-monospace, monospace";
@@ -157,21 +210,22 @@ export function SeatingAiCanvas({
       const label = occupant
         ? occupant.name.split(" ")[0]?.slice(0, 8) ?? seat.label
         : seat.label;
-      ctx.fillText(label, seat.x + SEAT_SIZE / 2, seat.y + SEAT_SIZE / 2 - (occupant ? 4 : 0));
+      ctx.fillText(label, seat.x + SEAT_SIZE / 2, seat.y + SEAT_SIZE / 2 - lift - (occupant ? 4 : 0));
 
       if (occupant) {
         ctx.fillStyle = "#64748b";
         ctx.font = "500 7px system-ui, sans-serif";
         const teamLabel = occupant.team.length > 10 ? `${occupant.team.slice(0, 9)}…` : occupant.team;
-        ctx.fillText(teamLabel, seat.x + SEAT_SIZE / 2, seat.y + SEAT_SIZE / 2 + 10);
+        ctx.fillText(teamLabel, seat.x + SEAT_SIZE / 2, seat.y + SEAT_SIZE / 2 - lift + 10);
       }
     });
 
     const legendY = room.height - 26;
     const items = [
-      { color: "#cbd5e1", label: "Empty" },
-      { color: "#34d399", label: "Occupied" },
-      { color: "#94a3b8", label: "Pillar" },
+      { color: "#ffffff", label: "Empty" },
+      { color: "#ede9fe", label: "Occupied" },
+      { color: "#64748b", label: "Pillar" },
+      { color: "#bae6fd", label: "Entrance" },
     ];
 
     ctx.font = "10px system-ui, sans-serif";
@@ -187,7 +241,7 @@ export function SeatingAiCanvas({
       ctx.fillText(label, lx + 14, legendY + 5);
       lx += ctx.measureText(label).width + 30;
     });
-  }, [layout, occupancy, selectedSeat]);
+  }, [layout, occupancy, selectedSeat, hoveredSeat]);
 
   React.useEffect(() => {
     draw();
@@ -199,15 +253,16 @@ export function SeatingAiCanvas({
       width={layout.room.width}
       height={layout.room.height}
       className="cursor-pointer rounded-lg"
-      style={{
-        transform: `scale(${zoom})`,
-        transformOrigin: "top left",
-        display: "block",
-      }}
+      style={{ display: "block" }}
       onClick={(event) => {
         const seatLabel = hitTest(event.clientX, event.clientY);
         if (seatLabel) onSeatClick(seatLabel);
       }}
+      onMouseMove={(event) => {
+        const seatLabel = hitTest(event.clientX, event.clientY);
+        setHoveredSeat((current) => (current === seatLabel ? current : seatLabel));
+      }}
+      onMouseLeave={() => setHoveredSeat(null)}
     />
   );
 }
