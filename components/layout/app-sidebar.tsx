@@ -63,17 +63,17 @@ function SidebarNavItem({
         onClick={onNavigate}
         title={collapsed ? label : undefined}
         className={cn(
-          "group flex items-center rounded-xl text-sm font-medium transition-all duration-300 ease-out",
+          "group flex items-center rounded-xl text-sm font-medium transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
           collapsed ? "mx-auto h-11 w-11 justify-center" : "gap-3 px-3.5 py-2.5",
           active
             ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[0_10px_24px_rgba(2,6,23,0.18)]"
             : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
         )}
       >
-        <Icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-200 group-hover:scale-110" />
+        <Icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-110" />
         <span
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 truncate transition-all duration-300 ease-out",
+            "flex min-w-0 flex-1 items-center gap-2 truncate transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
             collapsed
               ? "pointer-events-none max-w-0 overflow-hidden opacity-0 -translate-x-1"
               : "max-w-[180px] opacity-100 translate-x-0",
@@ -90,7 +90,7 @@ function SidebarNavItem({
       {collapsed && (
         <span
           role="tooltip"
-          className="pointer-events-none absolute left-full top-1/2 z-[60] ml-3 -translate-y-1/2 whitespace-nowrap rounded-md border border-sidebar-border bg-sidebar-accent px-2.5 py-1.5 text-xs font-medium text-sidebar-accent-foreground opacity-0 shadow-lg transition-opacity duration-150 group-hover/nav:opacity-100"
+          className="pointer-events-none absolute left-full top-1/2 z-[60] ml-3 -translate-y-1/2 whitespace-nowrap rounded-md border border-sidebar-border bg-sidebar-accent px-2.5 py-1.5 text-xs font-medium text-sidebar-accent-foreground opacity-0 shadow-lg transition-opacity duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/nav:opacity-100"
         >
           {label}
         </span>
@@ -271,7 +271,7 @@ export function AppSidebar() {
         role="presentation"
         aria-hidden
         className={cn(
-          "fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity duration-300 lg:hidden",
+          "fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] lg:hidden",
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
         )}
         onClick={() => setMobileOpen(false)}

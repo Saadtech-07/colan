@@ -2,7 +2,10 @@
 
 import * as React from "react";
 import { SEATING_ROWS, type SeatingRowConfig } from "@/lib/seating-layout";
-import { SeatingAiCanvas } from "@/components/seating/seating-ai-canvas";
+import {
+  SeatingAiCanvas,
+  type SeatingAiCanvasHandle,
+} from "@/components/seating/seating-ai-canvas";
 import { SeatingLayoutCanvas } from "@/components/seating/seating-layout-canvas";
 import { SeatingFloor3DScene } from "@/components/seating/seating-3d";
 import { SeatingCabinRow } from "@/components/seating/seating-cabin-row";
@@ -34,26 +37,42 @@ type Props = {
   onAssignSeat: (seatId: string, employeeId: string) => void;
 };
 
-export function SeatingFloorPlan({
-  occupancy,
-  selectedSeat,
-  highlightSeats,
-  rows = SEATING_ROWS,
-  layoutMode = false,
-  generatedLayout = null,
-  layoutSeats = null,
-  layoutZones = [],
-  zoneBySeat = new Map(),
-  teamFilter,
-  search,
-  viewMode,
-  canAssign,
-  zoom,
-  showCabins = true,
-  onSeatClick,
-  onAssignSeat,
-}: Props) {
+export type SeatingFloorPlanHandle = {
+  getLayoutCanvas: () => HTMLCanvasElement | null;
+  getFloorPlanElement: () => HTMLDivElement | null;
+};
+
+export const SeatingFloorPlan = React.forwardRef<SeatingFloorPlanHandle, Props>(
+  function SeatingFloorPlan(
+    {
+      occupancy,
+      selectedSeat,
+      highlightSeats,
+      rows = SEATING_ROWS,
+      layoutMode = false,
+      generatedLayout = null,
+      layoutSeats = null,
+      layoutZones = [],
+      zoneBySeat = new Map(),
+      teamFilter,
+      search,
+      viewMode,
+      canAssign,
+      zoom,
+      showCabins = true,
+      onSeatClick,
+      onAssignSeat,
+    },
+    ref,
+  ) {
   const [dragEmployeeId, setDragEmployeeId] = React.useState<string | null>(null);
+  const aiCanvasRef = React.useRef<SeatingAiCanvasHandle>(null);
+  const floorPlanRef = React.useRef<HTMLDivElement>(null);
+
+  React.useImperativeHandle(ref, () => ({
+    getLayoutCanvas: () => aiCanvasRef.current?.getCanvas() ?? null,
+    getFloorPlanElement: () => floorPlanRef.current,
+  }));
 
   const dimSeat = React.useCallback(
     (seatId: string, emp: Employee | null) => {
@@ -83,6 +102,7 @@ export function SeatingFloorPlan({
     return (
       <SeatingZoomFrame zoom={zoom}>
         <SeatingAiCanvas
+          ref={aiCanvasRef}
           layout={generatedLayout}
           occupancy={occupancy}
           selectedSeat={selectedSeat}
@@ -109,6 +129,7 @@ export function SeatingFloorPlan({
 
   return (
     <SeatingZoomFrame zoom={zoom} className="pb-6">
+      <div ref={floorPlanRef} className="w-max">
       <SeatingFloor3DScene>
         <div className="flex w-max items-start gap-3 overflow-visible">
           {showCabins && <SeatingSideCabins />}
@@ -148,6 +169,8 @@ export function SeatingFloorPlan({
           </div>
         </div>
       </SeatingFloor3DScene>
+      </div>
     </SeatingZoomFrame>
   );
-}
+},
+);

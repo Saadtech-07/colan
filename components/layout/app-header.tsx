@@ -111,10 +111,10 @@ export function AppHeader() {
   const showPageMeta = isMobileViewport ? !mobileOpen : true;
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur transition-colors duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
       <div
         className={cn(
-          "min-w-0 transition-all duration-300 ease-out",
+          "min-w-0 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
           showPageMeta
             ? "max-w-full opacity-100"
             : "pointer-events-none max-w-0 overflow-hidden opacity-0",
@@ -122,7 +122,10 @@ export function AppHeader() {
         aria-hidden={!showPageMeta}
       >
         <div className="min-w-0">
-          <p className="truncate text-base font-bold tracking-tight text-foreground sm:text-lg">
+          <p
+            key={pathname}
+            className="truncate text-base font-bold tracking-tight text-foreground app-reveal-in sm:text-lg"
+          >
             {pageMeta.title}
           </p>
         </div>

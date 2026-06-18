@@ -1,7 +1,13 @@
 import type { AILayoutSchema } from "@/lib/seating-layout-types";
+import {
+  CANVAS_ROOM_PADDING,
+  CANVAS_SEAT_HEIGHT,
+  CANVAS_SEAT_WIDTH,
+} from "@/lib/seating-layout-metrics";
 
-const ROOM_PADDING = 60;
-const SEAT_SIZE = 60;
+const ROOM_PADDING = CANVAS_ROOM_PADDING;
+const SEAT_WIDTH = CANVAS_SEAT_WIDTH;
+const SEAT_HEIGHT = CANVAS_SEAT_HEIGHT;
 
 function updateBounds(
   minX: number,
@@ -36,8 +42,8 @@ export function normalizeAiLayoutGeometry(aiData: AILayoutSchema): AILayoutSchem
       maxY,
       seat.x,
       seat.y,
-      SEAT_SIZE,
-      SEAT_SIZE,
+      SEAT_WIDTH,
+      SEAT_HEIGHT,
     ));
   }
 

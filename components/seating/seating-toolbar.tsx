@@ -1,15 +1,21 @@
 "use client";
 
-import { RotateCcw, Search, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronDown, Filter, RotateCcw, Search, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { SeatingStats } from "@/lib/seating-utils";
 import { teamTabLabel } from "@/lib/team-utils";
 
@@ -37,6 +43,19 @@ type Props = {
   onReset: () => void;
 };
 
+const VIEW_LABELS: Record<Props["viewMode"], string> = {
+  all: "All seats",
+  occupied: "Occupied only",
+  available: "Available only",
+};
+
+const GENDER_LABELS: Record<string, string> = {
+  all: "All genders",
+  male: "Male",
+  female: "Female",
+  other: "Other",
+};
+
 export function SeatingToolbar({
   search,
   onSearchChange,
@@ -55,6 +74,18 @@ export function SeatingToolbar({
   onZoomChange,
   onReset,
 }: Props) {
+  const activeFilterCount = [
+    teamFilter !== "All",
+    roleFilter !== "all",
+    genderFilter !== "all",
+    viewMode !== "all",
+  ].filter(Boolean).length;
+
+  const teamLabel = teamFilter === "All" ? "All teams" : teamTabLabel(teamFilter);
+  const roleLabel =
+    roleFilterOptions.find((option) => option.value === roleFilter)?.label ?? "All roles";
+  const genderLabel = GENDER_LABELS[genderFilter] ?? "All genders";
+
   return (
     <div className="shrink-0 space-y-3 rounded-2xl border border-border/70 bg-background/90 p-3.5 shadow-sm backdrop-blur sm:p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -69,62 +100,120 @@ export function SeatingToolbar({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <Select value={teamFilter} onValueChange={onTeamFilterChange}>
-            <SelectTrigger className="h-10 w-[150px] rounded-xl border-border/70 bg-background">
-              <SelectValue placeholder="Team" />
-            </SelectTrigger>
-            <SelectContent className="rounded-2xl border-border/60">
-              <SelectItem value="All">All teams</SelectItem>
-              {teamNames.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {teamTabLabel(t)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={roleFilter} onValueChange={onRoleFilterChange}>
-            <SelectTrigger className="h-10 w-[150px] rounded-xl border-border/70 bg-background">
-              <SelectValue placeholder="Role" />
-            </SelectTrigger>
-            <SelectContent className="rounded-2xl border-border/60">
-              {roleFilterOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label === "All" ? "All roles" : option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={genderFilter} onValueChange={onGenderFilterChange}>
-            <SelectTrigger className="h-10 w-[130px] rounded-xl border-border/70 bg-background">
-              <SelectValue placeholder="Gender" />
-            </SelectTrigger>
-            <SelectContent className="rounded-2xl border-border/60">
-              <SelectItem value="all">All genders</SelectItem>
-              <SelectItem value="male">Male</SelectItem>
-              <SelectItem value="female">Female</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={viewMode} onValueChange={(v) => onViewModeChange(v as Props["viewMode"])}>
-            <SelectTrigger className="h-10 w-[150px] rounded-xl border-border/70 bg-background">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="rounded-2xl border-border/60">
-              <SelectItem value="all">All seats</SelectItem>
-              <SelectItem value="occupied">Occupied only</SelectItem>
-              <SelectItem value="available">Available only</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-10 rounded-xl border-border/70 bg-background px-4"
-            onClick={onReset}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            Reset
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 rounded-xl border-border/70 bg-background px-4"
+              >
+                <Filter className="h-3.5 w-3.5" />
+                Filters
+                {activeFilterCount > 0 ? (
+                  <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+                <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-56 rounded-2xl border-border/60 bg-background/95 p-1.5 shadow-xl backdrop-blur"
+            >
+              <DropdownMenuLabel className="px-2 text-xs text-muted-foreground">
+                Refine floor plan
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator className="bg-border/60" />
+
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="rounded-xl">
+                  Team · {teamLabel}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="rounded-2xl border-border/60 p-1.5">
+                  <DropdownMenuRadioGroup value={teamFilter} onValueChange={onTeamFilterChange}>
+                    <DropdownMenuRadioItem value="All" className="rounded-xl">
+                      All teams
+                    </DropdownMenuRadioItem>
+                    {teamNames.map((team) => (
+                      <DropdownMenuRadioItem key={team} value={team} className="rounded-xl">
+                        {teamTabLabel(team)}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="rounded-xl">
+                  Role · {roleLabel === "All" ? "All roles" : roleLabel}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="rounded-2xl border-border/60 p-1.5">
+                  <DropdownMenuRadioGroup value={roleFilter} onValueChange={onRoleFilterChange}>
+                    {roleFilterOptions.map((option) => (
+                      <DropdownMenuRadioItem
+                        key={option.value}
+                        value={option.value}
+                        className="rounded-xl"
+                      >
+                        {option.label === "All" ? "All roles" : option.label}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="rounded-xl">
+                  Gender · {genderLabel}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="rounded-2xl border-border/60 p-1.5">
+                  <DropdownMenuRadioGroup value={genderFilter} onValueChange={onGenderFilterChange}>
+                    <DropdownMenuRadioItem value="all" className="rounded-xl">
+                      All genders
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="male" className="rounded-xl">
+                      Male
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="female" className="rounded-xl">
+                      Female
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="other" className="rounded-xl">
+                      Other
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger className="rounded-xl">
+                  Seats · {VIEW_LABELS[viewMode]}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="rounded-2xl border-border/60 p-1.5">
+                  <DropdownMenuRadioGroup
+                    value={viewMode}
+                    onValueChange={(value) => onViewModeChange(value as Props["viewMode"])}
+                  >
+                    <DropdownMenuRadioItem value="all" className="rounded-xl">
+                      All seats
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="occupied" className="rounded-xl">
+                      Occupied only
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="available" className="rounded-xl">
+                      Available only
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+
+              <DropdownMenuSeparator className="bg-border/60" />
+              <DropdownMenuItem className="rounded-xl" onClick={onReset}>
+                <RotateCcw className="h-4 w-4" />
+                Reset filters
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

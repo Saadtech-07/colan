@@ -1,11 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, Download, Expand, Sparkles } from "lucide-react";
+import { ArrowLeft, Expand, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SeatingAnalyticsOverview } from "@/components/seating/seating-analytics-overview";
 import { SeatingAssignmentDialog } from "@/components/seating/seating-assignment-dialog";
-import { SeatingFloorPlan } from "@/components/seating/seating-floor-plan";
+import { SeatingDownloadMenu } from "@/components/seating/seating-download-menu";
+import {
+  SeatingFloorPlan,
+  type SeatingFloorPlanHandle,
+} from "@/components/seating/seating-floor-plan";
 import { SeatingFloorPlanFullscreen } from "@/components/seating/seating-floor-plan-fullscreen";
 import {
   requestSeatingAiGeneration,
@@ -29,6 +33,7 @@ import {
   seatOccupancyMap,
 } from "@/lib/seating-utils";
 import { buildTeamMemberRoleFilterOptions } from "@/lib/team-members-ui";
+import { captureLayoutImage, downloadDataUrl } from "@/lib/seating-layout-export";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
@@ -45,6 +50,7 @@ export default function SeatingPage() {
   const [viewMode, setViewMode] = React.useState<"all" | "occupied" | "available">("all");
   const [zoom, setZoom] = React.useState(0.95);
   const [fullscreenOpen, setFullscreenOpen] = React.useState(false);
+  const floorPlanRef = React.useRef<SeatingFloorPlanHandle>(null);
   const [selectedSeat, setSelectedSeat] = React.useState<string | null>(null);
   const [dialogSeat, setDialogSeat] = React.useState<string | null>(null);
   const [aiPanelOpen, setAiPanelOpen] = React.useState(false);
@@ -251,6 +257,7 @@ export default function SeatingPage() {
     imageBase64: string;
     mimeType: string;
     notes?: string;
+    fileName?: string;
   }) => {
     await withLoading("seating-ai-generate", LOADING_PRESETS.seatingAiGenerate, async () => {
       const suggestion = await requestSeatingAiGeneration({ mode: "image", ...payload });
@@ -355,6 +362,19 @@ export default function SeatingPage() {
     const stamp = new Date().toISOString().slice(0, 10);
     doc.save(`seating-layout-${stamp}.pdf`);
   }, [exportRows]);
+
+  const exportLayoutImage = React.useCallback(async () => {
+    try {
+      const dataUrl = await captureLayoutImage({
+        canvas: floorPlanRef.current?.getLayoutCanvas() ?? null,
+        element: floorPlanRef.current?.getFloorPlanElement() ?? null,
+      });
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadDataUrl(`seating-layout-${stamp}.png`, dataUrl);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Could not export layout image.");
+    }
+  }, []);
 
   return (
     <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-4">
@@ -479,28 +499,11 @@ export default function SeatingPage() {
               <Expand className="h-3.5 w-3.5" />
               View
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 rounded-lg gap-1.5 px-2.5 text-xs"
-              onClick={exportPdf}
-              title="Download PDF summary"
-            >
-              <Download className="h-3.5 w-3.5" />
-              PDF
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 rounded-lg gap-1.5 px-2.5 text-xs"
-              onClick={exportCsv}
-              title="Download Excel-friendly CSV"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Excel
-            </Button>
+            <SeatingDownloadMenu
+              onExportImage={exportLayoutImage}
+              onExportPdf={exportPdf}
+              onExportExcel={exportCsv}
+            />
             {layoutMode && (
               <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 font-medium text-violet-800 dark:text-violet-200">
                 Layout planner
@@ -528,6 +531,7 @@ export default function SeatingPage() {
         <div className="min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)] scroll-smooth">
           <div className="flex min-h-full min-w-full items-center justify-center p-4 sm:p-6">
             <SeatingFloorPlan
+              ref={floorPlanRef}
               occupancy={displayOccupancy}
               selectedSeat={selectedSeat}
               highlightSeats={highlights}

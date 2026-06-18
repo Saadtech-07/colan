@@ -28,7 +28,7 @@ export function GlobalLoadingOverlay({
       role="status"
       aria-labelledby="global-loading-title"
     >
-      <div className="animate-in fade-in-0 zoom-in-95 duration-200">
+      <div className="app-reveal-scale">
         <div id="global-loading-title">
           <LoadingIndicator title={title} />
         </div>

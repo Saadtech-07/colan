@@ -14,6 +14,7 @@ function formatAiError(error: unknown): string {
 }
 
 const EXAMPLE_PROMPTS = [
+  "40 seats with 5 columns and 8 rows",
   "replace A row with B row",
   "create X row between A and B with 2 pillars",
   "add 4 pillars in A row",
@@ -83,6 +84,7 @@ type Props = {
     imageBase64: string;
     mimeType: string;
     notes?: string;
+    fileName?: string;
   }) => Promise<void>;
   onBackToColan: () => void;
   onApplyColanPrompt?: (prompt: string) => void;
@@ -126,6 +128,7 @@ export function SeatingAiPanel({
         imageBase64: layoutImage.imageBase64,
         mimeType: layoutImage.mimeType,
         notes: imageNotes.trim() || undefined,
+        fileName: layoutImage.fileName,
       });
     } catch (nextError) {
       setError(formatAiError(nextError));
@@ -145,6 +148,13 @@ export function SeatingAiPanel({
       setError(formatAiError(nextError));
     }
   };
+
+  React.useEffect(() => {
+    if (!open) return;
+    void import("@/lib/opencv/client").then(({ preloadAnalysisWorker }) =>
+      preloadAnalysisWorker(),
+    );
+  }, [open]);
 
   if (!open) return null;
 
@@ -247,9 +257,9 @@ export function SeatingAiPanel({
           <div className="space-y-1">
             <p className="text-sm font-semibold text-foreground">Upload layout image</p>
             <p className="text-xs text-muted-foreground">
-              Upload a seating diagram (PNG, JPG, WEBP). The AI reads rows, aisles, podiums, and desk
-              counts and builds a matching office layout. If the image shows two options side by side,
-              add a note to pick left or right.
+              Upload a seating diagram (PNG, JPG, WEBP). OpenCV.js detects desks, pillars, aisles,
+              and entrances locally and builds a matching layout. If the image shows two options side
+              by side, add a note to pick left or right.
             </p>
           </div>
 
@@ -338,7 +348,7 @@ export function SeatingAiPanel({
               id="ai-seating-prompt"
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
-              placeholder="e.g. 20 seats in 4 rows of 5, with a pillar in the middle…"
+              placeholder="e.g. 40 seats with 5 columns and 8 rows…"
               className="min-h-[120px] rounded-2xl border-border/70"
               disabled={loading}
             />
@@ -423,8 +433,18 @@ export function SeatingAiPanel({
 export async function requestSeatingAiGeneration(
   payload:
     | { mode: "text"; prompt: string }
-    | { mode: "image"; imageBase64: string; mimeType: string; notes?: string },
+    | {
+        mode: "image";
+        imageBase64: string;
+        mimeType: string;
+        notes?: string;
+        fileName?: string;
+      },
 ): Promise<SeatingAiSuggestion> {
+  if (payload.mode === "image") {
+    return requestSeatingOpenCvGeneration(payload);
+  }
+
   const res = await fetch("/api/seating/ai-generate", {
     method: "POST",
     credentials: "include",
@@ -433,4 +453,30 @@ export async function requestSeatingAiGeneration(
   });
   if (!res.ok) throw new Error(await parseApiError(res));
   return (await res.json()) as SeatingAiSuggestion;
+}
+
+async function requestSeatingOpenCvGeneration(payload: {
+  imageBase64: string;
+  mimeType: string;
+  notes?: string;
+  fileName?: string;
+}): Promise<SeatingAiSuggestion> {
+  const binary = atob(payload.imageBase64.replace(/^data:[^;]+;base64,/, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  const file = new File([bytes], payload.fileName ?? "upload.png", {
+    type: payload.mimeType,
+  });
+
+  const { analyzeFloorPlanFile } = await import("@/lib/opencv/client");
+  const { buildSuggestionFromOpenCvAnalysis } = await import("@/lib/opencv-layout-suggestion");
+
+  const analysis = await analyzeFloorPlanFile(file);
+  return buildSuggestionFromOpenCvAnalysis(analysis, {
+    notes: payload.notes,
+    fileName: payload.fileName,
+  });
 }

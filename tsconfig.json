@@ -38,6 +38,8 @@
   ],
   "exclude": [
     "node_modules",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    "_seating_zip_src/**",
+    "_seating_zip_extract/**"
   ]
 }

@@ -1,18 +1,30 @@
 import type { FloorCell, SeatingRowConfig } from "@/lib/seating-layout";
 import { SEATING_ROWS } from "@/lib/seating-layout";
 import type { AILayoutSchema } from "@/lib/seating-layout-types";
+import {
+  CANVAS_BAND_HEIGHT,
+  CANVAS_CELL_GAP,
+  CANVAS_ENTRANCE_WIDTH,
+  CANVAS_LABEL_WIDTH,
+  CANVAS_PILLAR_WIDTH,
+  CANVAS_ROOM_PADDING,
+  CANVAS_ROW_BAND_GAP,
+  CANVAS_ROW_GAP,
+  CANVAS_SEAT_HEIGHT,
+  CANVAS_SEAT_STRIDE,
+  CANVAS_SEAT_WIDTH,
+} from "@/lib/seating-layout-metrics";
 
-/** AI canvas scale — proportional to Colan row block (108px seats → 60px). */
-const SEAT = 60;
-const CELL_GAP = 10;
-const STRIDE = SEAT + CELL_GAP;
-const LABEL_W = 72;
-const PILLAR_W = SEAT * 2 + CELL_GAP;
-const ENTRANCE_W = SEAT * 3 + CELL_GAP * 2;
-const BAND_H = SEAT + 12;
-const BAND_GAP = 8;
-const ROW_GAP = 24;
-const ROOM_PADDING = 60;
+const SEAT = CANVAS_SEAT_WIDTH;
+const CELL_GAP = CANVAS_CELL_GAP;
+const STRIDE = CANVAS_SEAT_STRIDE;
+const LABEL_W = CANVAS_LABEL_WIDTH;
+const PILLAR_W = CANVAS_PILLAR_WIDTH;
+const ENTRANCE_W = CANVAS_ENTRANCE_WIDTH;
+const BAND_H = CANVAS_BAND_HEIGHT;
+const BAND_GAP = CANVAS_ROW_BAND_GAP;
+const ROW_GAP = CANVAS_ROW_GAP;
+const ROOM_PADDING = CANVAS_ROOM_PADDING;
 
 function cellWidth(cell: FloorCell): number {
   switch (cell.kind) {
@@ -79,7 +91,7 @@ function placeRow(
           x,
           y,
           width,
-          height: spansBoth ? rowHeight : SEAT,
+          height: spansBoth ? rowHeight : CANVAS_SEAT_HEIGHT,
           label,
         });
         pillarIndex.value += 1;

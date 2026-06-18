@@ -30,6 +30,12 @@
   --sidebar-accent: 217 33% 17%;
   --sidebar-accent-foreground: 210 40% 98%;
   --sidebar-border: 217 33% 17%;
+  --motion-duration-fast: 350ms;
+  --motion-duration-base: 550ms;
+  --motion-duration-slow: 750ms;
+  --motion-duration-page: 900ms;
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark {
@@ -99,9 +105,23 @@
   * {
     @apply border-border;
   }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-family: var(--font-sans);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html,
+    body {
+      transition:
+        background-color var(--motion-duration-slow) var(--motion-ease),
+        color var(--motion-duration-slow) var(--motion-ease);
+    }
   }
 }
 
@@ -111,5 +131,135 @@
   }
   100% {
     transform: translateX(420%);
+  }
+}
+
+@keyframes app-page-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes app-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes app-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes app-fade-in-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes dashboard-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes dashboard-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dashboard-fade-in-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@layer utilities {
+  .app-page-enter {
+    animation: app-page-enter var(--motion-duration-page) var(--motion-ease-out) both;
+  }
+
+  .app-reveal-up {
+    animation: app-fade-in-up var(--motion-duration-slow) var(--motion-ease-out) both;
+  }
+
+  .app-reveal-in {
+    animation: app-fade-in var(--motion-duration-base) var(--motion-ease-out) both;
+  }
+
+  .app-reveal-scale {
+    animation: app-fade-in-scale var(--motion-duration-slow) var(--motion-ease-out) both;
+  }
+
+  .app-transition {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform, filter;
+    transition-duration: var(--motion-duration-base);
+    transition-timing-function: var(--motion-ease);
+  }
+
+  .dashboard-reveal-up {
+    animation: dashboard-fade-in-up var(--motion-duration-slow) var(--motion-ease-out) both;
+  }
+
+  .dashboard-reveal-in {
+    animation: dashboard-fade-in var(--motion-duration-base) var(--motion-ease-out) both;
+  }
+
+  .dashboard-reveal-scale {
+    animation: dashboard-fade-in-scale var(--motion-duration-slow) var(--motion-ease-out) both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  html,
+  body {
+    transition: none;
+  }
+
+  .app-page-enter,
+  .app-reveal-up,
+  .app-reveal-in,
+  .app-reveal-scale,
+  .dashboard-reveal-up,
+  .dashboard-reveal-in,
+  .dashboard-reveal-scale {
+    animation: none;
   }
 }

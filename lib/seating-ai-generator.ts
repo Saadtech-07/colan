@@ -17,6 +17,7 @@ import {
   resolveOfficeRowsFromImage,
 } from "@/lib/seating-rows-to-ai-layout";
 import { normalizeAiLayoutGeometry } from "@/lib/seating-layout-normalize";
+import { buildGridAiLayout, parseGridLayoutSpec } from "@/lib/seating-grid-layout";
 import type { AILayoutSchema, GeneratedSeatingLayout } from "@/lib/seating-layout-types";
 import type { SeatingAiSuggestion } from "@/lib/seating-ai-types";
 import {
@@ -418,6 +419,20 @@ async function generateVisionLayout(input: {
 export async function generateSeatingFromTextPrompt(input: {
   prompt: string;
 }): Promise<SeatingAiSuggestion> {
+  const gridSpec = parseGridLayoutSpec(input.prompt);
+  if (gridSpec) {
+    const aiData = buildGridAiLayout(
+      gridSpec,
+      `${gridSpec.totalSeats}-seat layout (${gridSpec.cols}×${gridSpec.rows})`,
+    );
+    const layout = buildLayoutFromAiData(aiData, input.prompt);
+    return layoutToSuggestion(
+      layout,
+      "grid/colan-spacing",
+      aiData.description || "Blank grid layout with Colan bay spacing.",
+    );
+  }
+
   const { raw, modelLabel } = await generateTextRaw(input.prompt);
   const aiData = parseAiLayout(raw, modelLabel);
   const layout = buildLayoutFromAiData(aiData, input.prompt);

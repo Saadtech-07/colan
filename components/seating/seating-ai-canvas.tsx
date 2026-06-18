@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import type { GeneratedSeatingLayout } from "@/lib/seating-layout-types";
+import {
+  CANVAS_SEAT_HEIGHT,
+  CANVAS_SEAT_WIDTH,
+} from "@/lib/seating-layout-metrics";
 import type { Employee } from "@/types";
-
-const SEAT_SIZE = 60;
 const SEAT_RADIUS = 8;
 const BLOCK_DEPTH = 8;
 
@@ -75,14 +77,18 @@ type Props = {
   onSeatClick: (seatLabel: string) => void;
 };
 
-export function SeatingAiCanvas({
-  layout,
-  occupancy,
-  selectedSeat,
-  onSeatClick,
-}: Props) {
+export type SeatingAiCanvasHandle = {
+  getCanvas: () => HTMLCanvasElement | null;
+};
+
+export const SeatingAiCanvas = React.forwardRef<SeatingAiCanvasHandle, Props>(
+  function SeatingAiCanvas({ layout, occupancy, selectedSeat, onSeatClick }, ref) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [hoveredSeat, setHoveredSeat] = React.useState<string | null>(null);
+
+  React.useImperativeHandle(ref, () => ({
+    getCanvas: () => canvasRef.current,
+  }));
 
   const hitTest = React.useCallback(
     (clientX: number, clientY: number): string | null => {
@@ -97,9 +103,9 @@ export function SeatingAiCanvas({
       for (const seat of layout.seats) {
         if (
           x >= seat.x &&
-          x <= seat.x + SEAT_SIZE &&
+          x <= seat.x + CANVAS_SEAT_WIDTH &&
           y >= seat.y &&
-          y <= seat.y + SEAT_SIZE
+          y <= seat.y + CANVAS_SEAT_HEIGHT
         ) {
           return seat.label;
         }
@@ -190,8 +196,8 @@ export function SeatingAiCanvas({
         ctx,
         seat.x,
         seat.y,
-        SEAT_SIZE,
-        SEAT_SIZE,
+        CANVAS_SEAT_WIDTH,
+        CANVAS_SEAT_HEIGHT,
         SEAT_RADIUS,
         {
           top,
@@ -210,13 +216,13 @@ export function SeatingAiCanvas({
       const label = occupant
         ? occupant.name.split(" ")[0]?.slice(0, 8) ?? seat.label
         : seat.label;
-      ctx.fillText(label, seat.x + SEAT_SIZE / 2, seat.y + SEAT_SIZE / 2 - lift - (occupant ? 4 : 0));
+      ctx.fillText(label, seat.x + CANVAS_SEAT_WIDTH / 2, seat.y + CANVAS_SEAT_HEIGHT / 2 - lift - (occupant ? 4 : 0));
 
       if (occupant) {
         ctx.fillStyle = "#64748b";
         ctx.font = "500 7px system-ui, sans-serif";
         const teamLabel = occupant.team.length > 10 ? `${occupant.team.slice(0, 9)}…` : occupant.team;
-        ctx.fillText(teamLabel, seat.x + SEAT_SIZE / 2, seat.y + SEAT_SIZE / 2 - lift + 10);
+        ctx.fillText(teamLabel, seat.x + CANVAS_SEAT_WIDTH / 2, seat.y + CANVAS_SEAT_HEIGHT / 2 - lift + 10);
       }
     });
 
@@ -265,4 +271,5 @@ export function SeatingAiCanvas({
       onMouseLeave={() => setHoveredSeat(null)}
     />
   );
-}
+},
+);

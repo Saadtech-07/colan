@@ -75,7 +75,7 @@ function LoginPageContent() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#020617] px-4 py-10 dark:bg-[#020617]">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#020617] px-4 py-10 app-page-enter dark:bg-[#020617]">
       <div className="absolute right-4 top-4 z-20">
         <ThemeToggle className="text-white/80 hover:bg-white/10 hover:text-white" />
       </div>

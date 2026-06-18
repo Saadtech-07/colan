@@ -1,25 +1,17 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
 import {
-  ArrowUpRight,
   BriefcaseBusiness,
   CalendarClock,
   CheckCircle2,
   CircleDashed,
-  Cloud,
-  Code2,
   FolderKanban,
-  Layers3,
   ListTodo,
-  Palette,
-  Server,
   ShieldAlert,
   Sparkles,
   Users2,
   Workflow,
-  Wrench,
 } from "lucide-react";
 import {
   Bar,
@@ -39,16 +31,12 @@ import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { getProjectsForEmployee } from "@/lib/project-assignments";
-import {
-  projectProgressPercent,
-} from "@/lib/project-ui";
 import { teamTabLabel } from "@/lib/team-utils";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
@@ -218,22 +206,6 @@ function projectStatusBadge(project: Project, today: Date) {
     label: "Yet To Start",
     variant: "outline" as const,
   };
-}
-
-function renderTeamIcon(team: string, className?: string) {
-  const normalized = team.toLowerCase();
-  if (normalized.includes("react") || normalized.includes("next")) {
-    return <Code2 className={className} />;
-  }
-  if (normalized.includes("node") || normalized.includes("java") || normalized.includes("python")) {
-    return <Server className={className} />;
-  }
-  if (normalized.includes("ui") || normalized.includes("design")) {
-    return <Palette className={className} />;
-  }
-  if (normalized.includes("devops")) return <Cloud className={className} />;
-  if (normalized.includes("test")) return <Wrench className={className} />;
-  return <Layers3 className={className} />;
 }
 
 function toneForActivity(item: ActivityItem["tone"]) {
@@ -556,18 +528,6 @@ export default function DashboardPage() {
     [scopedProjects, today],
   );
 
-  const projectsByTeam = React.useMemo(
-    () =>
-      teamsInScope.reduce(
-        (acc, team) => {
-          acc[team] = scopedProjects.filter((project) => project.teams.includes(team));
-          return acc;
-        },
-        {} as Record<TeamName, Project[]>,
-      ),
-    [scopedProjects, teamsInScope],
-  );
-
   const showDistributionChart = dashboardScope !== "personal" && teamDistribution.length > 1;
   const isInitialLoading =
     dataLoading && scopedProjects.length === 0 && employees.length === 0 && teamNames.length === 0;
@@ -575,32 +535,38 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {dataSummary?.backend === "memory" && (
-        <AlertStrip
-          tone="warning"
-          title="In-memory data"
-          description={`${dataSummary.reason} Lists reset when the server restarts.`}
-        />
+        <DashboardReveal variant="in">
+          <AlertStrip
+            tone="warning"
+            title="In-memory data"
+            description={`${dataSummary.reason} Lists reset when the server restarts.`}
+          />
+        </DashboardReveal>
       )}
       {dataSummary?.backend === "error" && (
-        <AlertStrip
-          tone="danger"
-          title="MongoDB connection failed."
-          description={dataSummary.message}
-        />
+        <DashboardReveal variant="in" delayMs={60}>
+          <AlertStrip
+            tone="danger"
+            title="MongoDB connection failed."
+            description={dataSummary.message}
+          />
+        </DashboardReveal>
       )}
       {dataError && (
-        <AlertStrip
-          tone="danger"
-          title="Workspace data error"
-          description={
-            <>
-              {dataError}{" "}
-              <span className="text-muted-foreground">
-                Check API routes and optional <code className="text-xs">MONGODB_URI</code>.
-              </span>
-            </>
-          }
-        />
+        <DashboardReveal variant="in" delayMs={120}>
+          <AlertStrip
+            tone="danger"
+            title="Workspace data error"
+            description={
+              <>
+                {dataError}{" "}
+                <span className="text-muted-foreground">
+                  Check API routes and optional <code className="text-xs">MONGODB_URI</code>.
+                </span>
+              </>
+            }
+          />
+        </DashboardReveal>
       )}
 
       {isInitialLoading ? (
@@ -608,13 +574,16 @@ export default function DashboardPage() {
       ) : (
         <>
           <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-6">
-            {summaryCards.map((card) => (
-              <SummaryCard key={card.title} {...card} />
+            {summaryCards.map((card, index) => (
+              <DashboardReveal key={card.title} delayMs={index * 65} variant="scale">
+                <SummaryCard {...card} />
+              </DashboardReveal>
             ))}
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
-            <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
+          <section className="grid gap-6 lg:grid-cols-2">
+            <DashboardReveal delayMs={150} variant="up" className="h-full">
+              <Card className="flex h-full flex-col overflow-visible border-border/70 bg-background/75 backdrop-blur-xl">
               <CardHeader className="flex flex-row items-start justify-between gap-4 border-b border-border/60 pb-4">
                 <CardTitle className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
                   Project status analytics
@@ -627,21 +596,44 @@ export default function DashboardPage() {
                       : "Personal"}
                 </Badge>
               </CardHeader>
-              <CardContent className="p-6">
+              <CardContent className="flex flex-1 flex-col p-0">
                 {scopedProjects.length === 0 ? (
-                  <EmptySectionState
-                    icon={FolderKanban}
-                    title="No project analytics yet"
-                    description="Projects assigned to this dashboard scope will appear here automatically."
-                  />
+                  <div className="p-6">
+                    <EmptySectionState
+                      icon={FolderKanban}
+                      title="No project analytics yet"
+                      description="Projects assigned to this dashboard scope will appear here automatically."
+                    />
+                  </div>
                 ) : (
-                  <div className="space-y-6">
-                    <div className="h-[320px] w-full">
+                  <div className="space-y-4 p-6">
+                    <div className="h-[172px] w-full min-w-0">
                       <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={statusData} barGap={12}>
+                        <BarChart
+                          data={statusData}
+                          barCategoryGap="24%"
+                          margin={{ top: 8, right: 12, left: 4, bottom: 0 }}
+                        >
                           <CartesianGrid strokeDasharray="3 3" className="stroke-border/70" vertical={false} />
-                          <XAxis dataKey="name" tickLine={false} axisLine={false} className="text-xs" />
-                          <YAxis allowDecimals={false} tickLine={false} axisLine={false} className="text-xs" />
+                          <XAxis
+                            dataKey="name"
+                            tickLine={false}
+                            axisLine={false}
+                            interval={0}
+                            height={52}
+                            tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                          />
+                          <YAxis
+                            allowDecimals={false}
+                            tickLine={false}
+                            axisLine={false}
+                            width={32}
+                            tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
+                            domain={[
+                              0,
+                              Math.max(4, ...statusData.map((entry) => entry.value)) + 1,
+                            ]}
+                          />
                           <Tooltip
                             cursor={{ fill: "rgba(99, 102, 241, 0.08)" }}
                             content={({ active, payload }) => {
@@ -657,7 +649,7 @@ export default function DashboardPage() {
                               );
                             }}
                           />
-                          <Bar dataKey="value" radius={[12, 12, 6, 6]} animationDuration={800}>
+                          <Bar dataKey="value" radius={[8, 8, 4, 4]} animationDuration={800} maxBarSize={44}>
                             {statusData.map((entry) => (
                               <Cell key={entry.name} fill={entry.color} />
                             ))}
@@ -666,20 +658,20 @@ export default function DashboardPage() {
                       </ResponsiveContainer>
                     </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                       {statusData.map((entry) => (
                         <div
                           key={entry.name}
-                          className="rounded-2xl border border-border/60 bg-muted/25 px-4 py-3"
+                          className="rounded-xl border border-border/60 bg-muted/25 px-3 py-2.5"
                         >
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
                             <span
-                              className="h-2.5 w-2.5 rounded-full"
+                              className="h-2 w-2 shrink-0 rounded-full"
                               style={{ backgroundColor: entry.color }}
                             />
-                            <span className="text-sm font-medium text-foreground">{entry.name}</span>
+                            <span className="truncate text-xs font-medium text-foreground">{entry.name}</span>
                           </div>
-                          <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
+                          <p className="mt-1 text-xl font-semibold tracking-tight text-foreground">
                             {entry.value}
                           </p>
                         </div>
@@ -689,25 +681,27 @@ export default function DashboardPage() {
                 )}
               </CardContent>
             </Card>
+            </DashboardReveal>
 
+            <DashboardReveal delayMs={220} variant="up" className="h-full">
             {showDistributionChart ? (
-              <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
+              <Card className="flex h-full flex-col overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
                 <CardHeader className="border-b border-border/60 pb-4">
                   <CardTitle className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
                     Team employee distribution
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-6">
-                  <div className="space-y-6">
-                    <div className="h-[260px]">
+                  <div className="flex items-center gap-4">
+                    <div className="h-[168px] w-[168px] shrink-0">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
                             data={teamDistribution}
                             dataKey="value"
                             nameKey="name"
-                            innerRadius={58}
-                            outerRadius={92}
+                            innerRadius={44}
+                            outerRadius={72}
                             paddingAngle={3}
                             animationDuration={800}
                           >
@@ -733,23 +727,23 @@ export default function DashboardPage() {
                       </ResponsiveContainer>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="min-w-0 flex-1 space-y-2">
                       {teamDistribution.map((entry) => (
                         <div
                           key={entry.name}
-                          className="flex items-center justify-between rounded-2xl border border-border/60 bg-muted/25 px-4 py-3"
+                          className="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/25 px-3 py-2.5"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex min-w-0 items-center gap-2.5">
                             <span
-                              className="h-3 w-3 rounded-full"
+                              className="h-2.5 w-2.5 shrink-0 rounded-full"
                               style={{ backgroundColor: entry.color }}
                             />
-                            <div>
-                              <p className="text-sm font-medium text-foreground">{entry.name}</p>
-                              <p className="text-xs text-muted-foreground">{entry.percentage}% of visible headcount</p>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium text-foreground">{entry.name}</p>
+                              <p className="text-[11px] text-muted-foreground">{entry.percentage}% headcount</p>
                             </div>
                           </div>
-                          <p className="text-sm font-semibold text-foreground">{entry.value}</p>
+                          <p className="shrink-0 text-sm font-semibold tabular-nums text-foreground">{entry.value}</p>
                         </div>
                       ))}
                     </div>
@@ -766,9 +760,11 @@ export default function DashboardPage() {
                 dueSoon={deadlinesThisWeek.length}
               />
             )}
+            </DashboardReveal>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+          <section className="grid gap-6 lg:grid-cols-2">
+            <DashboardReveal delayMs={280} variant="up" className="h-full">
             <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
               <CardHeader className="border-b border-border/60 pb-4">
                 <SectionHeader title="Recent activity" />
@@ -788,7 +784,12 @@ export default function DashboardPage() {
                       {activityItems.map((item, index) => {
                         const Icon = item.icon;
                         return (
-                          <div key={item.id} className="relative flex gap-4 pb-5">
+                          <DashboardReveal
+                            key={item.id}
+                            variant="in"
+                            delayMs={320 + Math.min(index, 6) * 45}
+                            className="relative flex gap-4 pb-5"
+                          >
                             {index < activityItems.length - 1 && (
                               <span className="absolute left-[1.15rem] top-10 h-[calc(100%-1.25rem)] w-px bg-border/70" />
                             )}
@@ -809,7 +810,7 @@ export default function DashboardPage() {
                               </div>
                               <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>
                             </div>
-                          </div>
+                          </DashboardReveal>
                         );
                       })}
                     </div>
@@ -817,7 +818,9 @@ export default function DashboardPage() {
                 )}
               </CardContent>
             </Card>
+            </DashboardReveal>
 
+            <DashboardReveal delayMs={350} variant="up" className="h-full">
             <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
               <CardHeader className="border-b border-border/60 pb-4">
                 <SectionHeader title="Upcoming deadlines" />
@@ -834,79 +837,71 @@ export default function DashboardPage() {
                 ) : (
                   <ScrollArea className="h-[360px]">
                     <div className="space-y-3 p-6">
-                      {deadlineItems.map((item) => (
-                        <div
+                      {deadlineItems.map((item, index) => (
+                        <DashboardReveal
                           key={item.project.id}
-                          className="rounded-2xl border border-border/60 bg-muted/20 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-sm"
+                          variant="in"
+                          delayMs={380 + Math.min(index, 6) * 45}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-foreground">
-                                {item.project.name}
-                              </p>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {item.project.teams.map(teamTabLabel).join(" + ")}
-                              </p>
+                          <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-foreground">
+                                  {item.project.name}
+                                </p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {item.project.teams.map(teamTabLabel).join(" + ")}
+                                </p>
+                              </div>
+                              <div className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", toneBadgeClass(item.tone))}>
+                                {item.label}
+                              </div>
                             </div>
-                            <div className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", toneBadgeClass(item.tone))}>
-                              {item.label}
+                            <Separator className="my-3" />
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="text-muted-foreground">Due {formatShortDate(item.project.lastDate)}</span>
+                              <Badge variant={projectStatusBadge(item.project, today).variant}>
+                                {projectStatusBadge(item.project, today).label}
+                              </Badge>
                             </div>
                           </div>
-                          <Separator className="my-3" />
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="text-muted-foreground">Due {formatShortDate(item.project.lastDate)}</span>
-                            <Badge variant={projectStatusBadge(item.project, today).variant}>
-                              {projectStatusBadge(item.project, today).label}
-                            </Badge>
-                          </div>
-                        </div>
+                        </DashboardReveal>
                       ))}
                     </div>
                   </ScrollArea>
                 )}
               </CardContent>
             </Card>
-          </section>
-
-          <section className="space-y-5">
-            <SectionHeader
-              title={dashboardScope === "personal" ? "Assigned projects" : "Team-based projects"}
-            />
-
-            {dashboardScope === "personal" ? (
-              <div className="grid gap-4 xl:grid-cols-2">
-                {scopedProjects.length === 0 ? (
-                  <Card className="border-dashed border-border/70 bg-background/60 xl:col-span-2">
-                    <CardContent className="flex min-h-[220px] items-center justify-center p-6">
-                      <EmptySectionState
-                        icon={FolderKanban}
-                        title="No assigned projects yet"
-                        description="Once projects are assigned to your profile, they will appear here automatically."
-                      />
-                    </CardContent>
-                  </Card>
-                ) : (
-                  scopedProjects.map((project) => (
-                    <ProjectRowCard key={project.id} project={project} today={today} />
-                  ))
-                )}
-              </div>
-            ) : (
-              <div className="grid gap-6 2xl:grid-cols-2">
-                {teamsInScope.map((team) => (
-                  <TeamProjectCard
-                    key={team}
-                    team={team}
-                    projects={projectsByTeam[team] ?? []}
-                    employees={employees.filter((employee) => employee.team === team)}
-                    today={today}
-                  />
-                ))}
-              </div>
-            )}
+            </DashboardReveal>
           </section>
         </>
       )}
+    </div>
+  );
+}
+
+function DashboardReveal({
+  children,
+  className,
+  delayMs = 0,
+  variant = "up",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  delayMs?: number;
+  variant?: "up" | "in" | "scale";
+}) {
+  return (
+    <div
+      className={cn(
+        variant === "up" && "dashboard-reveal-up",
+        variant === "in" && "dashboard-reveal-in",
+        variant === "scale" && "dashboard-reveal-scale",
+        className,
+      )}
+      style={{ animationDelay: `${delayMs}ms` }}
+    >
+      {children}
     </div>
   );
 }
@@ -980,40 +975,44 @@ function TeamSpotlightCard({
   dueSoon: number;
 }) {
   return (
-    <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
+    <Card className="flex h-full flex-col overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
       <CardHeader className="border-b border-border/60 pb-4">
         <CardTitle className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
           {scope === "personal" ? "Personal focus" : team ? `${teamTabLabel(team)} spotlight` : "Workspace spotlight"}
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-6 p-6">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <SpotlightMetric title="Active work" value={String(activeProjects)} />
-          <SpotlightMetric title="Due soon" value={String(dueSoon)} />
-          <SpotlightMetric title="Delayed" value={String(delayedProjects)} />
-        </div>
+      <CardContent className="flex flex-1 flex-col p-0">
+        <ScrollArea className="h-[360px]">
+          <div className="space-y-6 p-6">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <SpotlightMetric title="Active work" value={String(activeProjects)} />
+              <SpotlightMetric title="Due soon" value={String(dueSoon)} />
+              <SpotlightMetric title="Delayed" value={String(delayedProjects)} />
+            </div>
 
-        <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
-          <p className="text-sm font-medium text-foreground">Visible members</p>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            {employees.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No visible team members in this dashboard scope.</p>
-            ) : (
-              employees.map((employee) => (
-                <div key={employee.id} className="flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-2.5 py-2">
-                  <Avatar className="h-8 w-8 ring-1 ring-border/60">
-                    <AvatarImage src={employee.imageUrl} alt={employee.name} />
-                    <AvatarFallback>{profileInitials(employee.name)}</AvatarFallback>
-                  </Avatar>
-                  <div className="max-w-[120px]">
-                    <p className="truncate text-xs font-semibold text-foreground">{employee.name}</p>
-                    <p className="truncate text-[11px] text-muted-foreground">{employee.role}</p>
-                  </div>
-                </div>
-              ))
-            )}
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <p className="text-sm font-medium text-foreground">Visible members</p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                {employees.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No visible team members in this dashboard scope.</p>
+                ) : (
+                  employees.map((employee) => (
+                    <div key={employee.id} className="flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-2.5 py-2">
+                      <Avatar className="h-8 w-8 ring-1 ring-border/60">
+                        <AvatarImage src={employee.imageUrl} alt={employee.name} />
+                        <AvatarFallback>{profileInitials(employee.name)}</AvatarFallback>
+                      </Avatar>
+                      <div className="max-w-[120px]">
+                        <p className="truncate text-xs font-semibold text-foreground">{employee.name}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">{employee.role}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
-        </div>
+        </ScrollArea>
       </CardContent>
     </Card>
   );
@@ -1027,186 +1026,6 @@ function SpotlightMetric({ title, value }: { title: string; value: string }) {
       </p>
       <p className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{value}</p>
     </div>
-  );
-}
-
-function TeamProjectRow({
-  project,
-  ownerTeam,
-  today,
-}: {
-  project: Project;
-  ownerTeam: TeamName;
-  today: Date;
-}) {
-  const status = projectStatusBadge(project, today);
-  const progress = projectProgressPercent(project, today);
-  const crossTeams = project.teams.filter((projectTeam) => projectTeam !== ownerTeam);
-
-  return (
-    <Link
-      href={`/projects/${project.slug}`}
-      className="group block rounded-xl border border-border/60 bg-background/80 p-4 transition-colors hover:border-primary/20 hover:bg-background"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
-              {project.name}
-            </p>
-            <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {formatShortDate(project.assignedDate)} – {formatShortDate(project.lastDate)}
-          </p>
-          {crossTeams.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {crossTeams.map((projectTeam) => (
-                <Badge
-                  key={projectTeam}
-                  variant="outline"
-                  className="rounded-full text-[10px] font-medium"
-                >
-                  {teamTabLabel(projectTeam)}
-                </Badge>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="flex shrink-0 flex-col items-end gap-2">
-          <Badge variant={status.variant}>{status.label}</Badge>
-          <span className="text-xs text-muted-foreground">
-            {project.memberIds.length} member{project.memberIds.length === 1 ? "" : "s"}
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-3 space-y-1.5">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Progress</span>
-          <span>{progress}%</span>
-        </div>
-        <div className="h-1.5 rounded-full bg-muted">
-          <div
-            className="h-full rounded-full bg-primary transition-all duration-500"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function TeamProjectCard({
-  team,
-  projects,
-  employees,
-  today,
-}: {
-  team: TeamName;
-  projects: Project[];
-  employees: Employee[];
-  today: Date;
-}) {
-  const completed = projects.filter((project) => project.status === "Completed").length;
-  const completionPercentage =
-    projects.length === 0 ? 0 : Math.round((completed / projects.length) * 100);
-
-  return (
-    <Card className="overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
-      <CardHeader className="border-b border-border/60 bg-muted/15 pb-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-2xl border border-border/60 bg-background/80 p-3 shadow-sm">
-              {renderTeamIcon(team, "h-5 w-5 text-primary")}
-            </div>
-            <div>
-              <CardTitle className="text-lg">{team}</CardTitle>
-              <CardDescription className="mt-1">
-                {projects.length} project{projects.length === 1 ? "" : "s"} · {completionPercentage}%
-                completed
-              </CardDescription>
-            </div>
-          </div>
-          {employees.length > 0 ? (
-            <div className="flex shrink-0 -space-x-2">
-              {employees.slice(0, 4).map((employee) => (
-                <Avatar key={employee.id} className="h-9 w-9 border-2 border-background ring-0">
-                  <AvatarImage src={employee.imageUrl} alt={employee.name} />
-                  <AvatarFallback>{profileInitials(employee.name)}</AvatarFallback>
-                </Avatar>
-              ))}
-              {employees.length > 4 ? (
-                <div className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-background bg-muted text-xs font-semibold text-muted-foreground">
-                  +{employees.length - 4}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </CardHeader>
-
-      <CardContent className="space-y-3 p-5">
-        {projects.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border/70 bg-muted/10 px-4 py-10 text-center text-sm text-muted-foreground">
-            No projects yet for this team.
-          </div>
-        ) : (
-          projects.map((project) => (
-            <TeamProjectRow
-              key={project.id}
-              project={project}
-              ownerTeam={team}
-              today={today}
-            />
-          ))
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ProjectRowCard({ project, today }: { project: Project; today: Date }) {
-  return (
-    <Link
-      href={`/projects/${project.slug}`}
-      className="group block rounded-[24px] border border-border/70 bg-background/75 p-5 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_18px_40px_-28px_rgba(15,23,42,0.45)]"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-base font-semibold text-foreground transition-colors group-hover:text-primary">
-            {project.name}
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {project.teams.map(teamTabLabel).join(" + ")}
-          </p>
-        </div>
-        <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary" />
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Badge variant={projectStatusBadge(project, today).variant}>
-          {projectStatusBadge(project, today).label}
-        </Badge>
-        <Badge variant="outline" className="rounded-full bg-muted/35">
-          Due {formatShortDate(project.lastDate)}
-        </Badge>
-      </div>
-
-      <div className="mt-4 space-y-2">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>Progress</span>
-          <span>{projectProgressPercent(project, today)}%</span>
-        </div>
-        <div className="h-2 rounded-full bg-muted/70">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-primary via-indigo-500 to-cyan-400 transition-all duration-500"
-            style={{ width: `${projectProgressPercent(project, today)}%` }}
-          />
-        </div>
-      </div>
-    </Link>
   );
 }
 
@@ -1239,13 +1058,13 @@ function DashboardSkeleton() {
           <div key={index} className="h-36 rounded-[24px] border border-border/60 bg-muted/30" />
         ))}
       </div>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
+      <div className="grid gap-6 lg:grid-cols-2">
         <div className="h-[430px] rounded-[24px] border border-border/60 bg-muted/30" />
         <div className="h-[430px] rounded-[24px] border border-border/60 bg-muted/30" />
       </div>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="h-[280px] rounded-[24px] border border-border/60 bg-muted/30" />
-        <div className="h-[280px] rounded-[24px] border border-border/60 bg-muted/30" />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="h-[430px] rounded-[24px] border border-border/60 bg-muted/30" />
+        <div className="h-[430px] rounded-[24px] border border-border/60 bg-muted/30" />
       </div>
     </div>
   );

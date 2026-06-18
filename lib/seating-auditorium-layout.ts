@@ -1,11 +1,20 @@
 import type { AILayoutSchema } from "@/lib/seating-layout-types";
+import {
+  CANVAS_BAND_HEIGHT,
+  CANVAS_CELL_GAP,
+  CANVAS_ROOM_PADDING,
+  CANVAS_ROW_BAND_GAP,
+  CANVAS_SEAT_HEIGHT,
+  CANVAS_SEAT_STRIDE,
+  CANVAS_SEAT_WIDTH,
+} from "@/lib/seating-layout-metrics";
 
-const SEAT_SIZE = 60;
-const SEAT_STRIDE_X = 80;
-const SEAT_STRIDE_Y = 90;
-const AISLE_WIDTH = 80;
-const ROOM_PADDING = 60;
-const STAGE_HEIGHT = 50;
+const SEAT_SIZE = CANVAS_SEAT_WIDTH;
+const SEAT_STRIDE_X = CANVAS_SEAT_STRIDE;
+const SEAT_STRIDE_Y = CANVAS_BAND_HEIGHT + CANVAS_ROW_BAND_GAP;
+const AISLE_WIDTH = CANVAS_SEAT_STRIDE;
+const ROOM_PADDING = CANVAS_ROOM_PADDING;
+const STAGE_HEIGHT = Math.round(CANVAS_SEAT_HEIGHT * 0.85);
 
 export type ParsedLayoutDescription = {
   layoutType: "auditorium" | "office" | "unknown";
