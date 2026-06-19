@@ -35,13 +35,6 @@ export async function sessionAccessAsync(
   return sessionAccess(session);
 }
 
-export function requirePermission(
-  access: SessionAccess | null,
-  permission: Parameters<typeof hasPermission>[1],
-): access is SessionAccess {
-  return !!access && hasPermission(access.role, permission);
-}
-
 export { filterEmployeesForUser, filterProjectsForUser };
 
 export function assertCanCreateProject(

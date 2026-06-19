@@ -12,8 +12,6 @@ import {
   ShieldCheck,
   Trash2,
   TriangleAlert,
-  UserCheck,
-  Users,
   X,
 } from "lucide-react";
 import {
@@ -37,9 +35,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -52,6 +47,8 @@ import {
 import { profileNameInitial } from "@/lib/profile-image";
 import { useClientPagination } from "@/lib/client-pagination";
 import { ListPagination } from "@/components/ui/list-pagination";
+import { LoadingIndicator } from "@/components/ui/loading-indicator";
+import { SectionTitle } from "@/components/ui/page-typography";
 import { cn } from "@/lib/utils";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
@@ -80,7 +77,7 @@ type AppUserMutationResponse = AppUserPublicDTO & {
 };
 
 const FALLBACK_TEAM = "React Team" as TeamName;
-const APP_USERS_PAGE_SIZE = 4;
+const APP_USERS_PAGE_SIZE = 6;
 
 function buildInitialForm(defaultTeam: TeamName): AppUserFormState {
   return buildDefaultAppUserForm(defaultTeam);
@@ -121,7 +118,7 @@ export default function AppUsersPage() {
   const defaultTeam = (teamNames[0] ?? FALLBACK_TEAM) as TeamName;
 
   const [users, setUsers] = React.useState<AppUserPublicDTO[]>([]);
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
   const [toast, setToast] = React.useState<CreateAccountToast | null>(null);
@@ -140,6 +137,7 @@ export default function AppUsersPage() {
   const [teamFilter, setTeamFilter] = React.useState("all");
 
   const toastTimerRef = React.useRef<number | null>(null);
+  const successTimerRef = React.useRef<number | null>(null);
   const openedFromQueryRef = React.useRef(false);
 
   const submitting = isLoadingKey("app-users-submit");
@@ -207,16 +205,10 @@ export default function AppUsersPage() {
     teamFilter,
   ]);
 
-  const summary = React.useMemo(() => {
-    const completedProfiles = users.filter((record) => record.isProfileCompleted).length;
-    const representedTeams = new Set(users.map((record) => record.team).filter(Boolean)).size;
-
-    return {
-      total: users.length,
-      completedProfiles,
-      representedTeams,
-    };
-  }, [users]);
+  const getRoleMeta = React.useCallback(
+    (roleKey: AppRole) => workspaceRoles.find((role) => role.key === roleKey),
+    [workspaceRoles],
+  );
 
   const fetchUsers = React.useCallback(async () => {
     setLoading(true);
@@ -253,9 +245,19 @@ export default function AppUsersPage() {
     }, 5000);
   }, []);
 
+  const showSuccessMessage = React.useCallback((message: string) => {
+    if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
+    setSuccess(message);
+    successTimerRef.current = window.setTimeout(() => {
+      setSuccess(null);
+      successTimerRef.current = null;
+    }, 4000);
+  }, []);
+
   React.useEffect(
     () => () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
     },
     [],
   );
@@ -334,7 +336,6 @@ export default function AppUsersPage() {
       const result = (await res.json()) as AppUserMutationResponse;
       await fetchUsers();
       await refreshData();
-      setSuccess("Employee account created successfully.");
 
       if (result.emailDelivery?.sent) {
         showToast({
@@ -404,7 +405,7 @@ export default function AppUsersPage() {
 
         setDialogOpen(false);
         resetForm({ clearFeedback: false });
-        setSuccess("Account updated successfully.");
+        showSuccessMessage("Account updated successfully.");
       });
     } catch (e) {
       throw e;
@@ -438,7 +439,7 @@ export default function AppUsersPage() {
         }
         await fetchUsers();
         await refreshData();
-        setSuccess("Account removed.");
+        showSuccessMessage("Account removed.");
         setDeleteTarget(null);
         if (editingId === id) {
           setDialogOpen(false);
@@ -553,59 +554,6 @@ export default function AppUsersPage() {
         </div>
       )}
 
-      <section className="overflow-hidden rounded-[32px] border border-border/60 bg-gradient-to-br from-background via-background to-muted/40 p-6 shadow-sm sm:p-8">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                App Users
-              </h1>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
-              <div className="rounded-2xl border border-border/60 bg-background/80 px-4 py-3 shadow-sm">
-                <p className="text-2xl font-semibold">{summary.total}</p>
-                <p className="text-xs text-muted-foreground">Total accounts</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-background/80 px-4 py-3 shadow-sm">
-                <p className="text-2xl font-semibold">{summary.completedProfiles}</p>
-                <p className="text-xs text-muted-foreground">Profiles completed</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-background/80 px-4 py-3 shadow-sm">
-                <p className="text-2xl font-semibold">{summary.representedTeams}</p>
-                <p className="text-xs text-muted-foreground">Teams represented</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="w-full xl:max-w-sm">
-            <div className="space-y-3 rounded-[28px] border border-border/60 bg-background/85 p-4 shadow-sm backdrop-blur-sm">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                  <UserCheck className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">Signed in as</p>
-                  <p className="truncate text-sm text-muted-foreground">{user?.email}</p>
-                </div>
-              </div>
-              <p className="text-xs leading-5 text-muted-foreground">
-                Keep the directory on the page and handle account creation or editing in a
-                focused popup flow.
-              </p>
-              <Button
-                type="button"
-                className="h-11 w-full rounded-2xl px-5 shadow-sm"
-                onClick={startCreate}
-              >
-                <Plus className="h-4 w-4" />
-                Create Account
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {error && !submitting && (
         <div className="rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
@@ -613,101 +561,98 @@ export default function AppUsersPage() {
       )}
 
       {success && !submitting && (
-        <div className="rounded-2xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-primary">
-          {success}
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-primary">
+          <span>{success}</span>
+          <button
+            type="button"
+            className="rounded-md p-1 text-primary/70 transition hover:bg-primary/10 hover:text-primary"
+            onClick={() => {
+              if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
+              setSuccess(null);
+            }}
+            aria-label="Dismiss notification"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
-      <Card className="overflow-hidden rounded-[28px] border-border/70 shadow-sm">
-        <CardHeader className="border-b border-border/60 bg-card/70 pb-5">
-          <div className="space-y-4">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <CardTitle className="text-xl">Account directory</CardTitle>
-                <CardDescription className="mt-1">
-                  Search, filter, and manage workspace accounts from one place.
-                </CardDescription>
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground">
-                <Users className="h-3.5 w-3.5" />
-                {paginatedTotal === 0
-                  ? `Showing 0 of ${users.length}`
-                  : totalPages > 1
-                    ? `Showing ${rangeStart}–${rangeEnd} of ${paginatedTotal} (${users.length} total)`
-                    : `Showing ${paginatedTotal} of ${users.length}`}
-              </div>
+      <div className="space-y-4">
+        <SectionTitle as="h2" className="font-semibold text-muted-foreground">
+          Account directory
+        </SectionTitle>
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1 sm:max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search by name, email, employee ID, role, or team"
+                className="h-10 rounded-xl border-border/70 bg-background pl-9 shadow-sm focus-visible:border-primary focus-visible:ring-primary/20"
+              />
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search by name, email, employee ID, role, or team"
-                  className="h-11 rounded-2xl border-border/70 pl-10"
-                />
-              </div>
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger className="h-10 w-full rounded-xl border-border/70 bg-background sm:w-[150px]">
+                <SelectValue placeholder="All roles" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl border-border/60">
+                <SelectItem value="all">All roles</SelectItem>
+                {workspaceRoles.map((role) => (
+                  <SelectItem key={role.key} value={role.key}>
+                    {role.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-              <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
-                  <SelectValue placeholder="Filter by role" />
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl border-border/60">
-                  <SelectItem value="all">All roles</SelectItem>
-                  {workspaceRoles.map((role) => (
-                    <SelectItem key={role.key} value={role.key}>
-                      {role.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <Select value={teamFilter} onValueChange={setTeamFilter}>
+              <SelectTrigger className="h-10 w-full rounded-xl border-border/70 bg-background sm:w-[150px]">
+                <SelectValue placeholder="All teams" />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl border-border/60">
+                <SelectItem value="all">All teams</SelectItem>
+                {availableTeamFilters.map((team) => (
+                  <SelectItem key={team} value={team}>
+                    {team}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-              <Select value={teamFilter} onValueChange={setTeamFilter}>
-                <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
-                  <SelectValue placeholder="Filter by team" />
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl border-border/60">
-                  <SelectItem value="all">All teams</SelectItem>
-                  {availableTeamFilters.map((team) => (
-                    <SelectItem key={team} value={team}>
-                      {team}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
+            {(searchQuery || roleFilter !== "all" || teamFilter !== "all") && (
               <Button
                 type="button"
                 variant="outline"
-                className="h-11 rounded-2xl border-border/70 bg-background/80 px-4"
+                className="h-10 shrink-0 rounded-xl px-3 text-sm"
                 onClick={clearFilters}
               >
-                Clear filters
+                Clear
               </Button>
-            </div>
+            )}
           </div>
-        </CardHeader>
 
+          <Button
+            type="button"
+            className="h-10 shrink-0 gap-2 rounded-xl px-4 shadow-sm"
+            onClick={startCreate}
+          >
+            <Plus className="h-4 w-4" />
+            Create account
+          </Button>
+        </div>
+      </div>
+
+      <Card className="overflow-hidden rounded-[28px] border-border/70 shadow-sm">
         <CardContent className="p-4 sm:p-5">
           {loading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <div
-                  key={`account-skeleton-${index}`}
-                  className="animate-pulse rounded-[24px] border border-border/70 bg-muted/25 p-4"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="h-14 w-14 rounded-2xl bg-muted" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-4 w-40 rounded bg-muted" />
-                      <div className="h-3 w-56 rounded bg-muted" />
-                      <div className="h-3 w-32 rounded bg-muted" />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <LoadingIndicator
+              title={LOADING_PRESETS.loadingAccounts.title}
+              description={LOADING_PRESETS.loadingAccounts.description}
+              className="min-h-[360px] py-12"
+            />
           ) : filteredUsers.length === 0 ? (
             <div className="rounded-[24px] border border-dashed border-border/70 bg-muted/20 px-6 py-12 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-background shadow-sm">
@@ -724,6 +669,7 @@ export default function AppUsersPage() {
                 const status = profileStatusMeta(record.isProfileCompleted);
                 const isCurrentUser = record.email === user?.email;
                 const isEditing = editingId === record.id && dialogOpen;
+                const roleMeta = getRoleMeta(record.appRole);
 
                 return (
                   <article
@@ -774,33 +720,28 @@ export default function AppUsersPage() {
                               {record.email}
                             </span>
                             <span className="inline-flex items-center gap-1.5">
-                              <ShieldCheck className="h-4 w-4" />
-                              {getRoleLabel(record.appRole)}
-                            </span>
-                            <span className="inline-flex items-center gap-1.5">
                               <Building2 className="h-4 w-4" />
                               {record.team ?? "Unassigned"}
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 font-mono text-xs">
+                              ID: {record.employeeId}
                             </span>
                           </div>
 
                           <div className="flex flex-wrap gap-2">
                             <Badge
-                              variant="secondary"
-                              className="rounded-full bg-secondary/70 px-3 py-1"
+                              className="rounded-full border-0 px-3 py-1 text-[11px] font-medium"
+                              style={
+                                roleMeta
+                                  ? {
+                                      backgroundColor: `color-mix(in srgb, ${roleMeta.color} 12%, white)`,
+                                      color: roleMeta.color,
+                                    }
+                                  : undefined
+                              }
+                              variant={roleMeta ? "secondary" : "secondary"}
                             >
                               {getRoleLabel(record.appRole)}
-                            </Badge>
-                            <Badge
-                              variant="outline"
-                              className="rounded-full border-border/70 bg-background/70 px-3 py-1"
-                            >
-                              Team: {record.team ?? "Unassigned"}
-                            </Badge>
-                            <Badge
-                              variant="outline"
-                              className="rounded-full border-border/70 bg-background/70 px-3 py-1"
-                            >
-                              ID: {record.employeeId}
                             </Badge>
                           </div>
                         </div>

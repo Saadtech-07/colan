@@ -99,6 +99,7 @@
   --radius-sm: calc(var(--radius) - 4px);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-heading: var(--font-plus-jakarta), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer base {
@@ -176,34 +177,25 @@
   }
 }
 
-@keyframes dashboard-fade-in-up {
-  from {
-    opacity: 0;
-    transform: translate3d(0, 14px, 0);
+@keyframes gallery-glass-float {
+  0%,
+  100% {
+    transform: translateY(0);
   }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-@keyframes dashboard-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
+  50% {
+    transform: translateY(-10px);
   }
 }
 
-@keyframes dashboard-fade-in-scale {
-  from {
-    opacity: 0;
-    transform: scale(0.98);
+@keyframes gallery-glass-shimmer {
+  0% {
+    opacity: 0.35;
   }
-  to {
-    opacity: 1;
-    transform: scale(1);
+  50% {
+    opacity: 0.65;
+  }
+  100% {
+    opacity: 0.35;
   }
 }
 
@@ -212,34 +204,79 @@
     animation: app-page-enter var(--motion-duration-page) var(--motion-ease-out) both;
   }
 
-  .app-reveal-up {
-    animation: app-fade-in-up var(--motion-duration-slow) var(--motion-ease-out) both;
-  }
-
-  .app-reveal-in {
-    animation: app-fade-in var(--motion-duration-base) var(--motion-ease-out) both;
-  }
-
   .app-reveal-scale {
     animation: app-fade-in-scale var(--motion-duration-slow) var(--motion-ease-out) both;
   }
 
-  .app-transition {
-    transition-property: color, background-color, border-color, box-shadow, opacity, transform, filter;
+  .duration-motion {
     transition-duration: var(--motion-duration-base);
+  }
+
+  .ease-motion {
     transition-timing-function: var(--motion-ease);
   }
 
   .dashboard-reveal-up {
-    animation: dashboard-fade-in-up var(--motion-duration-slow) var(--motion-ease-out) both;
+    animation: app-fade-in-up var(--motion-duration-slow) var(--motion-ease-out) both;
   }
 
   .dashboard-reveal-in {
-    animation: dashboard-fade-in var(--motion-duration-base) var(--motion-ease-out) both;
+    animation: app-fade-in var(--motion-duration-base) var(--motion-ease-out) both;
   }
 
   .dashboard-reveal-scale {
-    animation: dashboard-fade-in-scale var(--motion-duration-slow) var(--motion-ease-out) both;
+    animation: app-fade-in-scale var(--motion-duration-slow) var(--motion-ease-out) both;
+  }
+
+  .font-heading {
+    font-family: var(--font-heading);
+  }
+
+  .gallery-glass-float {
+    animation: gallery-glass-float 5.5s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  .gallery-glass-float:hover {
+    animation-play-state: paused;
+  }
+
+  .gallery-glass-panel {
+    position: relative;
+    isolation: isolate;
+    border: 1px solid rgb(255 255 255 / 0.42);
+    background: rgb(255 255 255 / 0.38);
+    backdrop-filter: blur(22px) saturate(160%);
+    -webkit-backdrop-filter: blur(22px) saturate(160%);
+    box-shadow:
+      0 10px 40px rgb(15 23 42 / 0.1),
+      0 4px 14px rgb(15 23 42 / 0.06),
+      inset 0 1px 0 rgb(255 255 255 / 0.65);
+  }
+
+  .dark .gallery-glass-panel {
+    border-color: rgb(255 255 255 / 0.14);
+    background: rgb(255 255 255 / 0.07);
+    box-shadow:
+      0 14px 44px rgb(0 0 0 / 0.38),
+      0 4px 14px rgb(0 0 0 / 0.22),
+      inset 0 1px 0 rgb(255 255 255 / 0.1);
+  }
+
+  .gallery-glass-caption {
+    border: 1px solid rgb(255 255 255 / 0.35);
+    background: rgb(255 255 255 / 0.28);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .dark .gallery-glass-caption {
+    border-color: rgb(255 255 255 / 0.1);
+    background: rgb(255 255 255 / 0.06);
+  }
+
+  .gallery-glass-shine {
+    animation: gallery-glass-shimmer 4s ease-in-out infinite;
   }
 }
 
@@ -254,12 +291,12 @@
   }
 
   .app-page-enter,
-  .app-reveal-up,
-  .app-reveal-in,
   .app-reveal-scale,
   .dashboard-reveal-up,
   .dashboard-reveal-in,
-  .dashboard-reveal-scale {
+  .dashboard-reveal-scale,
+  .gallery-glass-float,
+  .gallery-glass-shine {
     animation: none;
   }
 }

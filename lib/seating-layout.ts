@@ -140,6 +140,3 @@ const SEAT_SET = new Set(ALL_SEAT_IDS);
 export function isValidSeatId(id: string): boolean {
   return SEAT_SET.has(id);
 }
-
-/** @deprecated Use ALL_SEAT_IDS — legacy alias for bay id lists */
-export const ALL_BAY_IDS = ALL_SEAT_IDS;

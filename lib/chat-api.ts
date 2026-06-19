@@ -34,10 +34,6 @@ export async function requireChatContext(): Promise<ChatRequestContext | NextRes
   return { actor };
 }
 
-export function chatForbidden(message: string) {
-  return NextResponse.json({ error: message }, { status: 403 });
-}
-
 export function assertCanSend(actor: ChatActor): string | null {
   if (!canSendChat(actor.appRole)) {
     return "You do not have permission to send messages.";

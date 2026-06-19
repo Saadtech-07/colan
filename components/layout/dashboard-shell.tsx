@@ -15,7 +15,7 @@ function DashboardShellInner({ children }: { children: ReactNode }) {
     <div
       className={cn(
         "min-h-screen bg-muted/30 transition-[padding,background-color] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        collapsed ? "lg:pl-24" : "lg:pl-64",
+        collapsed ? "lg:pl-16" : "lg:pl-[14.5rem]",
       )}
     >
       <AppSidebar />

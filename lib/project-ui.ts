@@ -17,15 +17,17 @@ export function parseProjectDate(value: string) {
 
 export function formatProjectDate(
   value: string,
-  options: Intl.DateTimeFormatOptions = {
+  options: Intl.DateTimeFormatOptions & { emptyLabel?: string } = {
     month: "short",
     day: "numeric",
     year: "numeric",
   },
 ) {
+  const { emptyLabel = "No date", ...intlOptions } = options;
+  if (!value?.trim()) return emptyLabel;
   const parsed = parseProjectDate(value);
-  if (!parsed) return value || "No date";
-  return parsed.toLocaleDateString(undefined, options);
+  if (!parsed) return value.trim() || emptyLabel;
+  return parsed.toLocaleDateString(undefined, intlOptions);
 }
 
 export function isProjectDelayed(project: Pick<Project, "lastDate" | "status">, today = new Date()) {
@@ -63,14 +65,37 @@ export function projectProgressPercent(
   return projectStatusProgressPercent(project.status);
 }
 
+export function daysUntilProjectDue(
+  project: Pick<Project, "lastDate" | "status">,
+  today = new Date(),
+) {
+  if (project.status === "Completed") return null;
+  const deadline = parseProjectDate(project.lastDate);
+  if (!deadline) return null;
+  return Math.round(
+    (deadline.getTime() - startOfDay(today).getTime()) / (1000 * 60 * 60 * 24),
+  );
+}
+
+export function isProjectHighPriority(
+  project: Pick<Project, "lastDate" | "status">,
+  today = new Date(),
+  withinDays = 10,
+) {
+  const days = daysUntilProjectDue(project, today);
+  if (days === null) return false;
+  return days >= 0 && days < withinDays;
+}
+
 export function projectPriority(project: Pick<Project, "lastDate" | "status">, today = new Date()) {
-  if (isProjectDelayed(project, today)) {
+  if (isProjectHighPriority(project, today)) {
     return {
       label: "High priority",
       toneClass: "border-transparent bg-destructive/10 text-destructive",
     };
   }
-  if (isProjectDueSoon(project, today, 7)) {
+  const days = daysUntilProjectDue(project, today);
+  if (days !== null && days >= 10 && days < 30) {
     return {
       label: "Medium priority",
       toneClass:

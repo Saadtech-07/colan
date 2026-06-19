@@ -1,9 +1,16 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { CalendarClock, Loader2, Save, Search, Users2, Workflow } from "lucide-react";
 import { ProjectStatusSelect } from "@/components/features/project-status-select";
-import { TeamMultiSelect } from "@/components/features/team-multi-select";
+import {
+  ProjectFormField,
+  projectFieldClassName,
+  projectFormLabelClassName,
+  projectTextareaClassName,
+  TeamChipSelect,
+} from "@/components/features/project-form-shared";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +51,7 @@ export function ProjectDetailEditor({
   lockedTeam,
   onSaved,
 }: Props) {
+  const router = useRouter();
   const { teamNames } = useAppState();
   const [name, setName] = React.useState(project.name);
   const [clientName, setClientName] = React.useState(project.clientName ?? "");
@@ -273,64 +281,43 @@ export function ProjectDetailEditor({
   }
 
   return (
-    <section className="space-y-6">
-      {error && (
-        <p className="rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-sm">
-          {error}
-        </p>
-      )}
+    <div className="overflow-hidden rounded-xl border border-border/60 bg-background shadow-sm">
+      <div className="p-6 sm:p-8">
+        {error ? (
+          <p className="mb-7 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-[15px] text-destructive">
+            {error}
+          </p>
+        ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.95fr)] xl:grid-rows-[auto_minmax(480px,1fr)]">
-        <Card
-          id="project-details"
-          className="border-border/70 bg-background/75 backdrop-blur-xl xl:row-start-1 xl:col-start-1"
-        >
-          <CardHeader className="border-b border-border/60 pb-4">
-            <CardTitle>Project details</CardTitle>
-            <CardDescription>
-              Capture the project title, client account, and assigned manager for this workspace.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5 p-6">
-            <div className="space-y-2">
-              <RequiredFieldLabel htmlFor="p-name">Project name</RequiredFieldLabel>
+        <div className="grid gap-x-12 gap-y-10 lg:grid-cols-2">
+          <div className="space-y-7">
+            <ProjectFormField id="p-name" label="Project name" required>
               <Input
                 id="p-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Enter project name"
-                className="h-11 rounded-2xl border-border/70 bg-background/80"
+                className={projectFieldClassName}
               />
-            </div>
+            </ProjectFormField>
 
-            <div className="space-y-2">
-              <RequiredFieldLabel htmlFor="p-client">Client name</RequiredFieldLabel>
-              <p className="text-xs text-muted-foreground">
-                The client or account this project is being delivered for.
-              </p>
+            <ProjectFormField id="p-client" label="Client name" required>
               <Input
                 id="p-client"
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
                 placeholder="Enter client name"
-                className="h-11 rounded-2xl border-border/70 bg-background/80"
+                className={projectFieldClassName}
               />
-            </div>
+            </ProjectFormField>
 
-            <div className="space-y-2">
-              <RequiredFieldLabel htmlFor="p-manager">Project manager</RequiredFieldLabel>
-              <p className="text-xs text-muted-foreground">
-                Select the project manager responsible for delivery oversight.
-              </p>
+            <ProjectFormField id="p-manager" label="Project manager" required>
               <Select
                 value={projectManagerId || undefined}
                 onValueChange={setProjectManagerId}
                 disabled={loadingProjectManagers || projectManagerOptions.length === 0}
               >
-                <SelectTrigger
-                  id="p-manager"
-                  className="h-11 rounded-2xl border-border/70 bg-background/80"
-                >
+                <SelectTrigger id="p-manager" className={projectFieldClassName}>
                   <SelectValue
                     placeholder={
                       loadingProjectManagers
@@ -341,7 +328,7 @@ export function ProjectDetailEditor({
                     }
                   />
                 </SelectTrigger>
-                <SelectContent className="rounded-2xl border-border/60">
+                <SelectContent className="rounded-lg border-border/60">
                   {projectManagerOptions.map((manager) => (
                     <SelectItem key={manager.id} value={manager.id}>
                       {manager.name}
@@ -349,139 +336,88 @@ export function ProjectDetailEditor({
                   ))}
                 </SelectContent>
               </Select>
-              {!loadingProjectManagers && projectManagerOptions.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  Create a Project Manager account in App Users to assign one here.
-                </p>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
+            </ProjectFormField>
 
-        <Card
-          id="project-schedule"
-          className="border-border/70 bg-background/75 backdrop-blur-xl xl:row-start-1 xl:col-start-2"
-        >
-          <CardHeader className="border-b border-border/60 pb-4">
-            <CardTitle>Status and schedule</CardTitle>
-            <CardDescription>
-              Keep delivery status and timeline aligned with the latest plan.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5 p-6">
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <ProjectStatusSelect
-                value={status}
-                canEdit
-                onChange={(nextStatus) => setStatus(nextStatus as ProjectStatus)}
-              />
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="p-start">Assigned date</Label>
-                <Input
-                  id="p-start"
-                  type="date"
-                  value={assignedDate}
-                  onChange={(e) => setAssignedDate(e.target.value)}
-                  className="h-11 rounded-2xl border-border/70 bg-background/80"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="p-end">Last date</Label>
-                <Input
-                  id="p-end"
-                  type="date"
-                  value={lastDate}
-                  onChange={(e) => setLastDate(e.target.value)}
-                  className="h-11 rounded-2xl border-border/70 bg-background/80"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <OverviewStat
-                icon={<Workflow className="h-4 w-4 text-primary" />}
-                label="Assigned teams"
-                value={`${assignedTeams.length}`}
-              />
-              <OverviewStat
-                icon={<Users2 className="h-4 w-4 text-primary" />}
-                label="Selected members"
-                value={`${selectedMembers.length}`}
-              />
-              <OverviewStat
-                icon={<CalendarClock className="h-4 w-4 text-amber-500" />}
-                label="Current range"
-                value={`${formatProjectDate(assignedDate)} to ${formatProjectDate(lastDate)}`}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="flex h-full min-h-0 flex-col gap-6 xl:row-start-2 xl:col-start-1 xl:min-h-[480px]">
-          <Card className="shrink-0 border-border/70 bg-background/75 backdrop-blur-xl">
-            <CardHeader className="border-b border-border/60 pb-4">
-              <CardTitle>
-                Teams
-                <span className="ml-2 text-sm font-normal text-muted-foreground">
-                  ({assignedTeams.length} selected)
-                </span>
-              </CardTitle>
-              <CardDescription>
-                {lockedTeam
-                  ? "This workspace is locked to your assigned team."
-                  : "Select every squad responsible for delivery on this project."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-6">
-              <TeamMultiSelect
+            <ProjectFormField label="Teams" required>
+              <TeamChipSelect
                 value={teams}
                 onChange={setTeams}
                 options={teamNames}
                 lockedTeam={lockedTeam}
               />
-            </CardContent>
-          </Card>
+            </ProjectFormField>
+          </div>
 
-          <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl">
-            <CardHeader className="shrink-0 border-b border-border/60 pb-4">
-              <CardTitle>Description</CardTitle>
-              <CardDescription>
-                Document goals, scope, milestones, and delivery notes for your squads.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex min-h-0 flex-1 flex-col p-6 pt-4">
+          <div className="space-y-7 lg:border-l lg:border-border/35 lg:pl-12">
+            <ProjectFormField label="Status">
+              <ProjectStatusSelect
+                value={status}
+                canEdit
+                className={cn(projectFieldClassName, "min-w-[160px] rounded-lg text-sm font-normal")}
+                onChange={(nextStatus) => setStatus(nextStatus as ProjectStatus)}
+              />
+            </ProjectFormField>
+
+            <div className="grid gap-7 sm:grid-cols-2">
+              <ProjectFormField id="p-start" label="Assigned date" required>
+                <Input
+                  id="p-start"
+                  type="date"
+                  value={assignedDate}
+                  onChange={(e) => setAssignedDate(e.target.value)}
+                  className={projectFieldClassName}
+                />
+              </ProjectFormField>
+              <ProjectFormField id="p-end" label="Last date" required>
+                <Input
+                  id="p-end"
+                  type="date"
+                  value={lastDate}
+                  onChange={(e) => setLastDate(e.target.value)}
+                  className={projectFieldClassName}
+                />
+              </ProjectFormField>
+            </div>
+
+            <ProjectFormField id="p-desc" label="Description">
               <Textarea
                 id="p-desc"
-                aria-label="Project description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Goals, scope, milestones, blockers, and delivery notes…"
-                className="h-0 min-h-[120px] flex-1 resize-none rounded-2xl border-border/70 bg-background/80 xl:min-h-0"
+                placeholder="Brief project summary…"
+                rows={4}
+                className={projectTextareaClassName}
               />
-            </CardContent>
-          </Card>
+            </ProjectFormField>
+          </div>
         </div>
 
-        <AssignTeamMembersPanel
-          className="min-h-[420px] xl:row-start-2 xl:col-start-2 xl:h-full xl:min-h-0"
-          rosterForTeam={rosterForTeam}
-          assignedTeams={assignedTeams}
-          memberIds={memberIds}
-          selectedMembersCount={selectedMembers.length}
-          onToggleMember={toggleMember}
-        />
+        <div className="mt-10 border-t border-border/40 pt-8">
+          <AssignTeamMembersPanel
+            rosterForTeam={rosterForTeam}
+            assignedTeams={assignedTeams}
+            memberIds={memberIds}
+            selectedMembersCount={selectedMembers.length}
+            onToggleMember={toggleMember}
+          />
+        </div>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-3 border-t border-border/50 bg-muted/10 px-6 py-4 sm:px-8">
         <Button
           type="button"
-          onClick={save}
+          variant="ghost"
+          onClick={() => router.push("/projects")}
           disabled={saving}
-          className="h-11 rounded-2xl px-5 shadow-sm"
+          className="h-10 rounded-lg px-5 text-[15px]"
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          onClick={() => void save()}
+          disabled={saving}
+          className="h-10 rounded-lg px-5 text-[15px] shadow-sm"
         >
           {saving ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -491,26 +427,10 @@ export function ProjectDetailEditor({
           Save changes
         </Button>
       </div>
-    </section>
+    </div>
   );
 }
 
-function RequiredFieldLabel({
-  htmlFor,
-  children,
-}: {
-  htmlFor: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Label htmlFor={htmlFor}>
-      {children}
-      <span className="ml-0.5 text-destructive" aria-hidden="true">
-        *
-      </span>
-    </Label>
-  );
-}
 
 function shortTeamName(team: TeamName) {
   return team.replace(" Team", "");
@@ -522,14 +442,12 @@ function AssignTeamMembersPanel({
   memberIds,
   selectedMembersCount,
   onToggleMember,
-  className,
 }: {
   rosterForTeam: Employee[];
   assignedTeams: TeamName[];
   memberIds: string[];
   selectedMembersCount: number;
   onToggleMember: (id: string) => void;
-  className?: string;
 }) {
   const [search, setSearch] = React.useState("");
   const [teamFilter, setTeamFilter] = React.useState<"all" | TeamName>("all");
@@ -540,127 +458,115 @@ function AssignTeamMembersPanel({
     setTeamFilter("all");
   }, [assignedTeamsKey]);
 
-  const filteredRoster = rosterForTeam.filter((member) => {
-    if (teamFilter !== "all" && member.team !== teamFilter) return false;
-    const query = search.trim().toLowerCase();
-    if (!query) return true;
-    return (
-      member.name.toLowerCase().includes(query) ||
-      member.role.toLowerCase().includes(query)
-    );
-  });
+  const filteredRoster = rosterForTeam
+    .filter((member) => {
+      if (teamFilter !== "all" && member.team !== teamFilter) return false;
+      const query = search.trim().toLowerCase();
+      if (!query) return true;
+      return (
+        member.name.toLowerCase().includes(query) ||
+        member.role.toLowerCase().includes(query)
+      );
+    })
+    .sort((a, b) => {
+      const aSelected = memberIds.includes(a.id);
+      const bSelected = memberIds.includes(b.id);
+      if (aSelected !== bSelected) return aSelected ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
 
   return (
-    <Card
-      id="project-members"
-      className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden border-border/70 bg-background/75 backdrop-blur-xl",
-        className,
-      )}
-    >
-      <CardHeader className="shrink-0 border-b border-border/60 pb-4">
-        <CardTitle>Assign team members</CardTitle>
-        <CardDescription>
-          Search and filter contributors from your selected teams.
-        </CardDescription>
-      </CardHeader>
+    <div id="project-members" className="w-full max-w-full space-y-5 lg:w-1/2 lg:max-w-xl">
+      <Label className={projectFormLabelClassName}>Assign team members</Label>
 
-      <CardContent className="flex min-h-0 flex-1 flex-col p-0">
-        <div className="shrink-0 space-y-4 border-b border-border/60 px-6 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="member-search" className="text-sm">
-              Search Employee
-            </Label>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="member-search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search employee name..."
-                className="h-10 rounded-xl border-border/70 bg-background/80 pl-9"
-              />
-            </div>
-          </div>
-
-          {assignedTeams.length > 0 && (
-            <div className="space-y-2">
-              <Label className="text-sm">Filters</Label>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={teamFilter === "all" ? "default" : "outline"}
-                  onClick={() => setTeamFilter("all")}
-                  className="h-8 rounded-full px-3 text-xs"
-                >
-                  All
-                </Button>
-                {assignedTeams.map((team) => (
-                  <Button
-                    key={team}
-                    type="button"
-                    size="sm"
-                    variant={teamFilter === team ? "default" : "outline"}
-                    onClick={() => setTeamFilter(team)}
-                    className="h-8 rounded-full px-3 text-xs"
-                  >
-                    {shortTeamName(team)}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <p className="text-sm font-medium text-foreground">
-            Assigned Members ({selectedMembersCount})
-          </p>
+      <div className="space-y-5">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            id="member-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search employee name..."
+            className={cn(projectFieldClassName, "pl-9")}
+          />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-          {rosterForTeam.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
-              No eligible members in the selected team scope yet.
-            </p>
-          ) : filteredRoster.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
-              No employees match your search or filter.
-            </p>
-          ) : (
-            <ul className="grid gap-3 sm:grid-cols-2">
+        {assignedTeams.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setTeamFilter("all")}
+              className={cn(
+                "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                teamFilter === "all"
+                  ? "border-foreground/25 bg-foreground/5 text-foreground"
+                  : "border-border/60 bg-muted/15 text-muted-foreground hover:bg-muted/30",
+              )}
+            >
+              All
+            </button>
+            {assignedTeams.map((team) => (
+              <button
+                key={team}
+                type="button"
+                onClick={() => setTeamFilter(team)}
+                className={cn(
+                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                  teamFilter === team
+                    ? "border-foreground/25 bg-foreground/5 text-foreground"
+                    : "border-border/60 bg-muted/15 text-muted-foreground hover:bg-muted/30",
+                )}
+              >
+                {shortTeamName(team)}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <p className={cn(projectFormLabelClassName, "normal-case tracking-normal")}>
+          Assigned members ({selectedMembersCount})
+        </p>
+      </div>
+
+      <div>
+        {rosterForTeam.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
+            No eligible members in the selected team scope yet.
+          </p>
+        ) : filteredRoster.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border/60 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
+            No employees match your search or filter.
+          </p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-border/55">
+            <ul
+              className="max-h-[min(420px,60vh)] divide-y divide-border/50 overflow-y-auto overscroll-contain"
+              role="listbox"
+              aria-label="Team members"
+            >
               {filteredRoster.map((member) => {
                 const selected = memberIds.includes(member.id);
                 return (
-                  <li key={member.id}>
+                  <li key={member.id} role="option" aria-selected={selected}>
                     <button
                       type="button"
                       onClick={() => onToggleMember(member.id)}
                       className={cn(
-                        "flex w-full items-start gap-3 rounded-xl border p-3.5 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/20",
                         selected
-                          ? "border-primary/30 bg-primary/[0.06] shadow-sm ring-1 ring-primary/15"
-                          : "border-border/60 bg-background/80 hover:border-primary/20 hover:bg-muted/20 hover:shadow-sm",
+                          ? "bg-foreground/[0.04]"
+                          : "bg-background hover:bg-muted/25",
                       )}
                     >
-                      <Avatar className="h-10 w-10 shrink-0 ring-1 ring-border/60">
+                      <Avatar className="h-9 w-9 shrink-0">
                         <AvatarImage src={member.imageUrl} alt={member.name} />
                         <AvatarFallback>{member.name.slice(0, 2)}</AvatarFallback>
                       </Avatar>
-                      <div className="min-w-0 flex-1 space-y-1.5">
-                        <div>
-                          <p className="truncate text-sm font-semibold text-foreground">
-                            {member.name}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {member.role}
-                          </p>
-                        </div>
-                        <Badge
-                          variant="secondary"
-                          className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                        >
-                          {shortTeamName(member.team)}
-                        </Badge>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-foreground">{member.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {member.role} · {shortTeamName(member.team)}
+                        </p>
                       </div>
                       <Badge
                         variant={selected ? "default" : "outline"}
@@ -676,10 +582,10 @@ function AssignTeamMembersPanel({
                 );
               })}
             </ul>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

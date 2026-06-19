@@ -10,6 +10,7 @@ import {
   Mail,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   UserRoundCheck,
   UserX2,
   Users2,
@@ -18,6 +19,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -37,26 +45,21 @@ import {
   type EmployeeWorkspaceStatus,
   workforceAnalytics,
 } from "@/lib/team-members-ui";
+import { formatProjectDate } from "@/lib/project-ui";
 import { profileNameInitial } from "@/lib/profile-image";
 import {
   GRID_DIRECTORY_PAGE_SIZE,
   useClientPagination,
 } from "@/lib/client-pagination";
 import { ListPagination } from "@/components/ui/list-pagination";
+import {
+  SectionTitle,
+  sectionDescriptionClassName,
+  SubsectionTitle,
+} from "@/components/ui/page-typography";
 import { cn } from "@/lib/utils";
 
 const ALL_TAB = "All";
-
-function joinDateLabel(date?: string) {
-  if (!date) return "Join date unavailable";
-  const parsed = new Date(`${date}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return date;
-  return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 export default function TeamMembersPage() {
   const { employees, projects, teamNames, workspaceRoles } = useAppState();
@@ -134,8 +137,8 @@ export default function TeamMembersPage() {
           toneClass="from-violet-500/12 via-violet-500/6 to-transparent text-violet-600 dark:text-violet-300"
         />
         <SummaryCard
-          title="Team Leads"
-          value={String(analytics.teamLeads)}
+          title="Project Lead"
+          value={String(analytics.projectLeads)}
           icon={UserRoundCheck}
           toneClass="from-emerald-500/12 via-emerald-500/6 to-transparent text-emerald-600 dark:text-emerald-300"
         />
@@ -153,73 +156,46 @@ export default function TeamMembersPage() {
         />
       </section>
 
-      <section className="overflow-hidden rounded-2xl border border-border/70 bg-background/75 p-4 shadow-sm backdrop-blur-xl sm:p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-              <Search className="h-4 w-4" />
+      <section className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 shrink-0">
+            <SectionTitle as="h3">Team directory</SectionTitle>
+            <p className={cn(sectionDescriptionClassName, "mt-0.5")}>
+              Employee cards with projects, seat assignment, and profile access
+            </p>
+          </div>
+
+          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <div className="relative w-full sm:w-[min(100%,16rem)]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground" />
+              <Input
+                id="team-member-search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Name, ID, email, team, or role"
+                className="h-9 w-full rounded-lg border border-foreground/30 bg-background pl-9 text-sm font-normal shadow-none transition-colors placeholder:text-muted-foreground/55 focus:border-primary focus:bg-background focus:ring-2 focus:ring-primary/20 focus:ring-offset-0 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0"
+              />
             </div>
-            <h3 className="text-sm font-bold text-foreground">Search directory</h3>
-          </div>
-          <Badge variant="secondary" className="rounded-full px-2.5 py-0.5 text-xs font-medium">
-            {filteredEmployees.length} result{filteredEmployees.length === 1 ? "" : "s"}
-          </Badge>
-        </div>
 
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary" />
-            <Input
-              id="team-member-search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Name, ID, email, team, or role"
-              className="h-10 rounded-xl border-2 border-primary/20 bg-background pl-9 text-sm shadow-sm focus-visible:border-primary/40"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-3 lg:shrink-0">
-            <FilterDropdown
-              label="Team"
-              value={tab}
-              onValueChange={setTab}
-              options={[
+            <DirectoryFiltersDropdown
+              team={tab}
+              role={roleTab}
+              teamOptions={[
                 { value: ALL_TAB, label: "All" },
                 ...teamNames.map((team) => ({
                   value: team,
                   label: teamTabLabel(team),
                 })),
               ]}
-            />
-            <FilterDropdown
-              label="Role"
-              value={roleTab}
-              onValueChange={setRoleTab}
-              options={roleFilterOptions}
+              roleOptions={roleFilterOptions}
+              onTeamChange={setTab}
+              onRoleChange={setRoleTab}
+              activeCount={[tab !== ALL_TAB, roleTab !== "all"].filter(Boolean).length}
             />
           </div>
         </div>
-      </section>
 
-      <section className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3 px-1">
-          <div>
-            <h3 className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
-              Team directory
-            </h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Employee cards with projects, seat assignment, and profile access
-            </p>
-          </div>
-          <Badge variant="outline" className="rounded-full border-border/70 bg-background/80 px-3 py-1">
-            {paginatedTotal === 0
-              ? "No members"
-              : totalPages > 1
-                ? `Showing ${rangeStart}–${rangeEnd} of ${paginatedTotal}`
-                : `Showing ${paginatedTotal} member${paginatedTotal === 1 ? "" : "s"}`}
-          </Badge>
-        </div>
-
+        {filteredEmployees.length > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {paginatedEmployees.map((employee) => {
           const profileHref = employeeProfilePath(employee);
@@ -293,7 +269,9 @@ export default function TeamMembersPage() {
                   <SeatAssignmentBlock workspace={workspace} />
                   <MemberInfoSection title="Join date" icon={CalendarClock}>
                     <p className="text-sm font-semibold text-foreground">
-                      {joinDateLabel(employee.directory?.joinedDate)}
+                      {formatProjectDate(employee.directory?.joinedDate ?? "", {
+                        emptyLabel: "Join date unavailable",
+                      })}
                     </p>
                     <p className="mt-1 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Mail className="h-3.5 w-3.5 shrink-0" />
@@ -308,6 +286,7 @@ export default function TeamMembersPage() {
           );
         })}
         </div>
+        ) : null}
 
         <ListPagination
           page={page}
@@ -316,7 +295,6 @@ export default function TeamMembersPage() {
           rangeStart={rangeStart}
           rangeEnd={rangeEnd}
           onPageChange={setPage}
-          className="px-1"
         />
       </section>
 
@@ -335,23 +313,91 @@ export default function TeamMembersPage() {
   );
 }
 
-function FilterDropdown({
+function DirectoryFiltersDropdown({
+  team,
+  role,
+  teamOptions,
+  roleOptions,
+  onTeamChange,
+  onRoleChange,
+  activeCount,
+}: {
+  team: string;
+  role: string;
+  teamOptions: Array<{ value: string; label: string }>;
+  roleOptions: Array<{ value: string; label: string }>;
+  onTeamChange: (value: string) => void;
+  onRoleChange: (value: string) => void;
+  activeCount: number;
+}) {
+  const teamLabel = teamOptions.find((option) => option.value === team)?.label ?? "All";
+  const roleLabel = roleOptions.find((option) => option.value === role)?.label ?? "All";
+
+  return (
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-9 gap-2 rounded-lg border-border/55 bg-muted/20 px-3 text-sm font-medium shadow-none transition-colors hover:bg-muted/30 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:ring-offset-0"
+        >
+          <SlidersHorizontal className="h-4 w-4 shrink-0" />
+          <span>Filters</span>
+          {activeCount > 0 ? (
+            <Badge variant="secondary" className="h-5 rounded-md px-1.5 text-[10px] font-semibold">
+              {activeCount}
+            </Badge>
+          ) : null}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="w-[min(calc(100vw-2rem),16rem)] rounded-xl border-border/70 bg-background/95 p-3 backdrop-blur-xl"
+      >
+        <DropdownMenuLabel className="px-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Refine directory
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator className="my-2" />
+        <div className="space-y-3">
+          <FilterField
+            label="Team"
+            value={team}
+            displayValue={teamLabel}
+            options={teamOptions}
+            onValueChange={onTeamChange}
+          />
+          <FilterField
+            label="Role"
+            value={role}
+            displayValue={roleLabel}
+            options={roleOptions}
+            onValueChange={onRoleChange}
+          />
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function FilterField({
   label,
   value,
-  onValueChange,
+  displayValue,
   options,
+  onValueChange,
 }: {
   label: string;
   value: string;
-  onValueChange: (value: string) => void;
+  displayValue: string;
   options: Array<{ value: string; label: string }>;
+  onValueChange: (value: string) => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="shrink-0 text-xs font-bold text-foreground">{label}</span>
+    <div className="space-y-1.5">
+      <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger className="h-10 w-[min(100%,9.5rem)] min-w-[7.5rem] rounded-xl border border-border/70 bg-background/80 px-3 text-sm font-medium shadow-sm sm:w-36">
-          <SelectValue placeholder="All" />
+        <SelectTrigger className="h-9 w-full rounded-lg border-border/70 bg-background px-3 text-sm">
+          <SelectValue>{displayValue}</SelectValue>
         </SelectTrigger>
         <SelectContent className="rounded-xl border-border/70 bg-background/95 backdrop-blur-xl">
           {options.map((option) => (
@@ -407,7 +453,7 @@ function MemberInfoSection({
     <div className="rounded-2xl border border-border/60 bg-muted/15 p-4">
       <div className="flex items-center gap-2">
         <Icon className="h-4 w-4 text-primary" />
-        <h4 className="text-sm font-bold text-foreground">{title}</h4>
+        <SubsectionTitle>{title}</SubsectionTitle>
       </div>
       <div className="mt-3">{children}</div>
     </div>
@@ -429,7 +475,7 @@ function SeatAssignmentBlock({ workspace }: { workspace: EmployeeWorkspaceStatus
             workspace.isAssigned ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground",
           )}
         />
-        <h4 className="text-sm font-bold text-foreground">Seat assignment</h4>
+        <SubsectionTitle>Seat assignment</SubsectionTitle>
       </div>
       {workspace.isAssigned ? (
         <>

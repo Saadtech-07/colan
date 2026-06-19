@@ -21,6 +21,7 @@ import { profileNameInitial } from "@/lib/profile-image";
 import { resolveWorkspaceRoleLabelForChrome } from "@/lib/workspace-label";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
+import { PageTitle } from "@/components/ui/page-typography";
 
 const PAGE_META: Array<{
   match: RegExp;
@@ -33,6 +34,10 @@ const PAGE_META: Array<{
   {
     match: /^\/projects$/,
     title: "Team Projects",
+  },
+  {
+    match: /^\/projects\/new$/,
+    title: "New project",
   },
   {
     match: /^\/projects\/.+$/,
@@ -64,7 +69,7 @@ const PAGE_META: Array<{
   },
   {
     match: /^\/app-users$/,
-    title: "App account management",
+    title: "App user",
   },
   {
     match: /^\/profile-settings$/,
@@ -111,10 +116,10 @@ export function AppHeader() {
   const showPageMeta = isMobileViewport ? !mobileOpen : true;
 
   return (
-    <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur transition-colors duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-20 flex h-[4.25rem] items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur transition-colors duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
       <div
         className={cn(
-          "min-w-0 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          "min-w-0 transition-all duration-motion ease-motion",
           showPageMeta
             ? "max-w-full opacity-100"
             : "pointer-events-none max-w-0 overflow-hidden opacity-0",
@@ -122,12 +127,13 @@ export function AppHeader() {
         aria-hidden={!showPageMeta}
       >
         <div className="min-w-0">
-          <p
+          <PageTitle
             key={pathname}
-            className="truncate text-base font-bold tracking-tight text-foreground app-reveal-in sm:text-lg"
+            as="p"
+            className="truncate app-reveal-in"
           >
             {pageMeta.title}
-          </p>
+          </PageTitle>
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-3">

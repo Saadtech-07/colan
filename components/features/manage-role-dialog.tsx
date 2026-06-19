@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { Search, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -36,31 +35,11 @@ const COLOR_PRESETS = [
 ];
 
 const PRESETS = [
-  {
-    id: "full-access",
-    label: "Full Access",
-    description: "Enable manage access across every module.",
-  },
-  {
-    id: "read-only",
-    label: "Read Only",
-    description: "Enable view access only across the workspace.",
-  },
-  {
-    id: "team-management",
-    label: "Team Management",
-    description: "Projects, members, seating, and gallery operations for delivery leads.",
-  },
-  {
-    id: "workspace-control",
-    label: "Workspace Control",
-    description: "Admin-style control over workspace operations and permissions.",
-  },
-  {
-    id: "limited-access",
-    label: "Limited Access",
-    description: "Basic visibility across common workspace modules.",
-  },
+  { id: "full-access", label: "Full access" },
+  { id: "read-only", label: "Read only" },
+  { id: "team-management", label: "Team lead" },
+  { id: "workspace-control", label: "Admin" },
+  { id: "limited-access", label: "Basic" },
 ] as const;
 
 type Props = {
@@ -71,9 +50,10 @@ type Props = {
 };
 
 function initialDialogPermissions(editing: WorkspaceRole | null): ModulePermissionsMap {
-  return editing
-    ? normalizeModulePermissions(editing.permissions)
-    : emptyModulePermissions();
+  if (!editing?.permissions) {
+    return emptyModulePermissions();
+  }
+  return normalizeModulePermissions(structuredClone(editing.permissions));
 }
 
 function setActions(
@@ -189,16 +169,27 @@ function applyPreset(id: (typeof PRESETS)[number]["id"]): ModulePermissionsMap {
 }
 
 export function ManageRoleDialog({ open, onOpenChange, editing, onSaved }: Props) {
-  const dialogKey = editing?.id ?? "new-role";
-  const [name, setName] = React.useState(editing?.name ?? "");
-  const [description, setDescription] = React.useState(editing?.description ?? "");
-  const [color, setColor] = React.useState(editing?.color ?? COLOR_PRESETS[0]);
+  const [name, setName] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  const [color, setColor] = React.useState(COLOR_PRESETS[0]);
   const [permissions, setPermissions] = React.useState<ModulePermissionsMap>(
-    initialDialogPermissions(editing),
+    emptyModulePermissions(),
   );
   const [error, setError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
-  const [permissionFilter, setPermissionFilter] = React.useState("");
+
+  React.useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setName(editing?.name ?? "");
+    setDescription(editing?.description ?? "");
+    setColor(editing?.color ?? COLOR_PRESETS[0]);
+    setPermissions(initialDialogPermissions(editing));
+    setError(null);
+    setSaving(false);
+    // Re-sync when the dialog opens or a different role is selected.
+  }, [open, editing?.id, editing?.name, editing?.description, editing?.color, editing?.permissions]);
 
   const submit = async () => {
     if (!name.trim()) {
@@ -225,6 +216,7 @@ export function ManageRoleDialog({ open, onOpenChange, editing, onSaved }: Props
       );
       if (!res.ok) throw new Error(await parseApiError(res));
       onSaved((await res.json()) as WorkspaceRole);
+      setSaving(false);
       onOpenChange(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -234,17 +226,12 @@ export function ManageRoleDialog({ open, onOpenChange, editing, onSaved }: Props
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        key={dialogKey}
-        className="max-h-[92vh] overflow-hidden p-0 sm:max-w-5xl"
-      >
+      <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-5xl">
         <div className="flex max-h-[92vh] flex-col">
           <DialogHeader className="border-b border-border/70 px-6 py-5">
             <DialogTitle>{editing ? "Edit role" : "Create role"}</DialogTitle>
             <DialogDescription>
-              Build granular module access with view, CRUD, and action-level permissions.
-              Existing roles remain compatible, while Manage still acts as the full-access
-              shortcut.
+              Name the role and choose what each module can access.
             </DialogDescription>
           </DialogHeader>
 
@@ -256,153 +243,93 @@ export function ManageRoleDialog({ open, onOpenChange, editing, onSaved }: Props
                 </p>
               )}
 
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="role-name">Role name</Label>
-                    <Input
-                      id="role-name"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="e.g. Coordinator, QA Lead"
-                      disabled={editing?.isSystem}
-                      className="h-11 rounded-2xl"
-                    />
-                  </div>
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="role-desc">Description</Label>
-                    <Textarea
-                      id="role-desc"
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      rows={3}
-                      placeholder="What this role is responsible for…"
-                      className="rounded-2xl"
-                    />
-                  </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="role-name">Role name</Label>
+                  <Input
+                    id="role-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="e.g. Coordinator, QA Lead"
+                    disabled={editing?.isSystem}
+                    className="h-10 rounded-xl"
+                  />
                 </div>
-
-                <div className="rounded-[24px] border border-border/70 bg-muted/20 p-4">
-                  <div className="space-y-2">
-                    <Label>Badge color</Label>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {COLOR_PRESETS.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          className="h-9 w-9 rounded-full border-2 transition-transform hover:scale-110"
-                          style={{
-                            backgroundColor: c,
-                            borderColor:
-                              color === c ? "hsl(var(--foreground))" : "transparent",
-                          }}
-                          onClick={() => setColor(c)}
-                          aria-label={`Color ${c}`}
-                        />
-                      ))}
-                      <Input
-                        type="color"
-                        value={color}
-                        onChange={(e) => setColor(e.target.value)}
-                        className="h-10 w-16 cursor-pointer rounded-2xl p-1"
+                <div className="space-y-2 sm:col-span-2">
+                  <Label htmlFor="role-desc">Description</Label>
+                  <Textarea
+                    id="role-desc"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={2}
+                    placeholder="Short summary of this role"
+                    className="rounded-xl"
+                  />
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Badge color</Label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {COLOR_PRESETS.map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className="h-8 w-8 rounded-full border-2 transition-transform hover:scale-105"
+                        style={{
+                          backgroundColor: c,
+                          borderColor: color === c ? "hsl(var(--foreground))" : "transparent",
+                        }}
+                        onClick={() => setColor(c)}
+                        aria-label={`Color ${c}`}
                       />
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex items-start gap-3 rounded-2xl border border-border/70 bg-background/80 p-3">
-                    <div
-                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-semibold text-white shadow-sm"
-                      style={{ backgroundColor: color }}
-                    >
-                      {name.trim().slice(0, 2).toUpperCase() || "RL"}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-medium">{name.trim() || "New role"}</p>
-                      <p className="text-sm text-muted-foreground">
-                        {description.trim() || "Add a description to explain this role's purpose."}
-                      </p>
-                    </div>
+                    ))}
+                    <Input
+                      type="color"
+                      value={color}
+                      onChange={(e) => setColor(e.target.value)}
+                      className="h-9 w-14 cursor-pointer rounded-lg p-1"
+                    />
                   </div>
                 </div>
               </div>
 
-              <section className="space-y-4 rounded-[24px] border border-border/70 bg-card/80 p-4 shadow-sm">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Permission presets
-                    </p>
-                    <h3 className="mt-1 text-base font-semibold tracking-tight">
-                      Start from a ready-made access profile
-                    </h3>
-                  </div>
-                  <div className="relative w-full xl:max-w-sm">
-                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={permissionFilter}
-                      onChange={(e) => setPermissionFilter(e.target.value)}
-                      placeholder="Search permissions or modules"
-                      className="h-11 rounded-2xl pl-9"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2.5">
+              <section className="space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4">
+                <Label>Quick presets</Label>
+                <div className="flex flex-wrap gap-2">
                   {PRESETS.map((preset) => (
-                    <button
+                    <Button
                       key={preset.id}
                       type="button"
+                      variant="outline"
+                      size="sm"
                       onClick={() => setPermissions(applyPreset(preset.id))}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-border/70 bg-background/85 px-4 py-2 text-sm font-medium transition hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
+                      className="h-8 rounded-lg bg-white px-3 text-xs"
                     >
-                      <Wand2 className="h-4 w-4" />
                       {preset.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  {PRESETS.map((preset) => (
-                    <div
-                      key={`${preset.id}-copy`}
-                      className="rounded-2xl border border-border/70 bg-muted/20 px-3 py-2.5 text-sm text-muted-foreground"
-                    >
-                      <span className="font-medium text-foreground">{preset.label}</span>
-                      <p className="mt-1 text-xs leading-5">{preset.description}</p>
-                    </div>
+                    </Button>
                   ))}
                 </div>
               </section>
 
               <PermissionGrid
+                key={editing?.id ?? "new-role"}
                 value={permissions}
                 onChange={setPermissions}
                 disabled={false}
-                filter={permissionFilter}
               />
             </div>
           </div>
 
-          <DialogFooter className="border-t border-border/70 bg-background/95 px-6 py-4 backdrop-blur sm:justify-between">
-            <div className="text-xs text-muted-foreground">
-              Existing roles remain compatible. New granular selections are stored per module
-              and mapped safely to legacy access checks where needed.
-            </div>
-            <div className="flex items-center gap-2">
+          <DialogFooter className="border-t border-border/70 bg-background/95 px-6 py-4">
+            <div className="flex w-full items-center justify-end gap-2">
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => onOpenChange(false)}
-                className="rounded-2xl"
+                className="rounded-xl"
               >
                 Cancel
               </Button>
-              <Button
-                type="button"
-                onClick={submit}
-                disabled={saving}
-                className="rounded-2xl"
-              >
+              <Button type="button" onClick={submit} disabled={saving} className="rounded-xl">
                 {saving ? "Saving…" : editing ? "Save changes" : "Create role"}
               </Button>
             </div>

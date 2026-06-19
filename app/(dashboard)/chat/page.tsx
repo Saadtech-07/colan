@@ -32,12 +32,5 @@ export default function ChatPage() {
     return null;
   }
 
-  return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Messages</h1>
-      </div>
-      <ChatWorkspace />
-    </div>
-  );
+  return <ChatWorkspace />;
 }

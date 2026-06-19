@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "node scripts/clean-next-dev.mjs && tsx server.ts",
     "dev:next": "next dev --webpack",
-    "build": "next build",
+    "dev:clean": "node scripts/clean-next-dev.mjs",
+    "build": "next build --webpack",
     "start": "tsx server.ts",
     "lint": "eslint"
   },
@@ -33,7 +34,6 @@
     "nodemailer": "^7.0.13",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "recharts": "^3.8.1",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "tailwind-merge": "^3.6.0",

@@ -26,6 +26,7 @@ import {
   assignableProjectsForEmployee,
   projectStatusVariant,
 } from "@/lib/project-assignments";
+import { formatProjectDate } from "@/lib/project-ui";
 import { filterProjectsByEmployeeTeam } from "@/lib/projects";
 import type { Employee, Project } from "@/types";
 
@@ -42,17 +43,6 @@ type Props = {
   onUpdated: () => void | Promise<void>;
   triggerClassName?: string;
 };
-
-function formatProjectDate(value: string): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 export function ProjectAssignmentModal({
   employee,
@@ -272,11 +262,11 @@ export function ProjectAssignmentModal({
                       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
-                          Start {formatProjectDate(p.assignedDate)}
+                          Start {formatProjectDate(p.assignedDate, { emptyLabel: "—" })}
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
-                          End {formatProjectDate(p.lastDate)}
+                          End {formatProjectDate(p.lastDate, { emptyLabel: "—" })}
                         </span>
                       </div>
                     </button>

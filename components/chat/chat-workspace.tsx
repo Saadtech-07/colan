@@ -102,7 +102,7 @@ export function ChatWorkspace() {
 
   if (loadError && conversations.length === 0) {
     return (
-      <div className="flex min-h-[520px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-border/70 bg-background/80 p-8 text-center">
+      <div className="flex h-[calc(100dvh-4.25rem-2rem)] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-border/70 bg-background/80 p-8 text-center sm:h-[calc(100dvh-4.25rem-3rem)] lg:h-[calc(100dvh-4.25rem-4rem)]">
         <MessageCircle className="h-10 w-10 text-muted-foreground/60" />
         <p className="text-sm font-medium text-foreground">Could not load messages</p>
         <p className="max-w-sm text-sm text-muted-foreground">{loadError}</p>
@@ -115,14 +115,14 @@ export function ChatWorkspace() {
 
   if (loadingConversations && conversations.length === 0) {
     return (
-      <div className="flex min-h-[520px] items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-sm text-muted-foreground">
+      <div className="flex h-[calc(100dvh-4.25rem-2rem)] items-center justify-center rounded-2xl border border-border/70 bg-background/80 text-sm text-muted-foreground sm:h-[calc(100dvh-4.25rem-3rem)] lg:h-[calc(100dvh-4.25rem-4rem)]">
         Loading conversations…
       </div>
     );
   }
 
   return (
-    <div className="flex h-[min(720px,calc(100vh-12rem))] overflow-hidden rounded-2xl border border-border/70 bg-background/80 shadow-sm">
+    <div className="flex h-[calc(100dvh-4.25rem-2rem)] overflow-hidden rounded-2xl border border-border/70 bg-background/80 shadow-sm sm:h-[calc(100dvh-4.25rem-3rem)] lg:h-[calc(100dvh-4.25rem-4rem)]">
       <AdminChatSidebar
         connected={connected}
         conversations={conversations}

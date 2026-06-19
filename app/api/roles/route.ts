@@ -7,7 +7,7 @@ import {
   normalizeAppRole,
 } from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
-import { createWorkspaceRole, listWorkspaceRoles } from "@/lib/roles-data";
+import { createWorkspaceRole } from "@/lib/roles-data";
 import {
   parseRolePermissionsInput,
   workspaceRoleCreateSchema,

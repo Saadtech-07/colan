@@ -26,10 +26,6 @@ export function teamColorClasses(team: TeamName) {
   return TEAM_PALETTE[Math.abs(hash) % TEAM_PALETTE.length];
 }
 
-export function occupantBySeat(employees: Employee[], seatId: string): Employee | null {
-  return employees.find((e) => e.bayNumber === seatId && isValidSeatId(e.bayNumber)) ?? null;
-}
-
 export function seatOccupancyMap(employees: Employee[]): Map<string, Employee> {
   const map = new Map<string, Employee>();
   for (const emp of employees) {
@@ -68,33 +64,6 @@ export function employeeMatchesSearch(emp: Employee, query: string): boolean {
     emp.employeeId.toLowerCase().includes(q) ||
     emp.bayNumber.toLowerCase().includes(q)
   );
-}
-
-export function filterEmployeesForSeating(
-  employees: Employee[],
-  opts: {
-    team?: string;
-    search?: string;
-    view?: "all" | "occupied" | "available";
-    role?: string;
-    gender?: string;
-    workspaceRoles?: WorkspaceRole[];
-  },
-): Employee[] {
-  const { team, search = "", view = "all", role = "all", gender = "all", workspaceRoles = [] } =
-    opts;
-  return employees.filter((emp) => {
-    const onPlan = emp.bayNumber && isValidSeatId(emp.bayNumber);
-    if (view === "occupied" && !onPlan) return false;
-    if (view === "available" && onPlan) return false;
-    if (team && team !== "All" && emp.team !== team) return false;
-    if (role && role !== "all" && !employeeMatchesRoleFilter(emp, role, workspaceRoles)) {
-      return false;
-    }
-    if (!employeeMatchesGenderFilter(emp, gender)) return false;
-    if (search && !employeeMatchesSearch(emp, search)) return false;
-    return true;
-  });
 }
 
 export function highlightedSeatIds(

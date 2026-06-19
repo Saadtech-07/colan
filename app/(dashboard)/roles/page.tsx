@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Crown, Pencil, Plus, Search, Shield, Trash2, UserCog, Users } from "lucide-react";
+import { Crown, Eye, MoreHorizontal, Pencil, Plus, Search, Shield, Trash2, UserCog, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ManageRoleDialog } from "@/components/features/manage-role-dialog";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
@@ -27,6 +34,7 @@ import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
 import { cn } from "@/lib/utils";
 import type { WorkspaceRole } from "@/models";
+import { sectionTitleClassName } from "@/components/ui/page-typography";
 
 const ROLE_ICONS: Record<string, typeof Crown> = {
   admin: Crown,
@@ -66,6 +74,7 @@ export default function RolesPage() {
   const [editing, setEditing] = React.useState<WorkspaceRole | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<WorkspaceRole | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+  const [viewAccessRole, setViewAccessRole] = React.useState<WorkspaceRole | null>(null);
 
   const loadRoles = React.useCallback(async () => {
     setLoading(true);
@@ -99,13 +108,18 @@ export default function RolesPage() {
     window.setTimeout(() => setToast(null), 4000);
   };
 
+  const resolveRole = React.useCallback(
+    (role: WorkspaceRole) => workspaceRoles.find((item) => item.id === role.id) ?? role,
+    [workspaceRoles],
+  );
+
   const openCreate = () => {
     setEditing(null);
     setDialogOpen(true);
   };
 
   const openEdit = (role: WorkspaceRole) => {
-    setEditing(role);
+    setEditing(resolveRole(role));
     setDialogOpen(true);
   };
 
@@ -145,126 +159,156 @@ export default function RolesPage() {
         </div>
       )}
 
-      {canManageRoles && (
-        <div className="flex justify-end">
-          <Button className="gap-2 shadow-sm" onClick={openCreate}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative min-w-0 flex-1 sm:max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search roles…"
+            className="h-10 rounded-xl border-border/70 bg-background pl-9 shadow-sm transition-colors focus-visible:border-primary focus-visible:ring-primary/20"
+          />
+        </div>
+
+        {canManageRoles && (
+          <Button className="h-10 shrink-0 gap-2 rounded-xl px-4 shadow-sm" onClick={openCreate}>
             <Plus className="h-4 w-4" />
             Create role
           </Button>
-        </div>
-      )}
-
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search roles…"
-          className="pl-9"
-        />
+        )}
       </div>
 
       {loading ? (
         <LoadingIndicator title="Loading Roles" className="py-12" />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {filtered.map((role) => {
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((role, index) => {
             const Icon = ROLE_ICONS[role.key] ?? Shield;
             const isCurrent = currentRoleKey === role.key;
             const modules = moduleAccessLabels(role);
             return (
               <Card
                 key={role.id}
+                style={
+                  {
+                    "--role-accent": role.color,
+                    animationDelay: `${(index % 6) * 80}ms`,
+                  } as React.CSSProperties
+                }
                 className={cn(
-                  "border-border/70 transition-all duration-200",
-                  isCurrent
-                    ? "border-primary/50 bg-primary/5 shadow-md ring-1 ring-primary/20"
-                    : "hover:-translate-y-0.5 hover:shadow-md",
+                  "group relative overflow-hidden rounded-[1.35rem] border border-slate-200/80 bg-gradient-to-br from-white via-white to-slate-50/90 shadow-[0_4px_24px_-10px_rgba(15,23,42,0.08)] transition-all duration-300 ease-out dashboard-reveal-up",
+                  "hover:-translate-y-1 hover:border-[color-mix(in_srgb,var(--role-accent)_28%,#e2e8f0)] hover:shadow-[0_16px_40px_-18px_color-mix(in_srgb,var(--role-accent)_28%,transparent)]",
+                  isCurrent &&
+                    "border-[color-mix(in_srgb,var(--role-accent)_32%,#e2e8f0)] bg-gradient-to-br from-white via-[color-mix(in_srgb,var(--role-accent)_4%,white)] to-slate-50/80 ring-1 ring-[color-mix(in_srgb,var(--role-accent)_18%,transparent)]",
                 )}
               >
-                <CardHeader className="flex flex-row items-start gap-4 space-y-0">
+                <div
+                  className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full opacity-[0.12] blur-3xl transition-opacity duration-300 group-hover:opacity-[0.2]"
+                  style={{ backgroundColor: role.color }}
+                  aria-hidden
+                />
+                <div
+                  className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[color-mix(in_srgb,var(--role-accent)_55%,transparent)] to-transparent"
+                  aria-hidden
+                />
+
+                <CardHeader className="relative flex flex-row items-start gap-4 space-y-0 pb-3">
                   <div
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white"
-                    style={{ backgroundColor: role.color }}
+                    className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-sm ring-1 ring-slate-200/80"
+                    style={{
+                      backgroundColor: `color-mix(in srgb, ${role.color} 14%, white)`,
+                      color: role.color,
+                    }}
                   >
                     <Icon className="h-5 w-5" />
                   </div>
-                  <div className="min-w-0 flex-1 space-y-1">
+
+                  <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <CardTitle className="text-lg">{role.name}</CardTitle>
+                      <CardTitle className={cn(sectionTitleClassName, "text-base sm:text-lg")}>
+                        {role.name}
+                      </CardTitle>
                       {role.isSystem && (
-                        <Badge variant="outline" className="text-[10px]">
+                        <Badge
+                          variant="outline"
+                          className="rounded-full border-border/70 bg-background/70 text-[10px] font-medium uppercase tracking-wide"
+                        >
                           System
                         </Badge>
                       )}
                       {isCurrent && (
-                        <Badge className="text-[10px] uppercase">Your role</Badge>
+                        <Badge
+                          className="rounded-full border-0 text-[10px] uppercase"
+                          style={{
+                            backgroundColor: `color-mix(in srgb, ${role.color} 12%, white)`,
+                            color: role.color,
+                          }}
+                        >
+                          Your role
+                        </Badge>
                       )}
                     </div>
-                    <CardDescription>{role.description}</CardDescription>
+                    <CardDescription className="line-clamp-2 text-sm leading-relaxed">
+                      {role.description}
+                    </CardDescription>
                   </div>
-                  {canManageRoles && (
-                    <div className="flex shrink-0 gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEdit(role)}
-                        aria-label={`Edit ${role.name}`}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      {!role.isSystem && (
+
+                  <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={() => setDeleteTarget(role)}
-                          aria-label={`Delete ${role.name}`}
+                          className="h-8 w-8 shrink-0 rounded-lg border border-slate-200/80 bg-white shadow-sm hover:bg-slate-50"
+                          aria-label={`Actions for ${role.name}`}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <MoreHorizontal className="h-4 w-4" />
                         </Button>
-                      )}
-                    </div>
-                  )}
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44 rounded-xl p-1.5">
+                        <DropdownMenuItem
+                          className="rounded-lg gap-2"
+                          onClick={() => setViewAccessRole(resolveRole(role))}
+                        >
+                          <Eye className="h-4 w-4" />
+                          View access
+                        </DropdownMenuItem>
+                        {canManageRoles && (
+                          <>
+                            <DropdownMenuItem
+                              className="rounded-lg gap-2"
+                              onClick={() => openEdit(role)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              Edit
+                            </DropdownMenuItem>
+                            {!role.isSystem && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="rounded-lg gap-2 text-destructive focus:text-destructive"
+                                  onClick={() => setDeleteTarget(role)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Permission matrix
-                    </p>
-                    <ul className="flex flex-wrap gap-1.5">
-                      {modules.length === 0 ? (
-                        <li className="text-xs text-muted-foreground">No permissions enabled</li>
-                      ) : (
-                        modules.map((m) => (
-                          <li key={`${role.id}-${m.title}`}>
-                            <Badge variant="secondary" className="font-normal">
-                              {m.title} · {m.mode}
-                            </Badge>
-                          </li>
-                        ))
-                      )}
-                    </ul>
+
+                <CardContent className="relative pt-0">
+                  <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 font-mono text-[11px] uppercase tracking-wide text-slate-600">
+                      {role.key}
+                    </span>
+                    <span className="tabular-nums">
+                      {modules.length} module{modules.length === 1 ? "" : "s"}
+                    </span>
                   </div>
-                  {role.scopes.length > 0 && (
-                    <div>
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Access scope
-                      </p>
-                      <ul className="flex flex-wrap gap-1.5">
-                        {role.scopes.map((s) => (
-                          <li key={s}>
-                            <Badge variant="outline" className="font-normal">
-                              {s}
-                            </Badge>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
                 </CardContent>
               </Card>
             );
@@ -277,14 +321,97 @@ export default function RolesPage() {
       )}
 
       <ManageRoleDialog
+        key={editing ? `role-${editing.id}` : "role-new"}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         editing={editing}
-        onSaved={async () => {
+        onSaved={async (savedRole) => {
           showToast(editing ? "Role updated." : "Role created.");
           await loadRoles();
+          setEditing(savedRole);
         }}
       />
+
+      <Dialog open={!!viewAccessRole} onOpenChange={(open) => !open && setViewAccessRole(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+          {viewAccessRole && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{resolveRole(viewAccessRole).name} access</DialogTitle>
+                <DialogDescription>
+                  {resolveRole(viewAccessRole).description ||
+                    "Module permissions assigned to this role."}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Modules
+                  </p>
+                  <ul className="space-y-2">
+                    {moduleAccessLabels(resolveRole(viewAccessRole)).length === 0 ? (
+                      <li className="text-sm text-muted-foreground">No permissions enabled.</li>
+                    ) : (
+                      moduleAccessLabels(resolveRole(viewAccessRole)).map((entry) => (
+                        <li
+                          key={`${viewAccessRole.id}-${entry.title}`}
+                          className="flex items-start justify-between gap-3 rounded-xl border border-slate-200/80 bg-slate-50/60 px-3 py-2.5"
+                        >
+                          <span className="text-sm font-medium text-foreground">{entry.title}</span>
+                          <span className="text-right text-xs text-muted-foreground">{entry.mode}</span>
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                </div>
+
+                {resolveRole(viewAccessRole).scopes.length > 0 && (
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Scope
+                    </p>
+                    <ul className="flex flex-wrap gap-1.5">
+                      {resolveRole(viewAccessRole).scopes.map((scope) => (
+                        <li key={scope}>
+                          <Badge variant="outline" className="rounded-full font-normal">
+                            {scope}
+                          </Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter>
+                {canManageRoles && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="rounded-xl"
+                    onClick={() => {
+                      const role = viewAccessRole;
+                      setViewAccessRole(null);
+                      openEdit(role);
+                    }}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    Edit access
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  className="rounded-xl"
+                  onClick={() => setViewAccessRole(null)}
+                >
+                  Close
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <DialogContent className="sm:max-w-md">

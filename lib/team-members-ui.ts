@@ -48,7 +48,7 @@ export type WorkforceAccess = {
 export type WorkforceAnalytics = {
   totalEmployees: number;
   activeTeams: number;
-  teamLeads: number;
+  projectLeads: number;
   employeesWithoutProjects: number;
   availableEmployees: number;
   activeProjectsAssigned: number;
@@ -156,7 +156,9 @@ export function employeeWorkspaceStatus(
 export function workforceAnalytics(employees: Employee[], projects: Project[]): WorkforceAnalytics {
   const totalEmployees = employees.length;
   const activeTeams = new Set(employees.map((employee) => employee.team)).size;
-  const teamLeads = employees.filter((employee) => employee.role === "Team Lead").length;
+  const projectLeads = employees.filter(
+    (employee) => employee.role === "Project Lead" || employee.role === "Team Lead",
+  ).length;
   const employeesWithoutProjects = employees.filter(
     (employee) => employeeAssignedProjects(employee, projects).length === 0,
   ).length;
@@ -171,7 +173,7 @@ export function workforceAnalytics(employees: Employee[], projects: Project[]): 
   return {
     totalEmployees,
     activeTeams,
-    teamLeads,
+    projectLeads,
     employeesWithoutProjects,
     availableEmployees,
     activeProjectsAssigned,

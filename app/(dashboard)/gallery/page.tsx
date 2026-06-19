@@ -5,17 +5,17 @@ import {
   CalendarDays,
   ImageIcon,
   ImagePlus,
-  Link2,
   MoreHorizontal,
   Pencil,
-  Search,
   Trash2,
   UploadCloud,
-  X,
 } from "lucide-react";
-
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  projectFieldClassName,
+  projectFormLabelClassName,
+} from "@/components/features/project-form-shared";
+import { SectionTitle } from "@/components/ui/page-typography";
 import {
   Dialog,
   DialogContent,
@@ -34,194 +34,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import type { GalleryImage } from "@/types";
 
-type FilterValue =
-  | "all"
-  | "celebrations"
-  | "meetings"
-  | "workshops"
-  | "culture"
-  | "events"
-  | "workspace";
-
 type FormMode = "add" | "edit";
 
-type GalleryDetails = {
-  category: string;
-  description: string;
-  filterGroup: FilterValue;
-};
-
-const GALLERY_CATEGORIES = [
-  "Team Celebration",
-  "Office Culture",
-  "Workshop",
-  "Client Meeting",
-  "Town Hall",
-  "Team Lunch",
-  "Hackathon",
-  "Product Launch",
-  "Sprint Planning",
-  "Training Session",
-  "Annual Meetup",
-  "Leadership Event",
-  "Award Ceremony",
-  "Workspace Life",
-  "Innovation Day",
-  "Design Review",
-  "Engineering Session",
-  "Festival Celebration",
-  "Team Outing",
-  "Office Moments",
-] as const;
-
-const FILTER_OPTIONS: Array<{ value: FilterValue; label: string }> = [
-  { value: "all", label: "All" },
-  { value: "celebrations", label: "Celebrations" },
-  { value: "meetings", label: "Meetings" },
-  { value: "workshops", label: "Workshops" },
-  { value: "culture", label: "Culture" },
-  { value: "events", label: "Events" },
-  { value: "workspace", label: "Workspace" },
-];
-
-const TITLE_SUGGESTIONS = [
-  "Q2 Engineering Meetup",
-  "UI/UX Design Sprint",
-  "Team Collaboration Day",
-  "Innovation Workshop",
-  "Product Strategy Session",
-  "React Hackathon 2026",
-  "Employee Recognition Day",
-  "Sprint Planning Workshop",
-  "Workspace Culture Moments",
-  "Leadership Connect",
-  "Team Celebration Night",
-  "Engineering Lunch Meetup",
-  "Frontend Architecture Review",
-  "Design Thinking Session",
-  "Company Annual Meetup",
-] as const;
-
 const MAX_INLINE_IMAGE_SIZE = 2 * 1024 * 1024;
-
-function parseCaption(caption?: string) {
-  const trimmed = caption?.trim() ?? "";
-  if (!trimmed) {
-    return { category: "", description: "" };
-  }
-
-  const match = trimmed.match(/^Category:\s*(.+?)(?:\r?\n+([\s\S]*))?$/i);
-  if (!match) {
-    return { category: "", description: trimmed };
-  }
-
-  return {
-    category: match[1]?.trim() ?? "",
-    description: match[2]?.trim() ?? "",
-  };
-}
-
-function buildCaption(category: string, description: string) {
-  const parts = [
-    category.trim() ? `Category: ${category.trim()}` : "",
-    description.trim(),
-  ].filter(Boolean);
-
-  return parts.join("\n") || undefined;
-}
-
-function inferCategory(title: string, description: string) {
-  const text = `${title} ${description}`.toLowerCase();
-
-  if (text.includes("hackathon")) return "Hackathon";
-  if (text.includes("launch")) return "Product Launch";
-  if (text.includes("town hall")) return "Town Hall";
-  if (text.includes("client")) return "Client Meeting";
-  if (text.includes("design review")) return "Design Review";
-  if (text.includes("sprint")) return "Sprint Planning";
-  if (text.includes("training")) return "Training Session";
-  if (text.includes("workshop")) return "Workshop";
-  if (text.includes("innovation")) return "Innovation Day";
-  if (text.includes("engineering")) return "Engineering Session";
-  if (text.includes("leadership")) return "Leadership Event";
-  if (text.includes("award") || text.includes("recognition")) {
-    return "Award Ceremony";
-  }
-  if (text.includes("festival")) return "Festival Celebration";
-  if (text.includes("lunch")) return "Team Lunch";
-  if (text.includes("outing")) return "Team Outing";
-  if (text.includes("annual") || text.includes("meetup")) return "Annual Meetup";
-  if (text.includes("celebration") || text.includes("party")) {
-    return "Team Celebration";
-  }
-  if (text.includes("workspace")) return "Workspace Life";
-  if (text.includes("culture")) return "Office Culture";
-
-  return "Office Moments";
-}
-
-function getFilterGroup(category: string): FilterValue {
-  if (
-    [
-      "Team Celebration",
-      "Award Ceremony",
-      "Festival Celebration",
-      "Team Lunch",
-      "Team Outing",
-    ].includes(category)
-  ) {
-    return "celebrations";
-  }
-
-  if (
-    ["Client Meeting", "Sprint Planning", "Leadership Event", "Design Review"].includes(
-      category,
-    )
-  ) {
-    return "meetings";
-  }
-
-  if (
-    ["Workshop", "Training Session", "Hackathon", "Innovation Day", "Engineering Session"].includes(
-      category,
-    )
-  ) {
-    return "workshops";
-  }
-
-  if (category === "Office Culture") {
-    return "culture";
-  }
-
-  if (["Workspace Life", "Office Moments"].includes(category)) {
-    return "workspace";
-  }
-
-  return "events";
-}
-
-function getGalleryDetails(item: GalleryImage): GalleryDetails {
-  const parsed = parseCaption(item.caption);
-  const category = parsed.category || inferCategory(item.title, parsed.description);
-
-  return {
-    category,
-    description: parsed.description,
-    filterGroup: getFilterGroup(category),
-  };
-}
 
 function formatDateLabel(value: string) {
   const date = new Date(value);
@@ -237,11 +56,15 @@ function formatDateLabel(value: string) {
 }
 
 function previewFallbackTitle(title: string) {
-  return title.trim() || "Untitled moment";
+  return title.trim() || "Untitled event";
 }
 
-function isImageLikeSource(value: string) {
+function isImageSource(value: string) {
   return /^(https?:\/\/|data:image\/)/i.test(value.trim());
+}
+
+function isLocalImageDataUrl(value: string) {
+  return value.trim().startsWith("data:image/");
 }
 
 async function fileToDataUrl(file: File) {
@@ -270,37 +93,28 @@ async function fileToDataUrl(file: File) {
 type GalleryPreviewProps = {
   url: string;
   title: string;
-  category: string;
-  description: string;
   uploadedAt: string;
 };
 
-function GalleryPreview({
-  url,
-  title,
-  category,
-  description,
-  uploadedAt,
-}: GalleryPreviewProps) {
+function GalleryPreview({ url, title, uploadedAt }: GalleryPreviewProps) {
   const [loaded, setLoaded] = React.useState(false);
   const [errored, setErrored] = React.useState(false);
-
-  const showImage = isImageLikeSource(url) && !errored;
+  const showImage = isImageSource(url) && !errored;
 
   return (
-    <div className="overflow-hidden rounded-[28px] border border-border/60 bg-card/80 p-2 shadow-sm">
-      <div className="relative min-h-[260px] overflow-hidden rounded-[22px] bg-muted/70">
+    <div className="gallery-glass-panel overflow-hidden rounded-2xl p-2">
+      <div className="relative min-h-[200px] overflow-hidden rounded-xl border border-white/25 bg-black/5 dark:border-white/10">
         {showImage ? (
           <>
             {!loaded && (
               <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-muted via-muted/80 to-muted/50" />
             )}
-            {/* eslint-disable-next-line @next/next/no-img-element -- user-provided URLs and inline data URLs are not compatible with strict host allowlists */}
+            {/* eslint-disable-next-line @next/next/no-img-element -- local data URLs and stored gallery sources */}
             <img
               src={url}
               alt={previewFallbackTitle(title)}
               className={cn(
-                "absolute inset-0 h-full w-full object-cover transition-all duration-500",
+                "absolute inset-0 h-full w-full object-cover transition-opacity duration-500",
                 loaded ? "opacity-100" : "opacity-0",
               )}
               onLoad={() => setLoaded(true)}
@@ -309,54 +123,93 @@ function GalleryPreview({
                 setLoaded(true);
               }}
               decoding="async"
-              referrerPolicy="no-referrer"
             />
           </>
         ) : (
-          <div className="flex min-h-[260px] flex-col items-center justify-center gap-3 bg-gradient-to-br from-muted to-muted/60 px-6 py-12 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-background/80 shadow-sm">
-              <ImageIcon className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <div className="space-y-1">
-              <p className="font-medium">Preview your gallery card</p>
-              <p className="text-sm text-muted-foreground">
-                Add an image URL or drop a small image file to see how it will look.
-              </p>
-            </div>
+          <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+            <ImageIcon className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Choose an image to preview</p>
           </div>
         )}
       </div>
 
-      <div className="space-y-3 px-2 pb-2 pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge
-            variant="muted"
-            className="rounded-full border border-border/60 bg-secondary/70 px-3 py-1 text-[11px] font-medium text-foreground"
-          >
-            {category || "Select a category"}
-          </Badge>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-3 py-1 text-xs text-muted-foreground">
-            <CalendarDays className="h-3.5 w-3.5" />
-            {uploadedAt ? formatDateLabel(uploadedAt) : "Choose a date"}
-          </span>
-        </div>
-        <div className="space-y-1.5">
-          <h3 className="text-base font-semibold leading-tight">
-            {previewFallbackTitle(title)}
-          </h3>
-          <p className="line-clamp-3 text-sm text-muted-foreground">
-            {description.trim() ||
-              "Use the description area to add a short note about the moment, team, or activity."}
-          </p>
-        </div>
+      <div className="gallery-glass-caption mt-2 space-y-1.5 rounded-xl px-3 py-2.5">
+        <h3 className="text-base font-semibold leading-tight text-foreground">
+          {previewFallbackTitle(title)}
+        </h3>
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <CalendarDays className="h-3.5 w-3.5" />
+          {uploadedAt ? formatDateLabel(uploadedAt) : "Choose a date"}
+        </span>
       </div>
     </div>
   );
 }
 
+type GalleryImageUploadProps = {
+  inputId: string;
+  dragActive: boolean;
+  fileName: string;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  onDragOver: (event: React.DragEvent<HTMLLabelElement>) => void;
+  onDragLeave: () => void;
+  onDrop: (event: React.DragEvent<HTMLLabelElement>) => void;
+  onFileChange: (file: File | null) => void;
+};
+
+function GalleryImageUpload({
+  inputId,
+  dragActive,
+  fileName,
+  fileInputRef,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onFileChange,
+}: GalleryImageUploadProps) {
+  return (
+    <label
+      htmlFor={inputId}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={cn(
+        "flex min-h-[9.5rem] cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-6 text-center transition-all duration-200",
+        dragActive
+          ? "border-primary bg-primary/5 ring-2 ring-primary/25"
+          : "border-border/55 bg-muted/15 hover:border-primary/45 hover:bg-muted/25 focus-within:border-primary focus-within:bg-primary/5 focus-within:ring-2 focus-within:ring-primary/25",
+      )}
+    >
+      <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-background shadow-sm">
+        <UploadCloud className="h-5 w-5 text-primary" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground">
+          Click or drag an image from your device
+        </p>
+        <p className="text-xs text-muted-foreground">PNG, JPG, or WEBP up to 2 MB</p>
+        {fileName ? (
+          <p className="max-w-full truncate pt-1 text-xs font-medium text-primary">{fileName}</p>
+        ) : null}
+      </div>
+      <input
+        id={inputId}
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        onChange={(event) => {
+          onFileChange(event.target.files?.[0] ?? null);
+          event.currentTarget.value = "";
+        }}
+      />
+    </label>
+  );
+}
+
 type GalleryCardProps = {
   item: GalleryImage;
-  details: GalleryDetails;
+  index: number;
   canWriteGallery: boolean;
   isDeleting: boolean;
   onEdit: (item: GalleryImage) => void;
@@ -365,7 +218,7 @@ type GalleryCardProps = {
 
 function GalleryCard({
   item,
-  details,
+  index,
   canWriteGallery,
   isDeleting,
   onEdit,
@@ -375,8 +228,17 @@ function GalleryCard({
   const [errored, setErrored] = React.useState(false);
 
   return (
-    <article className="group mb-5 break-inside-avoid overflow-hidden rounded-[30px] border border-border/60 bg-card/90 p-2 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-border hover:shadow-2xl">
-      <div className="relative overflow-hidden rounded-[24px] bg-muted/70">
+    <article
+      className="gallery-glass-float group mb-6 break-inside-avoid"
+      style={{ animationDelay: `${(index % 8) * 0.7}s`, animationDuration: `${5.2 + (index % 4) * 0.4}s` }}
+    >
+      <div className="gallery-glass-panel overflow-hidden rounded-[1.75rem] p-2.5 transition-all duration-500 ease-out group-hover:-translate-y-2 group-hover:shadow-[0_28px_70px_-16px_rgba(15,23,42,0.28)] dark:group-hover:shadow-[0_28px_70px_-16px_rgba(0,0,0,0.55)]">
+        <div
+          className="gallery-glass-shine pointer-events-none absolute inset-0 rounded-[1.75rem] bg-gradient-to-br from-white/50 via-white/10 to-transparent dark:from-white/15"
+          aria-hidden
+        />
+
+        <div className="relative overflow-hidden rounded-[1.25rem] border border-white/30 bg-black/5 shadow-inner dark:border-white/10">
         {canWriteGallery && (
           <div className="absolute right-3 top-3 z-20">
             <DropdownMenu>
@@ -384,7 +246,7 @@ function GalleryCard({
                 <Button
                   size="icon"
                   variant="secondary"
-                  className="h-10 w-10 rounded-full border border-white/20 bg-black/45 text-white shadow-lg backdrop-blur-md transition hover:bg-black/60"
+                  className="h-10 w-10 rounded-full border border-white/30 bg-white/20 text-foreground shadow-lg backdrop-blur-xl transition hover:bg-white/35 dark:border-white/15 dark:bg-black/35 dark:text-white dark:hover:bg-black/50"
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
@@ -438,39 +300,26 @@ function GalleryCard({
                 setLoaded(true);
               }}
             />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-white/10 opacity-80 transition-opacity duration-300 group-hover:opacity-100" />
           </>
         ) : (
-          <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 bg-gradient-to-br from-muted to-muted/60 px-6 py-12 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-background/80 shadow-sm">
+          <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 bg-gradient-to-br from-white/20 to-white/5 px-6 py-12 text-center backdrop-blur-sm dark:from-white/5 dark:to-transparent">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/30 bg-white/30 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/10">
               <ImageIcon className="h-6 w-6 text-muted-foreground" />
             </div>
             <p className="text-sm text-muted-foreground">
-              This image could not be previewed, but its gallery entry is still available.
+              This image could not be previewed.
             </p>
           </div>
         )}
-      </div>
-
-      <div className="space-y-3 px-2 pb-2 pt-4">
-        <div className="space-y-1.5">
-          <h3 className="line-clamp-2 text-lg font-semibold leading-tight">
-            {item.title}
-          </h3>
-          <p className="line-clamp-2 text-sm text-muted-foreground">
-            {details.description || "Company culture, collaboration, and team moments."}
-          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge
-            variant="muted"
-            className="rounded-full border border-border/60 bg-secondary/70 px-3 py-1 text-[11px] font-medium text-foreground"
-          >
-            {details.category}
-          </Badge>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/70 px-3 py-1 text-xs text-muted-foreground">
-            <CalendarDays className="h-3.5 w-3.5" />
+        <div className="gallery-glass-caption relative mt-3 space-y-1.5 rounded-xl px-3.5 py-3">
+          <h3 className="line-clamp-2 text-base font-semibold leading-tight text-foreground">
+            {item.title}
+          </h3>
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CalendarDays className="h-3.5 w-3.5 shrink-0" />
             {formatDateLabel(item.uploadedAt)}
           </span>
         </div>
@@ -492,16 +341,12 @@ export default function GalleryPage() {
   const [uploadedAt, setUploadedAt] = React.useState(() =>
     new Date().toISOString().slice(0, 10),
   );
-  const [category, setCategory] = React.useState("");
-  const [description, setDescription] = React.useState("");
+  const [imageFileName, setImageFileName] = React.useState("");
   const [selectedItem, setSelectedItem] = React.useState<GalleryImage | null>(null);
   const [editTitle, setEditTitle] = React.useState("");
   const [editUrl, setEditUrl] = React.useState("");
   const [editUploadedAt, setEditUploadedAt] = React.useState("");
-  const [editCategory, setEditCategory] = React.useState("");
-  const [editDescription, setEditDescription] = React.useState("");
-  const [searchQuery, setSearchQuery] = React.useState("");
-  const [filter, setFilter] = React.useState<FilterValue>("all");
+  const [editImageFileName, setEditImageFileName] = React.useState("");
   const [dragTarget, setDragTarget] = React.useState<FormMode | null>(null);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isEditSaving, setIsEditSaving] = React.useState(false);
@@ -531,54 +376,11 @@ export default function GalleryPage() {
     };
   }, []);
 
-  const galleryWithDetails = React.useMemo(
-    () =>
-      galleryItems.map((item) => ({
-        item,
-        details: getGalleryDetails(item),
-      })),
-    [galleryItems],
-  );
-
-  const filteredItems = React.useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-
-    return galleryWithDetails.filter(({ item, details }) => {
-      const matchesFilter = filter === "all" || details.filterGroup === filter;
-      if (!matchesFilter) {
-        return false;
-      }
-
-      if (!query) {
-        return true;
-      }
-
-      return [
-        item.title,
-        details.category,
-        details.description,
-        formatDateLabel(item.uploadedAt),
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
-    });
-  }, [filter, galleryWithDetails, searchQuery]);
-
-  const uniqueCategoryCount = React.useMemo(
-    () => new Set(galleryWithDetails.map(({ details }) => details.category)).size,
-    [galleryWithDetails],
-  );
-
-  const activeFilterLabel =
-    FILTER_OPTIONS.find((option) => option.value === filter)?.label ?? "All";
-
   const resetAddForm = React.useCallback(() => {
     setTitle("");
     setUrl("");
     setUploadedAt(new Date().toISOString().slice(0, 10));
-    setCategory("");
-    setDescription("");
+    setImageFileName("");
   }, []);
 
   const applyImageSource = React.useCallback((mode: FormMode, nextUrl: string) => {
@@ -591,62 +393,48 @@ export default function GalleryPage() {
 
   const handleFileSelect = React.useCallback(
     async (file: File | null, mode: FormMode) => {
-      if (!file) {
-        return;
-      }
+      if (!file) return;
 
       setError(null);
       try {
         const nextUrl = await fileToDataUrl(file);
         applyImageSource(mode, nextUrl);
 
-        const nextTitle = file.name
-          .replace(/\.[^/.]+$/, "")
-          .replace(/[_-]+/g, " ")
-          .trim();
-
-        if (mode === "add" && !title.trim()) {
-          setTitle(nextTitle);
-        }
-        if (mode === "edit" && !editTitle.trim()) {
-          setEditTitle(nextTitle);
+        if (mode === "add") {
+          setImageFileName(file.name);
+        } else {
+          setEditImageFileName(file.name);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to use the selected image.");
       }
     },
-    [applyImageSource, editTitle, title],
+    [applyImageSource],
   );
 
   const handleDrop = React.useCallback(
-    async (event: React.DragEvent<HTMLDivElement>, mode: FormMode) => {
+    async (event: React.DragEvent<HTMLElement>, mode: FormMode) => {
       event.preventDefault();
       setDragTarget(null);
 
       const droppedFile = event.dataTransfer.files?.[0] ?? null;
-      if (droppedFile) {
-        await handleFileSelect(droppedFile, mode);
+      if (!droppedFile) {
+        setError("Drop an image file from your device to continue.");
         return;
       }
 
-      const droppedText =
-        event.dataTransfer.getData("text/uri-list") ||
-        event.dataTransfer.getData("text/plain");
-
-      if (droppedText.trim()) {
-        applyImageSource(mode, droppedText.trim());
-        setError(null);
-        return;
-      }
-
-      setError("Drop a public image URL or a small image file to continue.");
+      await handleFileSelect(droppedFile, mode);
     },
-    [applyImageSource, handleFileSelect],
+    [handleFileSelect],
   );
 
   const handleAddSubmit = async () => {
-    if (!title.trim() || !url.trim() || !uploadedAt.trim()) {
-      setError("Title, image source, and event date are required.");
+    if (!title.trim() || !uploadedAt.trim()) {
+      setError("Event title and date are required.");
+      return;
+    }
+    if (!url.trim() || !isLocalImageDataUrl(url)) {
+      setError("Please choose an image from your device.");
       return;
     }
 
@@ -656,7 +444,6 @@ export default function GalleryPage() {
       await addGalleryItem({
         title: title.trim(),
         url: url.trim(),
-        caption: buildCaption(category, description),
         uploadedAt: uploadedAt.trim(),
       });
       resetAddForm();
@@ -670,21 +457,23 @@ export default function GalleryPage() {
   };
 
   const handleEditClick = (item: GalleryImage) => {
-    const parsed = parseCaption(item.caption);
     setSelectedItem(item);
     setEditTitle(item.title || "");
     setEditUrl(item.url || "");
     setEditUploadedAt(item.uploadedAt || "");
-    setEditCategory(parsed.category || inferCategory(item.title, parsed.description));
-    setEditDescription(parsed.description);
+    setEditImageFileName("");
     setError(null);
     setEditOpen(true);
   };
 
   const handleEditSave = async () => {
     if (!selectedItem) return;
-    if (!editTitle.trim() || !editUrl.trim() || !editUploadedAt.trim()) {
-      setError("Title, image source, and event date are required.");
+    if (!editTitle.trim() || !editUploadedAt.trim()) {
+      setError("Event title and date are required.");
+      return;
+    }
+    if (!editUrl.trim()) {
+      setError("Please choose an image from your device.");
       return;
     }
 
@@ -698,7 +487,6 @@ export default function GalleryPage() {
         body: JSON.stringify({
           title: editTitle.trim(),
           url: editUrl.trim(),
-          caption: buildCaption(editCategory, editDescription),
           uploadedAt: editUploadedAt.trim(),
         }),
       });
@@ -757,10 +545,12 @@ export default function GalleryPage() {
     }
   };
 
-  const hasFiltersApplied = filter !== "all" || Boolean(searchQuery.trim());
-
   return (
-    <div className="space-y-8">
+    <div className="relative space-y-4">
+      <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[min(420px,50vh)] overflow-hidden">
+        <div className="absolute left-[6%] top-[8%] h-56 w-56 rounded-full bg-indigo-400/30 blur-3xl dark:bg-indigo-500/15" />
+        <div className="absolute right-[10%] top-[22%] h-64 w-64 rounded-full bg-cyan-400/25 blur-3xl dark:bg-cyan-500/12" />
+      </div>
       {error && (
         <div className="rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
@@ -772,297 +562,106 @@ export default function GalleryPage() {
         </div>
       )}
 
-      <section className="overflow-hidden rounded-[32px] border border-border/60 bg-gradient-to-br from-background via-background to-muted/40 p-6 shadow-sm sm:p-8">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                Gallery
-              </h1>
-            </div>
+      <div className="flex items-center justify-between gap-4">
+        <SectionTitle as="h2" className="font-semibold text-muted-foreground">
+          Company moments
+        </SectionTitle>
 
-            <div className="flex flex-wrap gap-3">
-              <div className="rounded-2xl border border-border/60 bg-background/80 px-4 py-3 shadow-sm">
-                <p className="text-2xl font-semibold">{galleryWithDetails.length}</p>
-                <p className="text-xs text-muted-foreground">Total gallery moments</p>
+        {canWriteGallery ? (
+          <Dialog open={open} onOpenChange={addDialogOpenChange}>
+            <DialogTrigger asChild>
+              <Button className="h-10 shrink-0 rounded-lg px-4 shadow-sm">
+                <ImagePlus className="h-4 w-4" />
+                Add image
+              </Button>
+            </DialogTrigger>
+
+            <DialogContent className="max-h-[90vh] overflow-y-auto border-border/60 bg-background/95 sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="text-xl">Add gallery image</DialogTitle>
+                <DialogDescription>
+                  Enter the event title, choose a local image, and set the date.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-5 py-2">
+                <div className="space-y-2.5">
+                  <Label htmlFor="gallery-title" className={projectFormLabelClassName}>
+                    Event title
+                  </Label>
+                  <Input
+                    id="gallery-title"
+                    value={title}
+                    onChange={(event) => setTitle(event.target.value)}
+                    placeholder="Q2 Engineering Meetup"
+                    className={projectFieldClassName}
+                  />
+                </div>
+
+                <div className="space-y-2.5">
+                  <Label htmlFor="gallery-date" className={projectFormLabelClassName}>
+                    Event date
+                  </Label>
+                  <Input
+                    id="gallery-date"
+                    type="date"
+                    value={uploadedAt}
+                    onChange={(event) => setUploadedAt(event.target.value)}
+                    className={projectFieldClassName}
+                  />
+                </div>
+
+                <div className="space-y-2.5">
+                  <Label className={projectFormLabelClassName}>Image</Label>
+                  <GalleryImageUpload
+                    inputId="gallery-file-add"
+                    dragActive={dragTarget === "add"}
+                    fileName={imageFileName}
+                    fileInputRef={addFileInputRef}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      setDragTarget("add");
+                    }}
+                    onDragLeave={() => setDragTarget(null)}
+                    onDrop={(event) => {
+                      void handleDrop(event, "add");
+                    }}
+                    onFileChange={(file) => {
+                      void handleFileSelect(file, "add");
+                    }}
+                  />
+                </div>
+
+                {url ? (
+                  <GalleryPreview
+                    key={url}
+                    url={url}
+                    title={title}
+                    uploadedAt={uploadedAt}
+                  />
+                ) : null}
               </div>
-              <div className="rounded-2xl border border-border/60 bg-background/80 px-4 py-3 shadow-sm">
-                <p className="text-2xl font-semibold">{uniqueCategoryCount}</p>
-                <p className="text-xs text-muted-foreground">Active categories</p>
-              </div>
-              <div className="rounded-2xl border border-border/60 bg-background/80 px-4 py-3 shadow-sm">
-                <p className="text-2xl font-semibold">{filteredItems.length}</p>
-                <p className="text-xs text-muted-foreground">
-                  {activeFilterLabel} moments shown
-                </p>
-              </div>
-            </div>
-          </div>
 
-          <div className="flex w-full flex-col gap-3 xl:max-w-2xl">
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search titles, categories, or event notes"
-                  className="h-11 rounded-2xl border-border/70 bg-background/85 pl-10 pr-10 shadow-sm"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
-                    aria-label="Clear search"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-
-              <Select value={filter} onValueChange={(value) => setFilter(value as FilterValue)}>
-                <SelectTrigger className="h-11 w-full rounded-2xl border-border/70 bg-background/85 shadow-sm sm:w-[190px]">
-                  <SelectValue placeholder="Filter" />
-                </SelectTrigger>
-                <SelectContent className="rounded-2xl border-border/60">
-                  {FILTER_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value} className="rounded-xl">
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {canWriteGallery && (
-                <Dialog open={open} onOpenChange={addDialogOpenChange}>
-                  <DialogTrigger asChild>
-                    <Button className="h-11 rounded-2xl px-5 shadow-sm">
-                      <ImagePlus className="h-4 w-4" />
-                      Add image
-                    </Button>
-                  </DialogTrigger>
-
-                  <DialogContent className="max-h-[90vh] overflow-y-auto border-border/60 bg-background/95 sm:max-w-4xl">
-                    <DialogHeader>
-                      <DialogTitle className="text-xl">Add gallery image</DialogTitle>
-                      <DialogDescription>
-                        Create a polished company showcase entry with a title, category,
-                        event date, and a preview before publishing.
-                      </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="grid gap-6 py-2 lg:grid-cols-[1.1fr_0.9fr]">
-                      <div className="space-y-5">
-                        <div
-                          onDragOver={(event) => {
-                            event.preventDefault();
-                            setDragTarget("add");
-                          }}
-                          onDragLeave={() => setDragTarget(null)}
-                          onDrop={(event) => {
-                            void handleDrop(event, "add");
-                          }}
-                          className={cn(
-                            "rounded-[28px] border border-dashed p-5 transition-all",
-                            dragTarget === "add"
-                              ? "border-primary bg-primary/5 shadow-sm"
-                              : "border-border/70 bg-muted/30 hover:border-primary/40 hover:bg-muted/50",
-                          )}
-                        >
-                          <div className="flex flex-col items-center gap-3 text-center">
-                            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-background shadow-sm">
-                              <UploadCloud className="h-5 w-5 text-primary" />
-                            </div>
-                            <div className="space-y-1">
-                              <p className="font-medium">
-                                Drag and drop an image URL or a small image file
-                              </p>
-                              <p className="text-sm text-muted-foreground">
-                                Supports public image links and local image files up to 2
-                                MB.
-                              </p>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="rounded-full"
-                              onClick={() => addFileInputRef.current?.click()}
-                            >
-                              Browse device
-                            </Button>
-                          </div>
-                          <input
-                            ref={addFileInputRef}
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(event) => {
-                              const file = event.target.files?.[0] ?? null;
-                              void handleFileSelect(file, "add");
-                              event.currentTarget.value = "";
-                            }}
-                          />
-                        </div>
-
-                        <div className="grid gap-5 sm:grid-cols-2">
-                          <div className="grid gap-2 sm:col-span-2">
-                            <Label htmlFor="gallery-title">Event title</Label>
-                            <Input
-                              id="gallery-title"
-                              value={title}
-                              onChange={(event) => setTitle(event.target.value)}
-                              placeholder="Q2 Engineering Meetup"
-                              className="h-11 rounded-2xl border-border/70"
-                            />
-                          </div>
-
-                          <div className="grid gap-2">
-                            <Label htmlFor="gallery-category">Category</Label>
-                            <Select value={category} onValueChange={setCategory}>
-                              <SelectTrigger
-                                id="gallery-category"
-                                className="h-11 rounded-2xl border-border/70"
-                              >
-                                <SelectValue placeholder="Choose a category" />
-                              </SelectTrigger>
-                              <SelectContent className="rounded-2xl border-border/60">
-                                {GALLERY_CATEGORIES.map((option) => (
-                                  <SelectItem
-                                    key={option}
-                                    value={option}
-                                    className="rounded-xl"
-                                  >
-                                    {option}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="grid gap-2">
-                            <Label htmlFor="gallery-date">Event date</Label>
-                            <Input
-                              id="gallery-date"
-                              type="date"
-                              value={uploadedAt}
-                              onChange={(event) => setUploadedAt(event.target.value)}
-                              className="h-11 rounded-2xl border-border/70"
-                            />
-                          </div>
-
-                          <div className="grid gap-2 sm:col-span-2">
-                            <Label htmlFor="gallery-url">Image source</Label>
-                            <div className="relative">
-                              <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                              <Input
-                                id="gallery-url"
-                                value={url}
-                                onChange={(event) => setUrl(event.target.value)}
-                                placeholder="https://example.com/company-event.jpg"
-                                className="h-11 rounded-2xl border-border/70 pl-10"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="grid gap-2 sm:col-span-2">
-                            <Label htmlFor="gallery-description">
-                              Description (optional)
-                            </Label>
-                            <Textarea
-                              id="gallery-description"
-                              value={description}
-                              onChange={(event) => setDescription(event.target.value)}
-                              placeholder="What was happening in this moment?"
-                              className="min-h-[120px] rounded-2xl border-border/70"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <Label className="text-sm">Title suggestions</Label>
-                            <span className="text-xs text-muted-foreground">
-                              Click to autofill
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {TITLE_SUGGESTIONS.map((suggestion) => (
-                              <Button
-                                key={suggestion}
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="rounded-full border-border/70 bg-background/80"
-                                onClick={() => {
-                                  setTitle(suggestion);
-                                  if (!category) {
-                                    setCategory(inferCategory(suggestion, description));
-                                  }
-                                }}
-                              >
-                                {suggestion}
-                              </Button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      <GalleryPreview
-                        key={url || "add-preview"}
-                        url={url}
-                        title={title}
-                        category={category}
-                        description={description}
-                        uploadedAt={uploadedAt}
-                      />
-                    </div>
-
-                    <DialogFooter>
-                      <Button
-                        variant="outline"
-                        onClick={() => setOpen(false)}
-                        disabled={isSaving}
-                        className="rounded-2xl"
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={handleAddSubmit}
-                        disabled={isSaving}
-                        className="rounded-2xl"
-                      >
-                        {isSaving ? "Adding..." : "Add image"}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              )}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {FILTER_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setFilter(option.value)}
-                  className={cn(
-                    "rounded-full border px-3 py-1.5 text-xs font-medium transition",
-                    filter === option.value
-                      ? "border-primary/40 bg-primary/10 text-primary"
-                      : "border-border/60 bg-background/75 text-muted-foreground hover:text-foreground",
-                  )}
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setOpen(false)}
+                  disabled={isSaving}
+                  className="rounded-lg"
                 >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
+                  Cancel
+                </Button>
+                <Button onClick={handleAddSubmit} disabled={isSaving} className="rounded-lg">
+                  {isSaving ? "Adding..." : "Add image"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : null}
+      </div>
 
       {galleryItems.length === 0 ? (
-        <div className="rounded-[32px] border border-border/70 bg-card p-12 text-center shadow-sm">
+        <div className="gallery-glass-panel rounded-2xl p-12 text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-muted">
             <ImagePlus className="h-7 w-7 text-muted-foreground" />
           </div>
@@ -1072,56 +671,14 @@ export default function GalleryPage() {
             training sessions, and office moments.
           </p>
         </div>
-      ) : filteredItems.length === 0 ? (
-        <div className="rounded-[32px] border border-border/70 bg-card p-12 text-center shadow-sm">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-muted">
-            <Search className="h-7 w-7 text-muted-foreground" />
-          </div>
-          <h2 className="mt-5 text-xl font-semibold">No images match your filters</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Try a different keyword or switch back to a broader category view.
-          </p>
-          {hasFiltersApplied && (
-            <div className="mt-5">
-              <Button
-                variant="outline"
-                className="rounded-2xl"
-                onClick={() => {
-                  setSearchQuery("");
-                  setFilter("all");
-                }}
-              >
-                Reset filters
-              </Button>
-            </div>
-          )}
-        </div>
       ) : (
-        <section className="space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold">Company gallery</h2>
-              <p className="text-sm text-muted-foreground">
-                Explore a curated masonry wall of celebrations, workshops, meetings,
-                and workspace moments.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span className="rounded-full border border-border/60 bg-background px-3 py-1.5">
-                {filteredItems.length} visible
-              </span>
-              <span className="rounded-full border border-border/60 bg-background px-3 py-1.5">
-                Filter: {activeFilterLabel}
-              </span>
-            </div>
-          </div>
-
-          <div className="columns-1 gap-5 md:columns-2 xl:columns-3 2xl:columns-4">
-            {filteredItems.map(({ item, details }) => (
+        <>
+          <div className="columns-1 gap-6 md:columns-2 xl:columns-3 2xl:columns-4 [&>*]:px-1">
+            {galleryItems.map((item, index) => (
               <GalleryCard
                 key={`${item.id}:${item.url}`}
+                index={index}
                 item={item}
-                details={details}
                 canWriteGallery={canWriteGallery}
                 isDeleting={isDeleting === item.id}
                 onEdit={handleEditClick}
@@ -1129,22 +686,59 @@ export default function GalleryPage() {
               />
             ))}
           </div>
-        </section>
+
+          <div className="flex flex-col items-center gap-2 pt-2">
+            <div className="h-px w-full max-w-xs bg-gradient-to-r from-transparent via-border/60 to-transparent" />
+            <p className="text-xs text-muted-foreground/75">
+              {galleryItems.length} {galleryItems.length === 1 ? "moment" : "moments"} in the gallery
+            </p>
+          </div>
+        </>
       )}
 
       <Dialog open={editOpen} onOpenChange={editDialogOpenChange}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto border-border/60 bg-background/95 sm:max-w-4xl">
+        <DialogContent className="max-h-[90vh] overflow-y-auto border-border/60 bg-background/95 sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-xl">Edit gallery image</DialogTitle>
             <DialogDescription>
-              Update the image source, event details, and supporting copy without
-              changing the existing gallery workflow.
+              Update the event title, replace the image from your device, or change the date.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-6 py-2 lg:grid-cols-[1.1fr_0.9fr]">
-            <div className="space-y-5">
-              <div
+          <div className="space-y-5 py-2">
+            <div className="space-y-2.5">
+              <Label htmlFor="edit-title" className={projectFormLabelClassName}>
+                Event title
+              </Label>
+              <Input
+                id="edit-title"
+                value={editTitle}
+                onChange={(event) => setEditTitle(event.target.value)}
+                placeholder="Event title"
+                className={projectFieldClassName}
+              />
+            </div>
+
+            <div className="space-y-2.5">
+              <Label htmlFor="edit-date" className={projectFormLabelClassName}>
+                Event date
+              </Label>
+              <Input
+                id="edit-date"
+                type="date"
+                value={editUploadedAt}
+                onChange={(event) => setEditUploadedAt(event.target.value)}
+                className={projectFieldClassName}
+              />
+            </div>
+
+            <div className="space-y-2.5">
+              <Label className={projectFormLabelClassName}>Image</Label>
+              <GalleryImageUpload
+                inputId="gallery-file-edit"
+                dragActive={dragTarget === "edit"}
+                fileName={editImageFileName}
+                fileInputRef={editFileInputRef}
                 onDragOver={(event) => {
                   event.preventDefault();
                   setDragTarget("edit");
@@ -1153,125 +747,20 @@ export default function GalleryPage() {
                 onDrop={(event) => {
                   void handleDrop(event, "edit");
                 }}
-                className={cn(
-                  "rounded-[28px] border border-dashed p-5 transition-all",
-                  dragTarget === "edit"
-                    ? "border-primary bg-primary/5 shadow-sm"
-                    : "border-border/70 bg-muted/30 hover:border-primary/40 hover:bg-muted/50",
-                )}
-              >
-                <div className="flex flex-col items-center gap-3 text-center">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-background shadow-sm">
-                    <UploadCloud className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="font-medium">
-                      Drag and drop a replacement image URL or image file
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Use a public image link or a local file up to 2 MB for a quick
-                      refresh.
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-full"
-                    onClick={() => editFileInputRef.current?.click()}
-                  >
-                    Browse device
-                  </Button>
-                </div>
-                <input
-                  ref={editFileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    void handleFileSelect(file, "edit");
-                    event.currentTarget.value = "";
-                  }}
-                />
-              </div>
-
-              <div className="grid gap-5 sm:grid-cols-2">
-                <div className="grid gap-2 sm:col-span-2">
-                  <Label htmlFor="edit-title">Event title</Label>
-                  <Input
-                    id="edit-title"
-                    value={editTitle}
-                    onChange={(event) => setEditTitle(event.target.value)}
-                    placeholder="Image title"
-                    className="h-11 rounded-2xl border-border/70"
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-category">Category</Label>
-                  <Select value={editCategory} onValueChange={setEditCategory}>
-                    <SelectTrigger
-                      id="edit-category"
-                      className="h-11 rounded-2xl border-border/70"
-                    >
-                      <SelectValue placeholder="Choose a category" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-2xl border-border/60">
-                      {GALLERY_CATEGORIES.map((option) => (
-                        <SelectItem key={option} value={option} className="rounded-xl">
-                          {option}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-date">Event date</Label>
-                  <Input
-                    id="edit-date"
-                    type="date"
-                    value={editUploadedAt}
-                    onChange={(event) => setEditUploadedAt(event.target.value)}
-                    className="h-11 rounded-2xl border-border/70"
-                  />
-                </div>
-
-                <div className="grid gap-2 sm:col-span-2">
-                  <Label htmlFor="edit-url">Image source</Label>
-                  <div className="relative">
-                    <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="edit-url"
-                      value={editUrl}
-                      onChange={(event) => setEditUrl(event.target.value)}
-                      placeholder="https://example.com/image.jpg"
-                      className="h-11 rounded-2xl border-border/70 pl-10"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-2 sm:col-span-2">
-                  <Label htmlFor="edit-description">Description (optional)</Label>
-                  <Textarea
-                    id="edit-description"
-                    value={editDescription}
-                    onChange={(event) => setEditDescription(event.target.value)}
-                    placeholder="Add a short note about the moment"
-                    className="min-h-[120px] rounded-2xl border-border/70"
-                  />
-                </div>
-              </div>
+                onFileChange={(file) => {
+                  void handleFileSelect(file, "edit");
+                }}
+              />
             </div>
 
-            <GalleryPreview
-              key={editUrl || selectedItem?.id || "edit-preview"}
-              url={editUrl}
-              title={editTitle}
-              category={editCategory}
-              description={editDescription}
-              uploadedAt={editUploadedAt}
-            />
+            {editUrl ? (
+              <GalleryPreview
+                key={editUrl}
+                url={editUrl}
+                title={editTitle}
+                uploadedAt={editUploadedAt}
+              />
+            ) : null}
           </div>
 
           <DialogFooter>
@@ -1279,15 +768,11 @@ export default function GalleryPage() {
               variant="outline"
               onClick={() => setEditOpen(false)}
               disabled={isEditSaving}
-              className="rounded-2xl"
+              className="rounded-lg"
             >
               Cancel
             </Button>
-            <Button
-              onClick={handleEditSave}
-              disabled={isEditSaving}
-              className="rounded-2xl"
-            >
+            <Button onClick={handleEditSave} disabled={isEditSaving} className="rounded-lg">
               {isEditSaving ? "Saving..." : "Save changes"}
             </Button>
           </DialogFooter>

@@ -1,11 +1,22 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ArrowLeft, ImageUp, Loader2, Sparkles, Wand2, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ImageUp,
+  LayoutGrid,
+  Loader2,
+  MessageSquareText,
+  Sparkles,
+  Wand2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import { parseApiError } from "@/providers/app-state";
 import type { SeatingAiSuggestion } from "@/lib/seating-ai-types";
 
@@ -90,6 +101,80 @@ type Props = {
   onApplyColanPrompt?: (prompt: string) => void;
   colanPromptSummary?: string | null;
   colanPromptWarnings?: string[];
+  /** Rendered inside the floor plan card — tighter chrome and option buttons. */
+  embedded?: boolean;
+};
+
+type GeneratorStep = "choose" | "edit-colan" | "upload-image" | "describe-layout";
+
+const GENERATOR_OPTIONS = [
+  {
+    id: "edit-colan" as const,
+    title: "Edit Colan layout",
+    description: "Change the current floor plan with a prompt — swap rows, add pillars, or remove sections.",
+    example: 'e.g. "replace A row with B row"',
+    icon: LayoutGrid,
+    accent: {
+      ring: "ring-violet-500/30",
+      border: "border-violet-500/35 hover:border-violet-500/60",
+      bg: "bg-violet-500/10",
+      icon: "text-violet-600 dark:text-violet-300",
+      badge: "Current layout",
+    },
+    requiresColanPrompt: true,
+  },
+  {
+    id: "upload-image" as const,
+    title: "Upload layout image",
+    description: "Upload a seating diagram and OpenCV detects desks, pillars, aisles, and entrances.",
+    example: "PNG, JPG, or WEBP up to 5 MB",
+    icon: ImageUp,
+    accent: {
+      ring: "ring-sky-500/30",
+      border: "border-sky-500/35 hover:border-sky-500/60",
+      bg: "bg-sky-500/10",
+      icon: "text-sky-600 dark:text-sky-300",
+      badge: "From image",
+    },
+    requiresColanPrompt: false,
+  },
+  {
+    id: "describe-layout" as const,
+    title: "Describe new layout",
+    description: "Describe desks, rows, pillars, and aisles in plain text to generate a blank layout.",
+    example: "e.g. 40 seats with 5 columns and 8 rows",
+    icon: MessageSquareText,
+    accent: {
+      ring: "ring-emerald-500/30",
+      border: "border-emerald-500/35 hover:border-emerald-500/60",
+      bg: "bg-emerald-500/10",
+      icon: "text-emerald-600 dark:text-emerald-300",
+      badge: "From text",
+    },
+    requiresColanPrompt: false,
+  },
+] as const;
+
+const STEP_COPY: Record<
+  GeneratorStep,
+  { title: string; description: string }
+> = {
+  choose: {
+    title: "Generate blank layout",
+    description: "Choose how you want to build or change the seating layout.",
+  },
+  "edit-colan": {
+    title: "Edit Colan layout",
+    description: "Describe changes to apply on top of your current Colan floor plan.",
+  },
+  "upload-image": {
+    title: "Upload layout image",
+    description: "Upload a seating diagram — OpenCV reads desks, pillars, aisles, and entrances.",
+  },
+  "describe-layout": {
+    title: "Describe new layout",
+    description: "Describe the layout structure only — not who sits where.",
+  },
 };
 
 export function SeatingAiPanel({
@@ -103,13 +188,20 @@ export function SeatingAiPanel({
   onApplyColanPrompt,
   colanPromptSummary = null,
   colanPromptWarnings = [],
+  embedded = false,
 }: Props) {
+  const [step, setStep] = React.useState<GeneratorStep>("choose");
   const [prompt, setPrompt] = React.useState("");
   const [colanPrompt, setColanPrompt] = React.useState("");
   const [imageNotes, setImageNotes] = React.useState("");
   const [layoutImage, setLayoutImage] = React.useState<LayoutImagePayload | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const visibleOptions = GENERATOR_OPTIONS.filter(
+    (option) => !option.requiresColanPrompt || onApplyColanPrompt,
+  );
+  const stepCopy = STEP_COPY[step];
 
   const runText = async () => {
     setError(null);
@@ -156,54 +248,118 @@ export function SeatingAiPanel({
     );
   }, [open]);
 
+  React.useEffect(() => {
+    if (open) return;
+    setStep("choose");
+    setError(null);
+  }, [open]);
+
   if (!open) return null;
 
-  return (
-    <Card className="border-violet-500/25 bg-gradient-to-br from-violet-500/5 via-card to-card shadow-sm">
-      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-        <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-2 rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-700 dark:text-violet-300">
-            <Sparkles className="h-3.5 w-3.5" />
-            AI seating assistant
-          </div>
-          <CardTitle className="text-lg">Generate blank layout</CardTitle>
-          <CardDescription>
-            Upload a floor plan image or describe desks, rows, pillars, and aisles — the AI builds a
-            precise layout with coordinates.
-          </CardDescription>
-        </div>
+  const panelBody = (
+    <>
+      {step !== "choose" && (
         <Button
           type="button"
+          size="sm"
           variant="ghost"
-          size="icon"
-          className="shrink-0 rounded-full"
-          onClick={() => onOpenChange(false)}
-          aria-label="Close AI panel"
+          className="-mt-1 h-8 rounded-full gap-1.5 px-2 text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            setStep("choose");
+            setError(null);
+          }}
+          disabled={loading}
         >
-          <X className="h-4 w-4" />
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to options
         </Button>
-      </CardHeader>
+      )}
 
-      <CardContent className="space-y-5">
-        {suggestion && (
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            className="rounded-full gap-1.5"
-            onClick={onBackToColan}
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            Back to Colan arrangement
-          </Button>
-        )}
+      {suggestion && (
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="rounded-full gap-1.5"
+          onClick={onBackToColan}
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to Colan arrangement
+        </Button>
+      )}
 
-        {onApplyColanPrompt && (
-          <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-4">
+      {step === "choose" && (
+        <div className={embedded ? "flex flex-wrap gap-2" : "grid gap-3 sm:grid-cols-3"}>
+          {visibleOptions.map((option) => {
+            const Icon = option.icon;
+            if (embedded) {
+              return (
+                <Button
+                  key={option.id}
+                  type="button"
+                  variant="outline"
+                  disabled={loading}
+                  onClick={() => {
+                    setStep(option.id);
+                    setError(null);
+                  }}
+                  className={cn(
+                    "h-9 rounded-lg gap-2 px-3 text-xs font-medium",
+                    option.accent.border,
+                  )}
+                >
+                  <Icon className={cn("h-3.5 w-3.5", option.accent.icon)} />
+                  {option.title}
+                </Button>
+              );
+            }
+
+            return (
+              <button
+                key={option.id}
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setStep(option.id);
+                  setError(null);
+                }}
+                className={cn(
+                  "group flex h-full flex-col rounded-2xl border bg-background/80 p-4 text-left transition duration-motion ease-motion",
+                  "hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2",
+                  option.accent.border,
+                  option.accent.ring,
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div
+                    className={cn(
+                      "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                      option.accent.bg,
+                    )}
+                  >
+                    <Icon className={cn("h-5 w-5", option.accent.icon)} />
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {option.accent.badge}
+                  </span>
+                </div>
+                <p className="mt-4 text-sm font-semibold text-foreground">{option.title}</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                  {option.description}
+                </p>
+                <p className="mt-3 text-[11px] font-medium text-foreground/70">{option.example}</p>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+        {step === "edit-colan" && onApplyColanPrompt && (
+          <div className="space-y-4 rounded-2xl border border-violet-500/25 bg-violet-500/5 p-4">
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">Edit Colan layout (prompt)</p>
+              <p className="text-sm font-semibold text-foreground">Prompt-based edits</p>
               <p className="text-xs text-muted-foreground">
-                Examples: replace A row with B row (swaps layouts + assignments) · create X row between A and B · remove G and E rows.
+                Examples: replace A row with B row · create X row between A and B · remove G and E rows.
                 Each prompt builds on your current layout.
               </p>
             </div>
@@ -214,19 +370,28 @@ export function SeatingAiPanel({
                 value={colanPrompt}
                 onChange={(event) => setColanPrompt(event.target.value)}
                 placeholder='e.g. "replace A row with B row"'
-                className="min-h-[96px] rounded-2xl border-border/70"
+                className="min-h-[120px] rounded-2xl border-border/70"
                 disabled={loading}
               />
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
-                variant="outline"
                 className="rounded-2xl"
                 disabled={loading || colanPrompt.trim().length < 5}
                 onClick={() => onApplyColanPrompt(colanPrompt)}
               >
-                Apply changes
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Applying changes…
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="h-4 w-4" />
+                    Apply changes
+                  </>
+                )}
               </Button>
               <button
                 type="button"
@@ -253,138 +418,144 @@ export function SeatingAiPanel({
           </div>
         )}
 
-        <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-4">
-          <div className="space-y-1">
-            <p className="text-sm font-semibold text-foreground">Upload layout image</p>
-            <p className="text-xs text-muted-foreground">
-              Upload a seating diagram (PNG, JPG, WEBP). OpenCV.js detects desks, pillars, aisles,
-              and entrances locally and builds a matching layout. If the image shows two options side
-              by side, add a note to pick left or right.
-            </p>
-          </div>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
-            className="hidden"
-            onChange={(event) => void onImageSelected(event)}
-            disabled={loading}
-          />
-
-          {layoutImage ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-              <div className="overflow-hidden rounded-2xl border border-border/70 bg-white p-2 dark:bg-zinc-950">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={layoutImage.previewUrl}
-                  alt="Uploaded floor plan preview"
-                  className="max-h-40 w-full max-w-[220px] object-contain"
-                />
-              </div>
-              <div className="min-w-0 flex-1 space-y-2">
-                <p className="truncate text-xs font-medium text-foreground">{layoutImage.fileName}</p>
-                <Label htmlFor="layout-image-notes">Optional notes</Label>
-                <Textarea
-                  id="layout-image-notes"
-                  value={imageNotes}
-                  onChange={(event) => setImageNotes(event.target.value)}
-                  placeholder='e.g. "Use the right layout with the center aisle"'
-                  className="min-h-[72px] rounded-2xl border-border/70"
-                  disabled={loading}
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    className="rounded-2xl"
-                    disabled={loading}
-                    onClick={() => void runImage()}
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Reading layout…
-                      </>
-                    ) : (
-                      <>
-                        <Wand2 className="h-4 w-4" />
-                        Generate from image
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-2xl"
-                    disabled={loading}
-                    onClick={() => {
-                      setLayoutImage(null);
-                      setImageNotes("");
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </div>
+        {step === "upload-image" && (
+          <div className="space-y-4 rounded-2xl border border-sky-500/25 bg-sky-500/5 p-4">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-foreground">Floor plan upload</p>
+              <p className="text-xs text-muted-foreground">
+                If the image shows two layouts side by side, add a note to pick left or right after
+                uploading.
+              </p>
             </div>
-          ) : (
-            <button
-              type="button"
-              className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/80 bg-muted/20 px-4 py-8 text-center transition hover:border-violet-500/40 hover:bg-violet-500/5"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={loading}
-            >
-              <ImageUp className="h-8 w-8 text-muted-foreground" />
-              <span className="text-sm font-medium text-foreground">Choose floor plan image</span>
-              <span className="text-xs text-muted-foreground">PNG, JPG, WEBP up to 5 MB</span>
-            </button>
-          )}
-        </div>
 
-        <div className="space-y-3">
-          <div className="space-y-2">
-            <Label htmlFor="ai-seating-prompt">Describe the layout (not who sits where)</Label>
-            <Textarea
-              id="ai-seating-prompt"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="e.g. 40 seats with 5 columns and 8 rows…"
-              className="min-h-[120px] rounded-2xl border-border/70"
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+              className="hidden"
+              onChange={(event) => void onImageSelected(event)}
               disabled={loading}
             />
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {EXAMPLE_PROMPTS.map((example) => (
+
+            {layoutImage ? (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                <div className="overflow-hidden rounded-2xl border border-border/70 bg-white p-2 dark:bg-zinc-950">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={layoutImage.previewUrl}
+                    alt="Uploaded floor plan preview"
+                    className="max-h-48 w-full max-w-[240px] object-contain"
+                  />
+                </div>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="truncate text-xs font-medium text-foreground">{layoutImage.fileName}</p>
+                  <Label htmlFor="layout-image-notes">Optional notes</Label>
+                  <Textarea
+                    id="layout-image-notes"
+                    value={imageNotes}
+                    onChange={(event) => setImageNotes(event.target.value)}
+                    placeholder='e.g. "Use the right layout with the center aisle"'
+                    className="min-h-[88px] rounded-2xl border-border/70"
+                    disabled={loading}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      className="rounded-2xl"
+                      disabled={loading}
+                      onClick={() => void runImage()}
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Reading layout…
+                        </>
+                      ) : (
+                        <>
+                          <Wand2 className="h-4 w-4" />
+                          Generate from image
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-2xl"
+                      disabled={loading}
+                      onClick={() => {
+                        setLayoutImage(null);
+                        setImageNotes("");
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : (
               <button
-                key={example}
                 type="button"
-                className="rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-left text-xs text-muted-foreground transition hover:border-violet-500/40 hover:text-foreground"
-                onClick={() => setPrompt(example)}
+                className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-sky-500/40 bg-background/80 px-4 py-10 text-center transition hover:border-sky-500/70 hover:bg-sky-500/5"
+                onClick={() => fileInputRef.current?.click()}
                 disabled={loading}
               >
-                {example}
+                <ImageUp className="h-9 w-9 text-sky-600 dark:text-sky-300" />
+                <span className="text-sm font-medium text-foreground">Choose floor plan image</span>
+                <span className="text-xs text-muted-foreground">PNG, JPG, WEBP up to 5 MB</span>
               </button>
-            ))}
-          </div>
-          <Button
-            type="button"
-            className="rounded-2xl"
-            disabled={loading || prompt.trim().length < 10}
-            onClick={() => void runText()}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Building layout…
-              </>
-            ) : (
-              <>
-                <Wand2 className="h-4 w-4" />
-                Generate blank layout
-              </>
             )}
-          </Button>
-        </div>
+          </div>
+        )}
+
+        {step === "describe-layout" && (
+          <div className="space-y-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/5 p-4">
+            <div className="space-y-2">
+              <Label htmlFor="ai-seating-prompt">Layout description</Label>
+              <Textarea
+                id="ai-seating-prompt"
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="e.g. 40 seats with 5 columns and 8 rows…"
+                className="min-h-[120px] rounded-2xl border-border/70"
+                disabled={loading}
+              />
+            </div>
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">Quick examples</p>
+              <div className="flex flex-wrap gap-2">
+                {EXAMPLE_PROMPTS.map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    className="rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-left text-xs text-muted-foreground transition hover:border-emerald-500/40 hover:text-foreground"
+                    onClick={() => setPrompt(example)}
+                    disabled={loading}
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Button
+              type="button"
+              className="rounded-2xl"
+              disabled={loading || prompt.trim().length < 10}
+              onClick={() => void runText()}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Building layout…
+                </>
+              ) : (
+                <>
+                  <Wand2 className="h-4 w-4" />
+                  Generate blank layout
+                </>
+              )}
+            </Button>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-start gap-2 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
@@ -425,7 +596,57 @@ export function SeatingAiPanel({
             </p>
           </div>
         )}
-      </CardContent>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="space-y-3 rounded-xl border border-violet-500/20 bg-violet-500/5 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-0.5">
+            <p className="text-sm font-semibold text-foreground">{stepCopy.title}</p>
+            <p className="text-xs text-muted-foreground">{stepCopy.description}</p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 rounded-full"
+            onClick={() => onOpenChange(false)}
+            aria-label="Close AI panel"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        {panelBody}
+      </div>
+    );
+  }
+
+  return (
+    <Card className="border-violet-500/25 bg-gradient-to-br from-violet-500/5 via-card to-card shadow-sm">
+      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+        <div className="space-y-1.5">
+          <div className="inline-flex items-center gap-2 rounded-full border border-violet-500/25 bg-violet-500/10 px-3 py-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+            <Sparkles className="h-3.5 w-3.5" />
+            AI seating assistant
+          </div>
+          <CardTitle className="text-lg">{stepCopy.title}</CardTitle>
+          <CardDescription>{stepCopy.description}</CardDescription>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="shrink-0 rounded-full"
+          onClick={() => onOpenChange(false)}
+          aria-label="Close AI panel"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </CardHeader>
+
+      <CardContent className="space-y-5">{panelBody}</CardContent>
     </Card>
   );
 }

@@ -15,7 +15,8 @@ import {
   requestSeatingAiGeneration,
   SeatingAiPanel,
 } from "@/components/seating/seating-ai-panel";
-import { SeatingToolbar } from "@/components/seating/seating-toolbar";
+import { SeatingToolbar, SeatingZoomControls } from "@/components/seating/seating-toolbar";
+import { SectionTitle } from "@/components/ui/page-typography";
 import type { SeatingAiSuggestion } from "@/lib/seating-ai-types";
 import type { Employee } from "@/types";
 import { layoutSeatSet, zoneLabelBySeat } from "@/lib/seating-ai-layout-builder";
@@ -34,6 +35,7 @@ import {
 } from "@/lib/seating-utils";
 import { buildTeamMemberRoleFilterOptions } from "@/lib/team-members-ui";
 import { captureLayoutImage, downloadDataUrl } from "@/lib/seating-layout-export";
+import { cn } from "@/lib/utils";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
@@ -48,7 +50,7 @@ export default function SeatingPage() {
   const [roleFilter, setRoleFilter] = React.useState("all");
   const [genderFilter, setGenderFilter] = React.useState("all");
   const [viewMode, setViewMode] = React.useState<"all" | "occupied" | "available">("all");
-  const [zoom, setZoom] = React.useState(0.95);
+  const [zoom, setZoom] = React.useState(0.75);
   const [fullscreenOpen, setFullscreenOpen] = React.useState(false);
   const floorPlanRef = React.useRef<SeatingFloorPlanHandle>(null);
   const [selectedSeat, setSelectedSeat] = React.useState<string | null>(null);
@@ -200,7 +202,7 @@ export default function SeatingPage() {
     clearAiLayout();
     setColanOccupancySnapshot(null);
     resetPromptLayout();
-    setZoom(0.88);
+    setZoom(0.75);
   };
 
   const runAssign = async (seatId: string, employeeId: string | null) => {
@@ -376,157 +378,158 @@ export default function SeatingPage() {
     }
   }, []);
 
+  const floorSectionTitle = layoutMode
+    ? "New layout canvas"
+    : promptLayoutActive
+      ? "Edited Colan layout"
+      : "Floor layout";
+
   return (
     <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-4">
-      <section className="shrink-0 overflow-hidden rounded-[28px] border border-border/70 bg-background/80 p-5 shadow-sm backdrop-blur-xl sm:p-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
-          <div className="space-y-1.5">
-            <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-              Seating arrangement
-            </h1>
-          </div>
+      <div className="flex items-center justify-between gap-4">
+        <SectionTitle as="h2" className="font-semibold text-muted-foreground">
+          {floorSectionTitle}
+        </SectionTitle>
 
-          {canAssign && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant={aiPanelOpen ? "default" : "outline"}
-                className="h-10 rounded-xl gap-2"
-                onClick={() => setAiPanelOpen((open) => !open)}
-              >
-                <Sparkles className="h-4 w-4" />
-                AI seating generator
-              </Button>
+        {canAssign && (
+          <Button
+            type="button"
+            size="sm"
+            className={cn(
+              "h-9 shrink-0 gap-1.5 rounded-lg border-0 px-3.5 text-xs font-semibold shadow-sm transition-colors",
+              "bg-sky-500 text-white hover:bg-sky-600 hover:shadow-md",
+              "focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2",
+              "dark:bg-sky-500 dark:text-white dark:hover:bg-sky-400",
+              aiPanelOpen && "bg-sky-600 hover:bg-sky-700 dark:bg-sky-600 dark:hover:bg-sky-500",
+            )}
+            onClick={() => setAiPanelOpen((open) => !open)}
+          >
+            <Sparkles className="h-3.5 w-3.5 text-white" />
+            {aiPanelOpen ? "Close AI" : "AI generator"}
+          </Button>
+        )}
+      </div>
+
+      <SeatingAnalyticsOverview stats={headerStats} variant="dashboard" />
+
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <SeatingToolbar
+          embedded
+          hideZoom
+          search={search}
+          onSearchChange={setSearch}
+          teamFilter={teamFilter}
+          onTeamFilterChange={setTeamFilter}
+          roleFilter={roleFilter}
+          onRoleFilterChange={setRoleFilter}
+          roleFilterOptions={roleFilterOptions}
+          genderFilter={genderFilter}
+          onGenderFilterChange={setGenderFilter}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          teamNames={teamNames}
+          stats={headerStats}
+          zoom={zoom}
+          onZoomChange={setZoom}
+          onReset={resetFilters}
+        />
+
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <SeatingZoomControls zoom={zoom} onZoomChange={setZoom} />
+
+          {canAssign && (promptLayoutActive || layoutMode || colanFrozen) && (
+            <>
               {promptLayoutActive && (
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-10 rounded-xl gap-2"
+                  size="sm"
+                  className="h-9 rounded-lg gap-1.5 px-2.5 text-xs"
                   onClick={resetPromptLayout}
                 >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to Colan arrangement
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back to Colan
                 </Button>
               )}
               {layoutMode && (
                 <Button
                   type="button"
                   variant="secondary"
-                  className="h-10 rounded-xl gap-2"
+                  size="sm"
+                  className="h-9 rounded-lg gap-1.5 px-2.5 text-xs"
                   onClick={clearAiLayout}
                 >
-                  <ArrowLeft className="h-4 w-4" />
-                  Back to Colan arrangement
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back to Colan
                 </Button>
               )}
               {colanFrozen && !layoutMode && (
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-10 rounded-xl gap-2"
+                  size="sm"
+                  className="h-9 rounded-lg gap-1.5 px-2.5 text-xs"
                   onClick={exitColanFrozenView}
                 >
-                  Show live Colan seating
+                  Show live seating
                 </Button>
               )}
-            </div>
+            </>
+          )}
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 rounded-lg gap-1.5 px-2.5 text-xs"
+            onClick={() => setFullscreenOpen(true)}
+          >
+            <Expand className="h-3.5 w-3.5" />
+            View
+          </Button>
+
+          <SeatingDownloadMenu
+            onExportImage={exportLayoutImage}
+            onExportPdf={exportPdf}
+            onExportExcel={exportCsv}
+          />
+
+          {layoutMode && (
+            <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-xs font-medium text-violet-800 dark:text-violet-200">
+              Layout planner
+            </span>
+          )}
+          {promptLayoutActive && (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-900 dark:text-emerald-200">
+              Prompt layout
+            </span>
+          )}
+          {colanFrozen && (
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-900 dark:text-amber-200">
+              Colan frozen
+            </span>
           )}
         </div>
-
-        <div className="mt-5">
-          <SeatingAnalyticsOverview stats={headerStats} compact />
-        </div>
-      </section>
-
-      <SeatingToolbar
-        search={search}
-        onSearchChange={setSearch}
-        teamFilter={teamFilter}
-        onTeamFilterChange={setTeamFilter}
-        roleFilter={roleFilter}
-        onRoleFilterChange={setRoleFilter}
-        roleFilterOptions={roleFilterOptions}
-        genderFilter={genderFilter}
-        onGenderFilterChange={setGenderFilter}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        teamNames={teamNames}
-        stats={headerStats}
-        zoom={zoom}
-        onZoomChange={setZoom}
-        onReset={resetFilters}
-      />
-
-      {canAssign && aiPanelOpen && (
-        <SeatingAiPanel
-          open={aiPanelOpen}
-          onOpenChange={setAiPanelOpen}
-          loading={aiGenerating}
-          suggestion={aiSuggestion}
-          onGenerateText={handleGenerateText}
-          onGenerateImage={handleGenerateImage}
-          onBackToColan={clearAiLayout}
-          onApplyColanPrompt={handleApplyColanPrompt}
-          colanPromptSummary={promptSummary}
-          colanPromptWarnings={promptWarnings}
-        />
-      )}
+      </div>
 
       <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-border/70 bg-background shadow-sm">
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3 sm:px-5">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground">
-              {layoutMode ? "New layout canvas" : promptLayoutActive ? "Edited Colan layout" : "Floor layout"}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {layoutMode
-                ? "Desks from your AI prompt — assignments save immediately."
-                : promptLayoutActive
-                  ? "Layout changed from your prompt — use Back to Colan arrangement to restore the original."
-                  : colanFrozen
-                    ? "Frozen Colan view from before the layout planner."
-                    : "Click a seat to view or assign · drag employees when permitted"}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 rounded-lg gap-1.5 px-2.5 text-xs"
-              onClick={() => setFullscreenOpen(true)}
-            >
-              <Expand className="h-3.5 w-3.5" />
-              View
-            </Button>
-            <SeatingDownloadMenu
-              onExportImage={exportLayoutImage}
-              onExportPdf={exportPdf}
-              onExportExcel={exportCsv}
+        {canAssign && aiPanelOpen && (
+          <div className="shrink-0 border-b border-border/60 px-4 py-3 sm:px-5">
+            <SeatingAiPanel
+              embedded
+              open={aiPanelOpen}
+              onOpenChange={setAiPanelOpen}
+              loading={aiGenerating}
+              suggestion={aiSuggestion}
+              onGenerateText={handleGenerateText}
+              onGenerateImage={handleGenerateImage}
+              onBackToColan={clearAiLayout}
+              onApplyColanPrompt={handleApplyColanPrompt}
+              colanPromptSummary={promptSummary}
+              colanPromptWarnings={promptWarnings}
             />
-            {layoutMode && (
-              <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 font-medium text-violet-800 dark:text-violet-200">
-                Layout planner
-              </span>
-            )}
-            {promptLayoutActive && (
-              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-900 dark:text-emerald-200">
-                Prompt layout
-              </span>
-            )}
-            {colanFrozen && (
-              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 font-medium text-amber-900 dark:text-amber-200">
-                Colan frozen
-              </span>
-            )}
-            <span className="rounded-full border border-border/70 bg-muted/30 px-2.5 py-1 tabular-nums text-muted-foreground">
-              Zoom {Math.round(zoom * 100)}%
-            </span>
-            <span className="rounded-full border border-border/70 bg-muted/30 px-2.5 py-1 tabular-nums text-muted-foreground">
-              {headerStats.occupied} / {headerStats.total} occupied
-            </span>
           </div>
-        </div>
+        )}
 
         <div className="min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)] scroll-smooth">
           <div className="flex min-h-full min-w-full items-center justify-center p-4 sm:p-6">

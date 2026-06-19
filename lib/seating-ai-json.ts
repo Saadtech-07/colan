@@ -1,11 +1,3 @@
-type RawAiPayload = {
-  summary?: unknown;
-  strategy?: unknown;
-  layoutSeats?: unknown;
-  zones?: unknown;
-  assignments?: unknown;
-};
-
 function stripMarkdownFences(text: string): string {
   const fenced = text.trim().match(/```(?:json)?\s*([\s\S]*?)```/i);
   return fenced?.[1]?.trim() ?? text.trim();
@@ -72,39 +64,6 @@ function closeTruncatedJson(json: string): string {
   return repaired;
 }
 
-function extractLayoutSeatsLoose(text: string): RawAiPayload | null {
-  const layoutSeats: string[] = [];
-  const seatPattern = /"(?:seatId|seat|bay)"\s*:\s*"([A-G]\d+)"/gi;
-  const arraySeatPattern = /"layoutSeats"\s*:\s*\[([\s\S]*?)\]/i;
-
-  const arrayMatch = text.match(arraySeatPattern);
-  if (arrayMatch?.[1]) {
-    const idPattern = /"([A-G]\d+)"/gi;
-    let match: RegExpExecArray | null;
-    while ((match = idPattern.exec(arrayMatch[1])) !== null) {
-      layoutSeats.push(match[1]!.toUpperCase());
-    }
-  }
-
-  if (!layoutSeats.length) {
-    let match: RegExpExecArray | null;
-    while ((match = seatPattern.exec(text)) !== null) {
-      layoutSeats.push(match[1]!.toUpperCase());
-    }
-  }
-
-  if (!layoutSeats.length) return null;
-
-  const summaryMatch = text.match(/"summary"\s*:\s*"([^"]+)"/i);
-
-  return {
-    summary: summaryMatch?.[1] ?? "Recovered blank layout from AI response.",
-    strategy: ["Parsed from partial AI output."],
-    layoutSeats: [...new Set(layoutSeats)],
-    assignments: [],
-  };
-}
-
 function buildJsonCandidates(rawText: string): string[] {
   const cleaned = stripMarkdownFences(rawText);
   const balanced = extractBalancedObject(cleaned);
@@ -134,14 +93,4 @@ export function parseRobustJsonObject<T extends object>(rawText: string): T {
   }
 
   throw new Error("AI response was not valid JSON.");
-}
-
-export function parseSeatingAiJson(rawText: string): RawAiPayload {
-  try {
-    return parseRobustJsonObject<RawAiPayload>(rawText);
-  } catch {
-    const loose = extractLayoutSeatsLoose(stripMarkdownFences(rawText));
-    if (loose) return loose;
-    throw new Error("AI response was not valid JSON. Try a simpler prompt or retry.");
-  }
 }

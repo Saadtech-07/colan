@@ -4,7 +4,6 @@ import * as React from "react";
 import {
   MODULE_PERMISSION_CATALOG,
   RBAC_MODULES,
-  getEnabledModuleActionLabels,
   getModuleActionConfigs,
   moduleHasAnyAccess,
   normalizeModulePermissions,
@@ -20,43 +19,36 @@ type Props = {
   filter?: string;
 };
 
-type PermissionCheckboxCardProps = {
+type PermissionToggleProps = {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label: string;
-  description?: string;
   disabled?: boolean;
   tone?: "default" | "manage";
-  helper?: string;
 };
 
-function PermissionCheckboxCard({
+function PermissionToggle({
   checked,
   onChange,
   label,
-  description,
   disabled,
   tone = "default",
-  helper,
-}: PermissionCheckboxCardProps) {
+}: PermissionToggleProps) {
   const inputId = React.useId();
 
   return (
     <label
       htmlFor={inputId}
       className={cn(
-        "flex min-h-[76px] items-start gap-3 rounded-2xl border px-3.5 py-3 transition-all",
-        disabled ? "cursor-not-allowed" : "cursor-pointer",
-        "disabled:cursor-not-allowed disabled:opacity-50",
+        "flex min-h-[42px] items-center gap-2.5 rounded-xl border px-3 py-2 transition-colors",
+        disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer",
         checked &&
           tone === "default" &&
-          "border-primary/30 bg-primary/10 shadow-sm",
+          "border-sky-200 bg-sky-50 text-sky-800",
         checked &&
           tone === "manage" &&
-          "border-emerald-500/30 bg-emerald-500/10 shadow-sm",
-        !checked &&
-          "border-border/70 bg-background/80 hover:border-border hover:bg-background",
-        disabled && "opacity-60",
+          "border-emerald-200 bg-emerald-50 text-emerald-800",
+        !checked && "border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/80",
       )}
     >
       <input
@@ -66,34 +58,11 @@ function PermissionCheckboxCard({
         disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
         className={cn(
-          "mt-0.5 h-4 w-4 shrink-0 rounded border-input bg-background accent-primary",
+          "h-4 w-4 shrink-0 rounded border-input accent-sky-600",
           tone === "manage" && "accent-emerald-600",
         )}
       />
-      <span className="min-w-0">
-        <span
-          className={cn(
-            "block text-sm font-medium",
-            checked && tone === "default" && "text-primary",
-            checked &&
-              tone === "manage" &&
-              "text-emerald-700 dark:text-emerald-300",
-            !checked && "text-foreground",
-          )}
-        >
-          {label}
-        </span>
-        {description && (
-          <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-            {description}
-          </span>
-        )}
-        {helper && (
-          <span className="mt-2 inline-flex rounded-full border border-border/60 bg-background/85 px-2 py-0.5 text-[11px] text-muted-foreground">
-            {helper}
-          </span>
-        )}
-      </span>
+      <span className="text-sm font-medium">{label}</span>
     </label>
   );
 }
@@ -175,118 +144,66 @@ export function PermissionGrid({
     const entry = MODULE_PERMISSION_CATALOG[rbacModule];
     return (
       entry.title.toLowerCase().includes(query) ||
-      entry.description.toLowerCase().includes(query) ||
-      entry.actions.some(
-        (action) =>
-          action.label.toLowerCase().includes(query) ||
-          action.description.toLowerCase().includes(query),
-      )
+      entry.actions.some((action) => action.label.toLowerCase().includes(query))
     );
   });
 
   if (visibleModules.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
-        No permission modules match your search.
+      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-5 text-sm text-muted-foreground">
+        No modules match your search.
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-        View is required for every advanced action. Manage grants full access for that module,
-        and turning Manage off keeps the currently selected permissions.
-      </div>
+    <div className="space-y-3">
+      <p className="text-sm font-medium text-foreground">Module access</p>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-2">
         {visibleModules.map((rbacModule) => {
           const entry = MODULE_PERMISSION_CATALOG[rbacModule];
           const row = normalized[rbacModule];
-          const enabledLabels = getEnabledModuleActionLabels(rbacModule, row);
-          const hasSelectedActions = Object.values(row.actions).some(Boolean);
 
           return (
             <section
               key={rbacModule}
               className={cn(
-                "rounded-[24px] border border-border/70 bg-card/80 p-4 shadow-sm transition-all",
-                moduleHasAnyAccess(row) && "border-primary/20 bg-primary/5",
+                "rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm",
+                moduleHasAnyAccess(row) && "border-sky-200/80 bg-sky-50/30",
               )}
             >
-              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-base font-semibold tracking-tight">{entry.title}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{entry.description}</p>
-                </div>
-                <span className="shrink-0 rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground">
-                  {enabledLabels.length === 0
-                    ? "No access"
-                    : `${enabledLabels.length} permission${enabledLabels.length === 1 ? "" : "s"} enabled`}
-                </span>
+              <p className="mb-3 text-sm font-semibold text-foreground">{entry.title}</p>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <PermissionToggle
+                  label="View"
+                  checked={row.view}
+                  disabled={disabled}
+                  onChange={(checked) => setView(rbacModule, checked)}
+                />
+                <PermissionToggle
+                  label="Manage"
+                  checked={row.manage}
+                  disabled={disabled}
+                  tone="manage"
+                  onChange={(checked) => setManage(rbacModule, checked)}
+                />
               </div>
 
-              <div className="space-y-3">
-                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                  <PermissionCheckboxCard
-                    label="View"
-                    description={entry.view}
-                    checked={row.view}
-                    disabled={disabled}
-                    helper={
-                      row.manage
-                        ? "Required by Manage"
-                        : hasSelectedActions
-                          ? "Required for selected actions"
-                          : undefined
-                    }
-                    onChange={(checked) => setView(rbacModule, checked)}
-                  />
-                  <PermissionCheckboxCard
-                    label="Manage"
-                    description={entry.manage}
-                    checked={row.manage}
-                    disabled={disabled}
-                    tone="manage"
-                    helper={row.manage ? "Full module access enabled" : undefined}
-                    onChange={(checked) => setManage(rbacModule, checked)}
-                  />
+              {entry.actions.length > 0 && (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {entry.actions.map((action) => (
+                    <PermissionToggle
+                      key={`${rbacModule}-${action.key}`}
+                      label={action.label}
+                      checked={!!row.actions[action.key] || row.manage}
+                      disabled={disabled || row.manage}
+                      onChange={(checked) => setAction(rbacModule, action.key, checked)}
+                    />
+                  ))}
                 </div>
-
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                    Actions
-                  </p>
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {entry.actions.map((action) => (
-                      <PermissionCheckboxCard
-                        key={`${rbacModule}-${action.key}`}
-                        label={action.label}
-                        description={action.description}
-                        checked={!!row.actions[action.key] || row.manage}
-                        disabled={disabled || row.manage}
-                        helper={row.manage ? "Granted by Manage" : undefined}
-                        onChange={(checked) =>
-                          setAction(rbacModule, action.key, checked)
-                        }
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                {enabledLabels.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {enabledLabels.map((label) => (
-                      <span
-                        key={`${rbacModule}-${label}`}
-                        className="rounded-full border border-border/70 bg-background/85 px-2.5 py-1 text-xs text-muted-foreground"
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
+              )}
             </section>
           );
         })}

@@ -2,20 +2,28 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   CalendarClock,
-  PencilLine,
+  CircleCheckBig,
   ShieldAlert,
-  Sparkles,
   Users2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ProjectDetailEditor } from "@/components/features/project-detail-editor";
 import { ProjectStatusSelect } from "@/components/features/project-status-select";
+import { PageTitle } from "@/components/ui/page-typography";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import {
   formatProjectDate,
@@ -30,12 +38,14 @@ import type { ProjectDetail } from "@/types";
 
 export default function ProjectDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const slug = String(params.slug ?? "");
   const { access, user, employees, refreshData } = useAppState();
   const { withLoading } = useGlobalLoading();
   const [project, setProject] = React.useState<ProjectDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [saveSuccessOpen, setSaveSuccessOpen] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -72,13 +82,51 @@ export default function ProjectDetailPage() {
     canManageProject(access.role, project.teams, access.team);
   const today = React.useMemo(() => new Date(), []);
 
-  const onSaved = (detail: ProjectDetail) => {
-    setProject(detail);
-    void refreshData();
-  };
+  const onSaved = React.useCallback(
+    (detail: ProjectDetail) => {
+      setProject(detail);
+      void refreshData();
+      setSaveSuccessOpen(true);
+    },
+    [refreshData],
+  );
+
+  const returnToProjects = React.useCallback(() => {
+    setSaveSuccessOpen(false);
+    router.push("/projects");
+  }, [router]);
 
   return (
     <div className="space-y-6">
+      <Dialog
+        open={saveSuccessOpen}
+        onOpenChange={(open) => {
+          if (!open) returnToProjects();
+        }}
+      >
+        <DialogContent className="max-w-sm rounded-[24px] border-border/70 bg-background/95 text-center shadow-2xl backdrop-blur-xl sm:max-w-md [&>button]:hidden">
+          <DialogHeader className="items-center space-y-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
+              <CircleCheckBig className="h-7 w-7" />
+            </div>
+            <DialogTitle className="text-xl font-semibold tracking-tight">
+              Saved successfully
+            </DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Your project changes have been saved.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-2 sm:justify-center">
+            <Button
+              type="button"
+              className="h-11 min-w-[120px] rounded-2xl px-6"
+              onClick={returnToProjects}
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="sm" className="gap-1 rounded-xl" asChild>
           <Link href="/projects">
@@ -137,12 +185,12 @@ function ProjectWorkspaceHero({
     <section className="relative overflow-hidden rounded-[28px] border border-border/70 bg-background/75 p-6 shadow-[0_24px_80px_-40px_rgba(15,23,42,0.45)] backdrop-blur-xl sm:p-7">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.12),transparent_38%),radial-gradient(circle_at_top_right,rgba(6,182,212,0.08),transparent_30%)]" />
       <div className="relative space-y-6">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0 space-y-4">
             <div className="space-y-3">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              <PageTitle as="h1" className="text-2xl sm:text-3xl">
                 {project.name}
-              </h1>
+              </PageTitle>
               <div className="flex flex-wrap items-center gap-2">
                 {project.teams.map((team) => (
                   <Badge
@@ -170,35 +218,6 @@ function ProjectWorkspaceHero({
                 ? " · You can manage this project workspace."
                 : " · Read-only workspace for your current role."}
             </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-            {canEdit ? (
-              <>
-                <Button variant="outline" className="h-11 rounded-2xl border-border/70 bg-background/80 shadow-sm" asChild>
-                  <a href="#project-details">
-                    <PencilLine className="h-4 w-4" />
-                    Edit details
-                  </a>
-                </Button>
-                <Button variant="outline" className="h-11 rounded-2xl border-border/70 bg-background/80 shadow-sm" asChild>
-                  <a href="#project-schedule">
-                    <Sparkles className="h-4 w-4" />
-                    Update status
-                  </a>
-                </Button>
-                <Button className="h-11 rounded-2xl shadow-sm" asChild>
-                  <a href="#project-members">
-                    <Users2 className="h-4 w-4" />
-                    Assign members
-                  </a>
-                </Button>
-              </>
-            ) : (
-              <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-sm text-muted-foreground shadow-sm">
-                View-only workspace
-              </div>
-            )}
           </div>
         </div>
 

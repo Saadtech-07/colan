@@ -44,3 +44,5 @@ next-env.d.ts
 
 # temporary import artifacts (never commit)
 /_seating-app-import/
+/_seating_zip_src/
+/_seating_zip_extract/

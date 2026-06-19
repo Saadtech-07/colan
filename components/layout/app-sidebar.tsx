@@ -39,6 +39,9 @@ const nav = [
   { href: "/app-users", label: "App Users", icon: UserCog },
 ] as const;
 
+const SIDEBAR_WIDTH_EXPANDED = "w-[14.5rem]";
+const SIDEBAR_WIDTH_COLLAPSED = "w-16";
+
 function SidebarNavItem({
   href,
   label,
@@ -63,20 +66,20 @@ function SidebarNavItem({
         onClick={onNavigate}
         title={collapsed ? label : undefined}
         className={cn(
-          "group flex items-center rounded-xl text-sm font-medium transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
-          collapsed ? "mx-auto h-11 w-11 justify-center" : "gap-3 px-3.5 py-2.5",
+          "group flex items-center rounded-lg text-sm font-medium transition-all duration-motion ease-motion",
+          collapsed ? "mx-auto h-9 w-9 justify-center" : "gap-2.5 px-2.5 py-2",
           active
-            ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-[0_10px_24px_rgba(2,6,23,0.18)]"
+            ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
             : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
         )}
       >
-        <Icon className="h-[18px] w-[18px] shrink-0 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:scale-110" />
+        <Icon className="h-4 w-4 shrink-0" />
         <span
           className={cn(
-            "flex min-w-0 flex-1 items-center gap-2 truncate transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
+            "flex min-w-0 flex-1 items-center gap-2 truncate transition-all duration-motion ease-motion",
             collapsed
-              ? "pointer-events-none max-w-0 overflow-hidden opacity-0 -translate-x-1"
-              : "max-w-[180px] opacity-100 translate-x-0",
+              ? "pointer-events-none max-w-0 overflow-hidden opacity-0"
+              : "opacity-100",
           )}
         >
           <span className="truncate">{label}</span>
@@ -90,7 +93,7 @@ function SidebarNavItem({
       {collapsed && (
         <span
           role="tooltip"
-          className="pointer-events-none absolute left-full top-1/2 z-[60] ml-3 -translate-y-1/2 whitespace-nowrap rounded-md border border-sidebar-border bg-sidebar-accent px-2.5 py-1.5 text-xs font-medium text-sidebar-accent-foreground opacity-0 shadow-lg transition-opacity duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover/nav:opacity-100"
+          className="pointer-events-none absolute left-full top-1/2 z-[60] ml-3 -translate-y-1/2 whitespace-nowrap rounded-md border border-sidebar-border bg-sidebar-accent px-2.5 py-1.5 text-xs font-medium text-sidebar-accent-foreground opacity-0 shadow-lg transition-opacity duration-motion ease-motion group-hover/nav:opacity-100"
         >
           {label}
         </span>
@@ -140,46 +143,46 @@ export function AppSidebar() {
     <>
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[0_0_0_1px_rgba(255,255,255,0.03)] transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
-          showExpandedChrome ? "w-64" : "w-24",
+          "fixed inset-y-0 left-0 z-40 flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-motion ease-motion",
+          showExpandedChrome ? SIDEBAR_WIDTH_EXPANDED : SIDEBAR_WIDTH_COLLAPSED,
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
-        <header className="h-16 shrink-0 overflow-hidden border-b border-sidebar-border transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
+        <header className="h-14 shrink-0 overflow-hidden border-b border-sidebar-border">
           {showExpandedChrome ? (
             <Link
               href="/dashboard"
               onClick={() => setMobileOpen(false)}
-              className="flex h-full items-center gap-3 px-3 transition-colors hover:bg-sidebar-accent/40"
+              className="flex h-full items-center gap-2.5 px-2.5 transition-colors hover:bg-sidebar-accent/40"
               title="Go to Dashboard"
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 shadow-sm transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10">
                 <img
                   src={colanlogo.src}
                   alt="Colan Infotech"
-                  className="h-8 w-auto shrink-0 object-contain"
+                  className="h-6 w-auto shrink-0 object-contain"
                 />
               </div>
-              <div className="min-w-0 flex-1 overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]">
-                <p className="truncate text-sm font-semibold leading-tight tracking-tight">
+              <div className="min-w-0 flex-1 overflow-hidden">
+                <p className="truncate text-[13px] font-semibold leading-tight tracking-tight">
                   COLAN INFOTECH
                 </p>
-                <p className="truncate text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60">
+                <p className="truncate text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/55">
                   {workspaceSubtitle}
                 </p>
               </div>
             </Link>
           ) : (
-            <div className="flex h-full items-center justify-center px-3">
+            <div className="flex h-full items-center justify-center">
               <Link
                 href="/dashboard"
-                className="group flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 ring-1 ring-white/10 shadow-sm transition-all duration-300 hover:bg-sidebar-accent/80 hover:ring-white/20"
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10 transition-colors hover:bg-sidebar-accent/80"
                 title="Go to Dashboard"
               >
                 <img
                   src={colanlogo.src}
                   alt="Colan Infotech"
-                  className="h-6 w-auto shrink-0 object-contain object-center transition-transform duration-300 group-hover:scale-105"
+                  className="h-5 w-auto shrink-0 object-contain"
                 />
               </Link>
             </div>
@@ -187,21 +190,12 @@ export function AppSidebar() {
         </header>
 
         <div
-          // className={cn(
-          //   "flex-1 overflow-x-visible overflow-y-auto transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
-          //   showExpandedChrome ? "px-3 py-4" : "px-2.5 py-4",
-          // )}
           className={cn(
-            "flex-1 overflow-visible transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
-            showExpandedChrome ? "px-3 py-4" : "px-2.5 py-4",
+            "flex-1 overflow-y-auto overflow-x-hidden py-2",
+            showExpandedChrome ? "px-2" : "px-1.5",
           )}
         >
-          <nav
-            className={cn(
-              "flex flex-col",
-              showExpandedChrome ? "gap-1.5" : "gap-2",
-            )}
-          >
+          <nav className={cn("flex flex-col", showExpandedChrome ? "gap-0.5" : "gap-1")}>
             {visibleNav.map((item) => {
               const active =
                 pathname === item.href ||
@@ -232,38 +226,30 @@ export function AppSidebar() {
             aria-label={collapseAriaLabel}
             title={collapseAriaLabel}
             className={cn(
-              "flex w-full items-center text-sm font-medium text-sidebar-foreground/80 transition-all duration-300 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+              "flex w-full items-center text-xs font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
               showExpandedChrome
-                ? "justify-center gap-2 px-4 py-3.5"
-                : "justify-center px-2 py-3.5",
+                ? "justify-center gap-1.5 px-3 py-2.5"
+                : "justify-center py-2.5",
             )}
           >
             {showExpandedChrome ? (
               mobileOpen ? (
                 <>
                   <span className="lg:hidden">Close</span>
-                  <X className="h-4 w-4 shrink-0 lg:hidden" />
+                  <X className="h-3.5 w-3.5 shrink-0 lg:hidden" />
                   <span className="hidden lg:inline">Collapse</span>
-                  <ChevronLeft className="hidden h-4 w-4 shrink-0 lg:block" />
+                  <ChevronLeft className="hidden h-3.5 w-3.5 shrink-0 lg:block" />
                 </>
               ) : (
                 <>
                   <span>Collapse</span>
-                  <ChevronLeft className="h-4 w-4 shrink-0" />
+                  <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
                 </>
               )
             ) : (
-              <ChevronRight className="h-4 w-4 shrink-0" />
+              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
             )}
           </button>
-          <div
-            className={cn(
-              "overflow-hidden px-4 pb-4 text-xs text-sidebar-foreground/60 transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]",
-              showExpandedChrome ? "max-h-24 opacity-100" : "max-h-0 p-0 opacity-0",
-            )}
-          >
-            {/* MongoDB · NextAuth · Cloudinary — coming soon */}
-          </div>
         </div>
       </aside>
 
@@ -271,7 +257,7 @@ export function AppSidebar() {
         role="presentation"
         aria-hidden
         className={cn(
-          "fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] lg:hidden",
+          "fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity duration-motion ease-motion lg:hidden",
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
         )}
         onClick={() => setMobileOpen(false)}
