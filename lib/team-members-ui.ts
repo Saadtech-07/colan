@@ -9,6 +9,8 @@ const LEGACY_ROLE_LABELS: Record<string, string[]> = {
   lead: ["Team Lead", "Project Lead"],
 };
 
+const DIRECTORY_LEAD_ROLES = new Set<string>(LEGACY_ROLE_LABELS.lead);
+
 export function buildTeamMemberRoleFilterOptions(workspaceRoles: WorkspaceRole[]) {
   return [
     { value: "all", label: "All" },
@@ -156,8 +158,8 @@ export function employeeWorkspaceStatus(
 export function workforceAnalytics(employees: Employee[], projects: Project[]): WorkforceAnalytics {
   const totalEmployees = employees.length;
   const activeTeams = new Set(employees.map((employee) => employee.team)).size;
-  const projectLeads = employees.filter(
-    (employee) => employee.role === "Project Lead" || employee.role === "Team Lead",
+  const projectLeads = employees.filter((employee) =>
+    DIRECTORY_LEAD_ROLES.has(employee.role),
   ).length;
   const employeesWithoutProjects = employees.filter(
     (employee) => employeeAssignedProjects(employee, projects).length === 0,
