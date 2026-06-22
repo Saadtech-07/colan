@@ -5,12 +5,13 @@ import Link from "next/link";
 import {
   BriefcaseBusiness,
   CalendarClock,
+  ChevronDown,
   ChevronRight,
+  Filter,
   LayoutGrid,
   Mail,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
   UserRoundCheck,
   UserX2,
   Users2,
@@ -23,17 +24,15 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { employeeProfilePath } from "@/lib/employee-slug";
 import { useAppState } from "@/providers/app-state";
 import { teamTabLabel } from "@/lib/team-utils";
@@ -60,6 +59,11 @@ import {
 import { cn } from "@/lib/utils";
 
 const ALL_TAB = "All";
+
+const filterMenuTriggerClass =
+  "cursor-pointer rounded-xl hover:bg-accent focus:bg-accent data-[state=open]:bg-accent";
+const filterMenuItemClass =
+  "cursor-pointer rounded-xl hover:bg-accent focus:bg-accent";
 
 export default function TeamMembersPage() {
   const { employees, projects, teamNames, workspaceRoles } = useAppState();
@@ -165,15 +169,15 @@ export default function TeamMembersPage() {
             </p>
           </div>
 
-          <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-            <div className="relative w-full sm:w-[min(100%,16rem)]">
+          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <div className="relative min-w-0 flex-1 sm:max-w-md">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground" />
               <Input
                 id="team-member-search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Name, ID, email, team, or role"
-                className="h-9 w-full rounded-lg border border-foreground/30 bg-background pl-9 text-sm font-normal shadow-none transition-colors placeholder:text-muted-foreground/55 focus:border-primary focus:bg-background focus:ring-2 focus:ring-primary/20 focus:ring-offset-0 focus-visible:border-primary focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:ring-offset-0"
+                className="h-9 rounded-xl border border-black bg-background pl-9 text-sm shadow-none transition-colors focus:border-black focus:ring-2 focus:ring-black/10 focus-visible:border-black focus-visible:ring-2 focus-visible:ring-black/10 dark:border-neutral-200 dark:focus:border-neutral-200 dark:focus-visible:border-neutral-200"
               />
             </div>
 
@@ -334,80 +338,71 @@ function DirectoryFiltersDropdown({
   const roleLabel = roleOptions.find((option) => option.value === role)?.label ?? "All";
 
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
           variant="outline"
-          className="h-9 gap-2 rounded-lg border-border/55 bg-muted/20 px-3 text-sm font-medium shadow-none transition-colors hover:bg-muted/30 focus:border-primary focus:ring-2 focus:ring-primary/20 focus:ring-offset-0"
+          className="h-9 shrink-0 rounded-xl border-border/70 bg-background px-3 text-sm"
         >
-          <SlidersHorizontal className="h-4 w-4 shrink-0" />
-          <span>Filters</span>
+          <Filter className="h-3.5 w-3.5" />
+          Filters
           {activeCount > 0 ? (
-            <Badge variant="secondary" className="h-5 rounded-md px-1.5 text-[10px] font-semibold">
+            <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-medium text-violet-700 dark:text-violet-300">
               {activeCount}
-            </Badge>
+            </span>
           ) : null}
+          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="w-[min(calc(100vw-2rem),16rem)] rounded-xl border-border/70 bg-background/95 p-3 backdrop-blur-xl"
+        className="max-h-none w-56 overflow-visible rounded-2xl border-border/60 bg-background/95 p-1.5 shadow-xl backdrop-blur"
       >
-        <DropdownMenuLabel className="px-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <DropdownMenuLabel className="px-2 text-xs text-muted-foreground">
           Refine directory
         </DropdownMenuLabel>
-        <DropdownMenuSeparator className="my-2" />
-        <div className="space-y-3">
-          <FilterField
-            label="Team"
-            value={team}
-            displayValue={teamLabel}
-            options={teamOptions}
-            onValueChange={onTeamChange}
-          />
-          <FilterField
-            label="Role"
-            value={role}
-            displayValue={roleLabel}
-            options={roleOptions}
-            onValueChange={onRoleChange}
-          />
-        </div>
+        <DropdownMenuSeparator className="bg-border/60" />
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className={filterMenuTriggerClass}>
+            Team · {teamLabel}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="max-h-64 overflow-y-auto rounded-2xl border-border/60 p-1.5">
+            <DropdownMenuRadioGroup value={team} onValueChange={onTeamChange}>
+              {teamOptions.map((option) => (
+                <DropdownMenuRadioItem
+                  key={option.value}
+                  value={option.value}
+                  className={filterMenuItemClass}
+                >
+                  {option.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className={filterMenuTriggerClass}>
+            Role · {roleLabel}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="rounded-2xl border-border/60 p-1.5">
+            <DropdownMenuRadioGroup value={role} onValueChange={onRoleChange}>
+              {roleOptions.map((option) => (
+                <DropdownMenuRadioItem
+                  key={option.value}
+                  value={option.value}
+                  className={filterMenuItemClass}
+                >
+                  {option.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function FilterField({
-  label,
-  value,
-  displayValue,
-  options,
-  onValueChange,
-}: {
-  label: string;
-  value: string;
-  displayValue: string;
-  options: Array<{ value: string; label: string }>;
-  onValueChange: (value: string) => void;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <span className="text-xs font-medium text-muted-foreground">{label}</span>
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger className="h-9 w-full rounded-lg border-border/70 bg-background px-3 text-sm">
-          <SelectValue>{displayValue}</SelectValue>
-        </SelectTrigger>
-        <SelectContent className="rounded-xl border-border/70 bg-background/95 backdrop-blur-xl">
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value} className="rounded-lg text-sm">
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
   );
 }
 
