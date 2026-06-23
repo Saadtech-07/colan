@@ -31,7 +31,7 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   try {
-    const updated = await updateTeam(id, parsed.data.name);
+    const updated = await updateTeam(id, parsed.data);
     if (!updated) {
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }

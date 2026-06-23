@@ -1,6 +1,6 @@
 type Props = {
   employeeName: string;
-  employeeEmail: string;
+  loginEmail: string;
   temporaryPassword: string;
   loginUrl: string;
 };
@@ -16,12 +16,12 @@ function escapeHtml(value: string): string {
 
 export function buildAccountCreatedEmail({
   employeeName,
-  employeeEmail,
+  loginEmail,
   temporaryPassword,
   loginUrl,
 }: Props) {
   const safeName = escapeHtml(employeeName);
-  const safeEmail = escapeHtml(employeeEmail);
+  const safeLoginEmail = escapeHtml(loginEmail);
   const safePassword = escapeHtml(temporaryPassword);
   const safeLoginUrl = escapeHtml(loginUrl);
   const subject = "Your Colan Infotech account is ready";
@@ -51,11 +51,11 @@ export function buildAccountCreatedEmail({
         <h2 style="margin:0 0 20px;color:#0f172a;font-size:20px;">Account details</h2>
         <p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.65;">Hi ${safeName},</p>
         <p style="margin:0 0 16px;color:#334155;font-size:15px;line-height:1.65;">
-          Your login account is now active. Use the credentials below to sign in and complete your first login.
+          Your login account is now active. Use your work email and temporary password below to sign in.
         </p>
 
         ${detailCard("Employee name", safeName)}
-        ${detailCard("Work email", safeEmail)}
+        ${detailCard("Work email (login)", safeLoginEmail)}
         ${detailCard("Temporary password", safePassword)}
         ${detailCard("Secure login link", safeLoginUrl)}
 
@@ -69,7 +69,7 @@ export function buildAccountCreatedEmail({
         </div>
 
         <p style="margin:16px 0 0;color:#475569;font-size:14px;line-height:1.6;">
-          Use the secure login link above with your work email and temporary password. On your first
+          Sign in with your work email and temporary password using the link above. On your first
           sign-in, you will be guided to complete profile setup before accessing the dashboard.
         </p>
       </div>
@@ -96,11 +96,11 @@ export function buildAccountCreatedEmail({
     "Welcome to your workspace.",
     "",
     `Employee name: ${employeeName}`,
-    `Work email: ${employeeEmail}`,
+    `Work email (login): ${loginEmail}`,
     `Temporary password: ${temporaryPassword}`,
     `Secure login link: ${loginUrl}`,
     "",
-    "Sign in with the link above, then complete profile setup on your first login.",
+    "Sign in with your work email and temporary password, then complete profile setup on your first login.",
   ].join("\n");
 
   return { subject, html, text };

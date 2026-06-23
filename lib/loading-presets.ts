@@ -60,6 +60,10 @@ export const LOADING_PRESETS = {
     title: "Applying seating",
     description: "Updating seat assignments...",
   },
+  seatingLayoutEdit: {
+    title: "Updating Colan layout",
+    description: "Applying layout changes to the floor plan...",
+  },
   loadingProjects: {
     title: "Loading projects",
     description: "Fetching project portfolio...",
@@ -91,6 +95,7 @@ export const LOADING_KEY_PRIORITY = [
   "project-create",
   "seating-assign",
   "seating-ai-generate",
+  "seating-layout-edit",
   "seating-ai-apply",
   "project-detail",
   "workspace-sync",

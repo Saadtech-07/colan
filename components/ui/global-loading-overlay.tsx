@@ -20,7 +20,7 @@ export function GlobalLoadingOverlay({
   return (
     <div
       className={cn(
-        "pointer-events-none fixed inset-0 z-[200] flex items-center justify-center bg-transparent px-6",
+        "fixed inset-0 z-[200] flex items-center justify-center bg-background/25 px-6 backdrop-blur-md",
         className,
       )}
       aria-busy="true"

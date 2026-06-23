@@ -27,6 +27,7 @@ export type AppRole = string;
 /** Extra directory fields from `employee_details` (Atlas collection). */
 export type EmployeeDirectoryInfo = {
   workEmail?: string;
+  personalEmail?: string;
   phone?: string;
   /** Legacy office label; kept in sync with fullAddress when possible. */
   location?: string;

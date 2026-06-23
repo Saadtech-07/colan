@@ -9,6 +9,7 @@ import {
 } from "@/components/features/profile-settings-content";
 import type { AppUserProfileDTO } from "@/lib/app-users";
 import { parseApiError, useAppState } from "@/providers/app-state";
+import { loggedFetch } from "@/lib/logged-fetch";
 
 type ToastState = {
   variant: "success" | "warning";
@@ -18,7 +19,7 @@ type ToastState = {
 
 export default function ProfileSettingsPage() {
   const { data: session, status, update } = useSession();
-  const { refreshProfileAvatar } = useAppState();
+  const { applyProfileSnapshot } = useAppState();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const toastTimerRef = React.useRef<number | null>(null);
   const loadedForEmailRef = React.useRef<string | null>(null);
@@ -68,9 +69,10 @@ export default function ProfileSettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/profile-settings", {
+      const res = await loggedFetch("/api/profile-settings", {
         credentials: "include",
         cache: "no-store",
+        source: "ProfileSettingsPage.loadProfile",
       });
       if (!res.ok) throw new Error(await parseApiError(res));
       const nextProfile = (await res.json()) as AppUserProfileDTO;
@@ -85,27 +87,6 @@ export default function ProfileSettingsPage() {
       loadInFlightRef.current = false;
     }
   }, [syncFormFromProfile]);
-
-  const refreshProfileFromServer = React.useCallback(async () => {
-    const email = session?.user?.email?.trim().toLowerCase() ?? "";
-    if (!email || saving) return;
-    if (loadInFlightRef.current) return;
-    loadInFlightRef.current = true;
-    try {
-      const res = await fetch("/api/profile-settings", {
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (!res.ok) return;
-      const nextProfile = (await res.json()) as AppUserProfileDTO;
-      setProfile(nextProfile);
-      syncFormFromProfile(nextProfile, true);
-    } catch {
-      // Ignore background refresh errors.
-    } finally {
-      loadInFlightRef.current = false;
-    }
-  }, [saving, session?.user?.email, syncFormFromProfile]);
 
   React.useEffect(() => {
     if (status === "unauthenticated") {
@@ -123,21 +104,6 @@ export default function ProfileSettingsPage() {
 
     void loadProfile(email);
   }, [loadProfile, session?.user?.email, status]);
-
-  React.useEffect(() => {
-    if (status !== "authenticated") return;
-
-    const refresh = () => {
-      void refreshProfileFromServer();
-    };
-    window.addEventListener("focus", refresh);
-    const interval = window.setInterval(refresh, 30_000);
-
-    return () => {
-      window.removeEventListener("focus", refresh);
-      window.clearInterval(interval);
-    };
-  }, [refreshProfileFromServer, status]);
 
   const handleReset = () => {
     if (!profile) return;
@@ -189,7 +155,7 @@ export default function ProfileSettingsPage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/profile-settings", {
+      const res = await loggedFetch("/api/profile-settings", {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -199,6 +165,7 @@ export default function ProfileSettingsPage() {
           newPassword: form.newPassword,
           confirmNewPassword: form.confirmNewPassword,
         }),
+        source: "ProfileSettingsPage.handleSubmit",
       });
       if (!res.ok) throw new Error(await parseApiError(res));
 
@@ -219,7 +186,7 @@ export default function ProfileSettingsPage() {
         team: updated.team,
         isProfileCompleted: updated.isProfileCompleted,
       });
-      await refreshProfileAvatar();
+      await applyProfileSnapshot(updated);
 
       if (wasOnboarding) {
         showToast({

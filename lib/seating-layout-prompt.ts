@@ -14,7 +14,7 @@ const SEATS_PER_PILLAR = 2;
 /** Seat-equivalent width per band — matches A/C rows (16 seats) and B/E rows (12 seats + 2 pillars). */
 const STANDARD_BAND_WIDTH = 16;
 
-type PromptAction =
+export type PromptAction =
   | { type: "remove_row"; row: string }
   | { type: "remove_pillars"; row: string; count?: number }
   | { type: "remove_all_pillars"; rows?: string[] }
@@ -510,11 +510,27 @@ function parseCreateRowActions(lower: string): PromptAction[] {
 
   const patterns: RegExp[] = [
     new RegExp(
+      String.raw`\b(?:create|add|insert)\s+rows?\s+([a-z])${optionalPillarSegment}\s+between\s+([a-z])\s+and\s+([a-z])(?:\s+rows?)?\b`,
+      "g",
+    ),
+    new RegExp(
+      String.raw`\b(?:create|add|insert)\s+rows?\s+([a-z])\s+between\s+([a-z])\s+and\s+([a-z])(?:\s+rows?)?${optionalPillarSegment}\b`,
+      "g",
+    ),
+    new RegExp(
       String.raw`\b(?:create|add|insert)\s+(?:an?\s+)?([a-z])\s+rows?${optionalPillarSegment}\s+between\s+([a-z])\s+and\s+([a-z])(?:\s+rows?)?\b`,
       "g",
     ),
     new RegExp(
       String.raw`\b(?:create|add|insert)\s+(?:an?\s+)?([a-z])\s+rows?\s+between\s+([a-z])\s+and\s+([a-z])(?:\s+rows?)?${optionalPillarSegment}\b`,
+      "g",
+    ),
+    new RegExp(
+      String.raw`\b(?:create|add|insert)\s+rows?\s+([a-z])${optionalPillarSegment}\s+after\s+([a-z])(?:\s+rows?)?\b`,
+      "g",
+    ),
+    new RegExp(
+      String.raw`\b(?:create|add|insert)\s+rows?\s+([a-z])\s+after\s+([a-z])(?:\s+rows?)?${optionalPillarSegment}\b`,
       "g",
     ),
     new RegExp(
@@ -527,7 +543,10 @@ function parseCreateRowActions(lower: string): PromptAction[] {
     ),
   ];
 
-  for (const pattern of patterns.slice(0, 2)) {
+  const betweenPatterns = patterns.slice(0, 4);
+  const afterPatterns = patterns.slice(4);
+
+  for (const pattern of betweenPatterns) {
     for (const match of lower.matchAll(pattern)) {
       actions.push({
         type: "create_row",
@@ -540,7 +559,7 @@ function parseCreateRowActions(lower: string): PromptAction[] {
     if (actions.length > 0) return actions;
   }
 
-  for (const pattern of patterns.slice(2)) {
+  for (const pattern of afterPatterns) {
     for (const match of lower.matchAll(pattern)) {
       actions.push({
         type: "create_row",
@@ -919,6 +938,28 @@ function parsePromptActions(prompt: string): PromptAction[] {
   return actions;
 }
 
+
+export function applyLayoutPromptActions(
+  baseRows: SeatingRowConfig[],
+  actions: PromptAction[],
+): Pick<SeatingLayoutPromptResult, "rows" | "warnings" | "occupancySwaps"> {
+  const warnings: string[] = [];
+  const occupancySwaps: Array<[string, string]> = [];
+  let rows = cloneRows(baseRows);
+  for (const action of actions) {
+    rows = applyAction(rows, action, warnings, occupancySwaps);
+  }
+  return { rows, warnings, occupancySwaps };
+}
+
+export function parseLayoutPromptActions(prompt: string): PromptAction[] {
+  return parsePromptActions(prompt.trim());
+}
+
+export function cloneSeatingRows(rows: SeatingRowConfig[]): SeatingRowConfig[] {
+  return cloneRows(rows);
+}
+
 function applyAction(
   rows: SeatingRowConfig[],
   action: PromptAction,
@@ -1031,16 +1072,15 @@ export function applySeatingLayoutPrompt(
   }
 
   let rows = cloneRows(baseRows);
-  for (const action of actions) {
-    rows = applyAction(rows, action, warnings, occupancySwaps);
-  }
+  const applied = applyLayoutPromptActions(baseRows, actions);
+  rows = applied.rows;
 
   const totalSeats = rows.reduce((sum, row) => sum + seatCountForRow(row), 0);
 
   return {
     rows,
     summary: `Applied ${actions.length} change(s) — ${totalSeats} seats across ${rows.length} row(s).`,
-    warnings,
-    occupancySwaps,
+    warnings: applied.warnings,
+    occupancySwaps: applied.occupancySwaps,
   };
 }

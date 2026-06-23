@@ -11,6 +11,11 @@ import type { AppRole, TeamName } from "@/types";
 import {
   isProjectManagerAppRole,
 } from "@/lib/project-managers";
+import {
+  isTeamLeadAppRole,
+  isTeamManagerAppRole,
+  type TeamAssignableAccount,
+} from "@/lib/team-assignees";
 import type { ProjectManagerSummary } from "@/types";
 import { addressesFromDirectory, directoryPatchFromAddresses } from "@/lib/employee-address";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
@@ -162,6 +167,7 @@ export async function ensureAppUsersSeed(
 
 export type AppUserCreateInput = {
   email: string;
+  personalEmail?: string;
   password: string;
   name: string;
   appRole: AppRole;
@@ -188,6 +194,7 @@ export type AppUserUpdateInput = {
   employeeId?: string;
   imageUrl?: string;
   workEmail?: string;
+  personalEmail?: string;
   phone?: string;
   location?: string;
   fullAddress?: string;
@@ -209,6 +216,7 @@ export type AppUserProfileDTO = {
   updatedProfileAt?: string;
   workspaceRole?: string;
   workEmail?: string;
+  personalEmail?: string;
   phone?: string;
   /** @deprecated Legacy single-line location; prefer currentAddress. */
   location?: string;
@@ -273,6 +281,7 @@ async function enrichAppUsersWithEmployeeProfiles(
     if (!employee) return user;
     const directory = (employee.directory ?? {}) as {
       workEmail?: string;
+      personalEmail?: string;
       phone?: string;
       location?: string;
       fullAddress?: string;
@@ -283,6 +292,7 @@ async function enrichAppUsersWithEmployeeProfiles(
     return {
       ...user,
       workEmail: directory.workEmail ?? user.email,
+      personalEmail: directory.personalEmail ?? "",
       phone: directory.phone ?? "",
       location: directory.location ?? "",
       fullAddress: directory.fullAddress ?? directory.location ?? "",
@@ -322,6 +332,26 @@ export async function listProjectManagerAccounts(): Promise<ProjectManagerSummar
       imageUrl: user.imageUrl,
       appRole: user.appRole,
     }));
+}
+
+function toTeamAssignableAccount(
+  user: ReturnType<typeof appUserDocToPublic>,
+): TeamAssignableAccount {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    appRole: user.appRole,
+    team: user.team,
+  };
+}
+
+export async function listTeamAssignableAccounts(): Promise<TeamAssignableAccount[]> {
+  await ensureRoleRegistry();
+  const users = await listAppUsers().then((rows) => rows.map(toTeamAssignableAccount));
+  return users.filter(
+    (user) => isTeamLeadAppRole(user.appRole) || isTeamManagerAppRole(user.appRole),
+  );
 }
 
 export async function createAppUser(
@@ -387,7 +417,9 @@ export async function createAppUser(
   }
 
   const passwordHash = await bcrypt.hash(input.password, 10);
-  const workEmail = (input.workEmail?.trim() || email).toLowerCase();
+  const loginEmail = email;
+  const workEmail = (input.workEmail?.trim() || loginEmail).toLowerCase();
+  const personalEmail = input.personalEmail?.trim().toLowerCase() ?? "";
   const joinedDate =
     input.joinedDate?.trim() || new Date().toISOString().split("T")[0];
   const directory = directoryPatchFromAddresses(
@@ -401,6 +433,7 @@ export async function createAppUser(
     },
     {
       workEmail,
+      personalEmail: personalEmail || undefined,
       phone: input.phone?.trim() ?? "",
       joinedDate,
       notes: input.notes?.trim() ?? "",
@@ -409,7 +442,7 @@ export async function createAppUser(
 
   const doc: AppUserDocument = {
     _id: new ObjectId(),
-    email,
+    email: loginEmail,
     passwordHash,
     name: input.name.trim(),
     appRole: input.appRole,
@@ -436,7 +469,7 @@ export async function createAppUser(
   await employeeCol.insertOne({
     _id: employeeObjectId,
     employeeId,
-    email,
+    email: loginEmail,
     name: input.name.trim(),
     role: employeeRole,
     team,
@@ -455,6 +488,7 @@ export async function createAppUser(
       $set: {
         employeeRef: employeeObjectId,
         workEmail: directory.workEmail,
+        personalEmail: directory.personalEmail,
         phone: directory.phone || undefined,
         location: directory.location || undefined,
         fullAddress: directory.fullAddress || undefined,
@@ -539,6 +573,7 @@ export async function updateAppUser(
   const nextTeam = input.team ?? current.team ?? "Unassigned";
   const nextImageUrl = input.imageUrl ?? current.imageUrl ?? "";
   const nextWorkEmail = (input.workEmail?.trim() || current.email).toLowerCase();
+  const nextPersonalEmail = input.personalEmail?.trim().toLowerCase() ?? "";
   const nextPhone = input.phone?.trim() ?? "";
   const nextDirectory = directoryPatchFromAddresses(
     {
@@ -551,6 +586,7 @@ export async function updateAppUser(
     },
     {
       workEmail: nextWorkEmail,
+      personalEmail: nextPersonalEmail || undefined,
       phone: nextPhone || undefined,
       joinedDate: input.joinedDate?.trim() || new Date().toISOString().split("T")[0],
     },
@@ -599,6 +635,7 @@ export async function updateAppUser(
     bayNumber: nextBayNumber,
     ...(input.gender !== undefined ? { gender: input.gender } : {}),
     "directory.workEmail": nextWorkEmail,
+    "directory.personalEmail": nextPersonalEmail,
     "directory.phone": nextPhone,
     "directory.location": nextDirectory.location ?? "",
     "directory.fullAddress": nextDirectory.fullAddress ?? "",
@@ -633,6 +670,7 @@ export async function updateAppUser(
       projectIds: [],
       directory: {
         workEmail: nextWorkEmail,
+        personalEmail: nextPersonalEmail || undefined,
         phone: nextPhone,
         location: nextDirectory.location ?? "",
         fullAddress: nextDirectory.fullAddress ?? "",
@@ -655,6 +693,7 @@ export async function updateAppUser(
         $set: {
           employeeRef,
           workEmail: nextWorkEmail,
+          personalEmail: nextPersonalEmail || undefined,
           phone: nextPhone || undefined,
           location: nextDirectory.location || undefined,
           fullAddress: nextDirectory.fullAddress || undefined,
@@ -766,7 +805,20 @@ export async function verifyAppUserCredentials(
 
   await ensureAppUsersSeed(db);
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
-  const doc = await col.findOne({ email: normalized });
+  let doc = await col.findOne({ email: normalized });
+  if (!doc) {
+    const employeeCol = db.collection(COLLECTIONS.employees);
+    const linkedEmployee = await employeeCol.findOne({
+      $or: [{ email: normalized }, { "directory.workEmail": normalized }],
+    });
+    const linkedLoginEmail =
+      typeof linkedEmployee?.email === "string"
+        ? linkedEmployee.email.toLowerCase().trim()
+        : "";
+    if (linkedLoginEmail) {
+      doc = await col.findOne({ email: linkedLoginEmail });
+    }
+  }
   if (!doc) return null;
   const ok = await bcrypt.compare(password, doc.passwordHash);
   if (!ok) return null;

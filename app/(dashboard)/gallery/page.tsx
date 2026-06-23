@@ -196,7 +196,7 @@ function GalleryImageUpload({
         id={inputId}
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*"  
         className="sr-only"
         onChange={(event) => {
           onFileChange(event.target.files?.[0] ?? null);

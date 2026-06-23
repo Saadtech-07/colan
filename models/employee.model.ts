@@ -16,8 +16,9 @@ export type EmployeeDocument = {
   imageUrl: string;
   email?: string;
   directory?: {
-    workEmail?: string;
-    phone?: string;
+  workEmail?: string;
+  personalEmail?: string;
+  phone?: string;
     location?: string;
     fullAddress?: string;
     currentAddress?: string;

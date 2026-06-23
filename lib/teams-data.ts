@@ -3,7 +3,9 @@ import { getDb } from "@/lib/mongodb";
 import { memoryStore } from "@/lib/memory-store";
 import {
   DEFAULT_TEAM_NAMES,
+  normalizeTeamCode,
   normalizeTeamName,
+  teamCodeFromName,
   teamSlugFromName,
 } from "@/lib/team-utils";
 import {
@@ -12,6 +14,7 @@ import {
   teamDocToDTO,
   type TeamDocument,
   type TeamDTO,
+  type TeamUpsertInput,
 } from "@/models";
 
 function isDuplicateKeyError(e: unknown): boolean {
@@ -36,6 +39,7 @@ export async function ensureTeamsSeed(
     _id: new ObjectId(),
     name,
     slug: teamSlugFromName(name),
+    code: teamCodeFromName(name),
     displayOrder: index,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -70,23 +74,74 @@ export async function assertTeamsExist(teamNames: string[]): Promise<string | nu
   return `Unknown team(s): ${missing.join(", ")}. Create them under Project teams first.`;
 }
 
-export async function createTeam(rawName: string): Promise<TeamDTO> {
-  const name = normalizeTeamName(rawName);
+async function assertAppUserRefsExist(
+  db: Db | null,
+  teamLeadId?: string | null,
+  teamManagerId?: string | null,
+): Promise<void> {
+  const ids = [...new Set([teamLeadId, teamManagerId].filter(Boolean))] as string[];
+  if (ids.length === 0) return;
+
+  if (!db) return;
+
+  for (const id of ids) {
+    if (!ObjectId.isValid(id)) throw new Error("Selected account was not found.");
+    const found = await db
+      .collection(COLLECTIONS.appUsers)
+      .findOne({ _id: new ObjectId(id) }, { projection: { _id: 1 } });
+    if (!found) throw new Error("Selected account was not found.");
+  }
+}
+
+function normalizeTeamUpsertInput(input: TeamUpsertInput): {
+  name: string;
+  code: string;
+  teamLeadId: string | null;
+  teamManagerId: string | null;
+} {
+  const name = normalizeTeamName(input.name);
   if (!name) throw new Error("Team name is required.");
+
+  const code = normalizeTeamCode(input.code);
+  if (!code) throw new Error("Team code is required.");
+
+  return {
+    name,
+    code,
+    teamLeadId: input.teamLeadId ?? null,
+    teamManagerId: input.teamManagerId ?? null,
+  };
+}
+
+export async function createTeam(input: TeamUpsertInput): Promise<TeamDTO> {
+  const { name, code, teamLeadId, teamManagerId } = normalizeTeamUpsertInput(input);
 
   const slug = teamSlugFromName(name);
   const db = await getDb();
 
+  await assertAppUserRefsExist(db, teamLeadId, teamManagerId);
+
   if (!db) {
     const existing = memoryStore.teams.find(
-      (t) => t.name.toLowerCase() === name.toLowerCase(),
+      (t) =>
+        t.name.toLowerCase() === name.toLowerCase() ||
+        (t.code && t.code.toLowerCase() === code.toLowerCase()),
     );
-    if (existing) throw new Error("A team with this name already exists.");
+    if (existing) {
+      throw new Error(
+        existing.name.toLowerCase() === name.toLowerCase()
+          ? "A team with this name already exists."
+          : "A team with this code already exists.",
+      );
+    }
 
     const row: TeamDTO = {
       id: `team-${Date.now()}`,
       name,
       slug,
+      code,
+      teamLeadId: teamLeadId ?? undefined,
+      teamManagerId: teamManagerId ?? undefined,
       displayOrder: memoryStore.teams.length,
     };
     memoryStore.teams.push(row);
@@ -98,9 +153,11 @@ export async function createTeam(rawName: string): Promise<TeamDTO> {
 
   const col = db.collection<TeamDocument>(COLLECTIONS.teams);
   const duplicate = await col.findOne({
-    $or: [{ name }, { slug }],
+    $or: [{ name }, { slug }, { code }],
   });
   if (duplicate) {
+    if (duplicate.name === name) throw new Error("A team with this name already exists.");
+    if (duplicate.code === code) throw new Error("A team with this code already exists.");
     throw new Error("A team with this name already exists.");
   }
 
@@ -115,6 +172,9 @@ export async function createTeam(rawName: string): Promise<TeamDTO> {
     _id: new ObjectId(),
     name,
     slug,
+    code,
+    ...(teamLeadId ? { teamLeadId } : {}),
+    ...(teamManagerId ? { teamManagerId } : {}),
     displayOrder,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -124,7 +184,7 @@ export async function createTeam(rawName: string): Promise<TeamDTO> {
     await col.insertOne(doc);
   } catch (e) {
     if (isDuplicateKeyError(e)) {
-      throw new Error("A team with this name already exists.");
+      throw new Error("A team with this name or code already exists.");
     }
     throw e;
   }
@@ -190,25 +250,38 @@ function renameTeamReferencesInMemory(oldName: string, newName: string): void {
   }
 }
 
-export async function updateTeam(id: string, rawName: string): Promise<TeamDTO | null> {
-  const name = normalizeTeamName(rawName);
-  if (!name) throw new Error("Team name is required.");
+export async function updateTeam(id: string, input: TeamUpsertInput): Promise<TeamDTO | null> {
+  const { name, code, teamLeadId, teamManagerId } = normalizeTeamUpsertInput(input);
 
   const slug = teamSlugFromName(name);
   const db = await getDb();
+
+  await assertAppUserRefsExist(db, teamLeadId, teamManagerId);
 
   if (!db) {
     const current = memoryStore.teams.find((team) => team.id === id);
     if (!current) return null;
 
     const duplicate = memoryStore.teams.find(
-      (team) => team.id !== id && team.name.toLowerCase() === name.toLowerCase(),
+      (team) =>
+        team.id !== id &&
+        (team.name.toLowerCase() === name.toLowerCase() ||
+          (team.code && team.code.toLowerCase() === code.toLowerCase())),
     );
-    if (duplicate) throw new Error("A team with this name already exists.");
+    if (duplicate) {
+      throw new Error(
+        duplicate.name.toLowerCase() === name.toLowerCase()
+          ? "A team with this name already exists."
+          : "A team with this code already exists.",
+      );
+    }
 
     const oldName = current.name;
     current.name = name;
     current.slug = slug;
+    current.code = code;
+    current.teamLeadId = teamLeadId ?? undefined;
+    current.teamManagerId = teamManagerId ?? undefined;
     if (oldName !== name) {
       renameTeamReferencesInMemory(oldName, name);
     }
@@ -226,16 +299,35 @@ export async function updateTeam(id: string, rawName: string): Promise<TeamDTO |
 
   const duplicate = await col.findOne({
     _id: { $ne: current._id },
-    $or: [{ name }, { slug }],
+    $or: [{ name }, { slug }, { code }],
   });
   if (duplicate) {
+    if (duplicate.name === name) throw new Error("A team with this name already exists.");
+    if (duplicate.code === code) throw new Error("A team with this code already exists.");
     throw new Error("A team with this name already exists.");
   }
 
   const oldName = current.name;
+  const setFields: Record<string, unknown> = {
+    name,
+    slug,
+    code,
+    updatedAt: new Date(),
+  };
+  if (teamLeadId) {
+    setFields.teamLeadId = teamLeadId;
+  } else {
+    setFields.teamLeadId = null;
+  }
+  if (teamManagerId) {
+    setFields.teamManagerId = teamManagerId;
+  } else {
+    setFields.teamManagerId = null;
+  }
+
   const updated = await col.findOneAndUpdate(
     { _id: current._id },
-    { $set: { name, slug, updatedAt: new Date() } },
+    { $set: setFields },
     { returnDocument: "after" },
   );
   if (!updated) return null;

@@ -24,7 +24,6 @@ import { useAppState } from "@/providers/app-state";
 import { useChatUnread } from "@/providers/chat-provider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { useSidebar } from "@/components/layout/sidebar-context";
 import colanlogo from "@/app/image/colanlogo2.png";
 
@@ -67,7 +66,7 @@ function SidebarNavItem({
         title={collapsed ? label : undefined}
         className={cn(
           "group flex items-center rounded-lg text-sm font-medium transition-all duration-motion ease-motion",
-          collapsed ? "mx-auto h-9 w-9 justify-center" : "gap-2.5 px-2.5 py-2",
+          collapsed ? "mx-auto h-10 w-10 justify-center" : "gap-2.5 px-2.5 py-2.5",
           active
             ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
             : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
@@ -173,16 +172,16 @@ export function AppSidebar() {
               </div>
             </Link>
           ) : (
-            <div className="flex h-full items-center justify-center">
+            <div className="flex h-full items-center justify-center px-2">
               <Link
                 href="/dashboard"
-                className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 ring-1 ring-white/10 transition-colors hover:bg-sidebar-accent/80"
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10 transition-colors hover:bg-sidebar-accent/80"
                 title="Go to Dashboard"
               >
                 <img
                   src={colanlogo.src}
                   alt="Colan Infotech"
-                  className="h-5 w-auto shrink-0 object-contain"
+                  className="h-6 w-auto shrink-0 object-contain"
                 />
               </Link>
             </div>
@@ -191,11 +190,11 @@ export function AppSidebar() {
 
         <div
           className={cn(
-            "flex-1 overflow-y-auto overflow-x-hidden py-2",
-            showExpandedChrome ? "px-2" : "px-1.5",
+            "flex-1 overflow-y-auto overflow-x-hidden py-3",
+            showExpandedChrome ? "px-2.5" : "px-2",
           )}
         >
-          <nav className={cn("flex flex-col", showExpandedChrome ? "gap-0.5" : "gap-1")}>
+          <nav className={cn("flex flex-col", showExpandedChrome ? "gap-1.5" : "gap-2")}>
             {visibleNav.map((item) => {
               const active =
                 pathname === item.href ||
@@ -218,36 +217,40 @@ export function AppSidebar() {
           </nav>
         </div>
 
-        <Separator className="bg-sidebar-border" />
-        <div className="shrink-0">
+        <div className="shrink-0 border-t border-sidebar-border">
           <button
             type="button"
             onClick={handleCollapseToggle}
             aria-label={collapseAriaLabel}
             title={collapseAriaLabel}
             className={cn(
-              "flex w-full items-center text-xs font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+              "flex w-full min-h-12 items-center text-xs font-medium text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
               showExpandedChrome
-                ? "justify-center gap-1.5 px-3 py-2.5"
-                : "justify-center py-2.5",
+                ? "justify-center gap-2 px-3 py-3.5"
+                : "justify-center px-2 py-3.5",
             )}
           >
             {showExpandedChrome ? (
               mobileOpen ? (
                 <>
                   <span className="lg:hidden">Close</span>
-                  <X className="h-3.5 w-3.5 shrink-0 lg:hidden" />
+                  <X className="h-4 w-4 shrink-0 lg:hidden" />
                   <span className="hidden lg:inline">Collapse</span>
-                  <ChevronLeft className="hidden h-3.5 w-3.5 shrink-0 lg:block" />
+                  <ChevronLeft className="hidden h-4 w-4 shrink-0 lg:block" />
                 </>
               ) : (
                 <>
                   <span>Collapse</span>
-                  <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
+                  <ChevronLeft className="h-4 w-4 shrink-0" />
                 </>
               )
             ) : (
-              <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+              <span
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10 transition-colors group-hover:bg-sidebar-accent/80"
+                aria-hidden
+              >
+                <ChevronRight className="h-4 w-4 shrink-0" />
+              </span>
             )}
           </button>
         </div>

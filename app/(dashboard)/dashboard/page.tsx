@@ -1053,36 +1053,42 @@ function ActivityFeedPanel({ items, today }: { items: ActivityItem[]; today: Dat
           </div>
         ) : (
           <ScrollArea className="h-[360px]">
-            <div className="relative px-4 py-5 sm:px-5">
-              <span
-                className="pointer-events-none absolute bottom-5 left-[2.05rem] top-5 w-px bg-gradient-to-b from-border/20 via-border/70 to-border/20"
-                aria-hidden
-              />
-              <div className="space-y-1">
+            <div className="px-4 py-5 sm:px-5">
+              <div className="divide-y divide-border/40">
                 {items.map((item, index) => {
                   const Icon = item.icon;
                   const tone = activityToneStyles(item.tone);
+                  const isLast = index === items.length - 1;
                   return (
                     <DashboardReveal
                       key={item.id}
                       variant="in"
                       delayMs={320 + Math.min(index, 6) * 45}
                     >
-                      <div className="group relative flex gap-3.5 rounded-xl px-1 py-2.5 transition-colors duration-200 hover:bg-muted/25 sm:gap-4">
-                        <div
-                          className={cn(
-                            "relative z-[1] flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-2 ring-background shadow-sm transition-transform duration-200 group-hover:scale-105",
-                            tone.ring,
-                          )}
-                        >
+                      <div className="group relative flex gap-3.5 rounded-xl px-1 py-3 transition-colors duration-200 hover:bg-muted/25 sm:gap-4">
+                        <div className="relative flex w-10 shrink-0 flex-col items-center self-stretch">
                           <div
                             className={cn(
-                              "flex h-8 w-8 items-center justify-center rounded-full",
-                              tone.icon,
+                              "relative z-[1] flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-background ring-2 ring-background shadow-sm transition-transform duration-200 group-hover:scale-105",
+                              tone.ring,
                             )}
                           >
-                            <Icon className="h-4 w-4" />
+                            <div
+                              className={cn(
+                                "flex h-8 w-8 items-center justify-center rounded-full",
+                                tone.icon,
+                              )}
+                            >
+                              <Icon className="h-4 w-4" />
+                            </div>
                           </div>
+                          {!isLast ? (
+                            <span
+                              className="pointer-events-none absolute left-1/2 top-10 w-px -translate-x-1/2 bg-gradient-to-b from-border/70 via-border/50 to-border/40"
+                              style={{ bottom: "calc(-0.75rem - 1px)" }}
+                              aria-hidden
+                            />
+                          ) : null}
                         </div>
                         <div className="min-w-0 flex-1 pt-0.5">
                           <div className="flex items-start justify-between gap-3">
@@ -1153,13 +1159,7 @@ function DeadlinesPanel({ items, today }: { items: DeadlineItem[]; today: Date }
                     variant="in"
                     delayMs={380 + Math.min(index, 6) * 45}
                   >
-                    <article
-                      className="gallery-glass-float group"
-                      style={{
-                        animationDelay: `${(index % 6) * 0.55}s`,
-                        animationDuration: `${5 + (index % 3) * 0.5}s`,
-                      }}
-                    >
+                    <article className="group">
                       <div className="gallery-glass-panel relative overflow-hidden rounded-2xl transition-all duration-500 ease-out group-hover:-translate-y-1.5 group-hover:shadow-[0_20px_50px_-16px_rgba(15,23,42,0.28)] dark:group-hover:shadow-[0_20px_50px_-16px_rgba(0,0,0,0.5)]">
                         <div
                           className="gallery-glass-shine pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/45 via-white/10 to-transparent dark:from-white/12"

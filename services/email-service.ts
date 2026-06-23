@@ -15,7 +15,8 @@ const passwordResetEmailSchema = z.object({
 
 const accountCreatedEmailSchema = z.object({
   employeeName: z.string().trim().min(1),
-  employeeEmail: z.string().trim().email(),
+  recipientEmail: z.string().trim().email(),
+  loginEmail: z.string().trim().email(),
   temporaryPassword: z.string().min(1),
   loginUrl: z.string().url(),
 });
@@ -75,14 +76,15 @@ export async function sendAccountCreatedEmail(
     const template = buildAccountCreatedEmail(parsed.data);
     const info = await mailer.sendMail({
       from,
-      to: parsed.data.employeeEmail,
+      to: parsed.data.recipientEmail,
       subject: template.subject,
       html: template.html,
       text: template.text,
     });
 
     console.info("[email] nodemailer account-created sent", {
-      email: parsed.data.employeeEmail,
+      email: parsed.data.recipientEmail,
+      loginEmail: parsed.data.loginEmail,
       id: info.messageId,
       accepted: info.accepted,
       rejected: info.rejected,
@@ -93,7 +95,7 @@ export async function sendAccountCreatedEmail(
         attempted: true,
         sent: false,
         provider: "nodemailer",
-        message: `Email rejected for ${parsed.data.employeeEmail}.`,
+        message: `Email rejected for ${parsed.data.recipientEmail}.`,
         id: info.messageId,
       };
     }
@@ -107,7 +109,8 @@ export async function sendAccountCreatedEmail(
   } catch (error) {
     const message = error instanceof Error ? error.message : "Email sending failed.";
     console.warn("[email] nodemailer account-created exception", {
-      email: parsed.data.employeeEmail,
+      email: parsed.data.recipientEmail,
+      loginEmail: parsed.data.loginEmail,
       error: message,
     });
 

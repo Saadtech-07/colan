@@ -48,3 +48,21 @@ export function teamSlugFromName(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 }
+
+/** Short squad identifier, e.g. "react" → "REACT", "ui/ux" → "UI-UX". */
+export function normalizeTeamCode(raw: string): string {
+  return raw
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^A-Z0-9-]/g, "");
+}
+
+/** Derive a default code from a canonical team name when seeding legacy rows. */
+export function teamCodeFromName(name: string): string {
+  const base = teamTabLabel(name)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base || teamSlugFromName(name).toUpperCase().replace(/-/g, "");
+}

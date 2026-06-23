@@ -37,7 +37,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const created = await createTeam(parsed.data.name);
+    const created = await createTeam(parsed.data);
     return NextResponse.json(created, { status: 201 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to create team";

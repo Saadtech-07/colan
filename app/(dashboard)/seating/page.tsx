@@ -11,6 +11,7 @@ import {
   type SeatingFloorPlanHandle,
 } from "@/components/seating/seating-floor-plan";
 import { SeatingFloorPlanFullscreen } from "@/components/seating/seating-floor-plan-fullscreen";
+import { SeatingScrollViewport } from "@/components/seating/seating-scroll-viewport";
 import {
   requestSeatingAiGeneration,
   SeatingAiPanel,
@@ -26,7 +27,15 @@ import {
   isAiLayoutMode,
 } from "@/lib/seating-ai-preview";
 import { ALL_SEAT_IDS, SEATING_ROWS, type SeatingRowConfig } from "@/lib/seating-layout";
-import { applyOccupancySwaps, applySeatingLayoutPrompt } from "@/lib/seating-layout-prompt";
+import { applyOccupancySwaps } from "@/lib/seating-layout-prompt";
+import {
+  CABINS_AFTER_G_ROW,
+  CABINS_BEFORE_A_ROW,
+  type SeatingCabin,
+} from "@/lib/seating-cabins";
+import type { SideCabinsConfig } from "@/lib/seating-layout-editor-types";
+import { DEFAULT_SIDE_CABINS } from "@/lib/seating-layout-editor-snapshot";
+import { requestColanLayoutEdit } from "@/lib/seating-layout-edit-client";
 import { jsPDF } from "jspdf";
 import {
   computeSeatingStats,
@@ -65,9 +74,13 @@ export default function SeatingPage() {
   const [promptOccupancySwaps, setPromptOccupancySwaps] = React.useState<
     Array<[string, string]>
   >([]);
+  const [promptCabinsBeforeA, setPromptCabinsBeforeA] = React.useState<SeatingCabin[] | null>(null);
+  const [promptCabinsAfterG, setPromptCabinsAfterG] = React.useState<SeatingCabin[] | null>(null);
+  const [promptSideCabins, setPromptSideCabins] = React.useState<SideCabinsConfig | null>(null);
 
   const saving = isLoadingKey("seating-assign");
   const aiGenerating = isLoadingKey("seating-ai-generate");
+  const layoutEditing = isLoadingKey("seating-layout-edit");
   const savedOccupancy = React.useMemo(() => seatOccupancyMap(employees), [employees]);
   const layoutMode = isAiLayoutMode(aiSuggestion);
   const layoutSeats = React.useMemo(() => layoutSeatSet(aiSuggestion), [aiSuggestion]);
@@ -88,6 +101,19 @@ export default function SeatingPage() {
   const colanFrozen = !layoutMode && colanOccupancySnapshot !== null;
   const promptLayoutActive = !layoutMode && promptRows !== null;
   const activeRows = promptRows ?? SEATING_ROWS;
+  const activeCabinsBeforeA = promptCabinsBeforeA ?? CABINS_BEFORE_A_ROW;
+  const activeCabinsAfterG = promptCabinsAfterG ?? CABINS_AFTER_G_ROW;
+  const activeSideCabins = promptSideCabins ?? DEFAULT_SIDE_CABINS;
+
+  const buildColanLayoutState = React.useCallback(
+    () => ({
+      rows: promptRows ?? SEATING_ROWS,
+      cabinsBeforeA: activeCabinsBeforeA.map((cabin) => ({ ...cabin })),
+      cabinsAfterG: activeCabinsAfterG.map((cabin) => ({ ...cabin })),
+      sideCabins: { ...activeSideCabins },
+    }),
+    [activeCabinsAfterG, activeCabinsBeforeA, activeSideCabins, promptRows],
+  );
 
   const activeSeatIds = React.useMemo(() => {
     const next: string[] = [];
@@ -183,6 +209,9 @@ export default function SeatingPage() {
 
   const resetPromptLayout = React.useCallback(() => {
     setPromptRows(null);
+    setPromptCabinsBeforeA(null);
+    setPromptCabinsAfterG(null);
+    setPromptSideCabins(null);
     setPromptSummary(null);
     setPromptWarnings([]);
     setPromptOccupancySwaps([]);
@@ -221,21 +250,29 @@ export default function SeatingPage() {
   }, [savedOccupancy]);
 
   const handleApplyColanPrompt = React.useCallback(
-    (prompt: string) => {
-      const baseRows = promptRows ?? SEATING_ROWS;
-      const result = applySeatingLayoutPrompt(baseRows, prompt);
-      setPromptRows(result.rows);
-      setPromptSummary(result.summary);
-      setPromptWarnings(result.warnings);
-      setPromptOccupancySwaps((previous) => [...previous, ...result.occupancySwaps]);
-      setSelectedSeat(null);
-      setDialogSeat(null);
-      setAiSuggestion(null);
-      setColanOccupancySnapshot(null);
-      setAiPanelOpen(true);
-      setViewMode("all");
+    async (prompt: string) => {
+      await withLoading("seating-layout-edit", LOADING_PRESETS.seatingLayoutEdit, async () => {
+        const result = await requestColanLayoutEdit({
+          prompt,
+          layout: buildColanLayoutState(),
+        });
+
+        setPromptRows(result.layout.rows);
+        setPromptCabinsBeforeA(result.layout.cabinsBeforeA);
+        setPromptCabinsAfterG(result.layout.cabinsAfterG);
+        setPromptSideCabins(result.layout.sideCabins);
+        setPromptSummary(result.summary);
+        setPromptWarnings([...result.warnings, ...result.errors]);
+        setPromptOccupancySwaps((previous) => [...previous, ...result.occupancySwaps]);
+        setSelectedSeat(null);
+        setDialogSeat(null);
+        setAiSuggestion(null);
+        setColanOccupancySnapshot(null);
+        setAiPanelOpen(true);
+        setViewMode("all");
+      });
     },
-    [promptRows, setViewMode],
+    [buildColanLayoutState, setViewMode, withLoading],
   );
 
   const handleSeatClick = (seatId: string) => {
@@ -366,7 +403,16 @@ export default function SeatingPage() {
   }, [exportRows]);
 
   const exportLayoutImage = React.useCallback(async () => {
+    const previousZoom = zoom;
     try {
+      if (previousZoom !== 1) {
+        setZoom(1);
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 240));
+      }
+
       const dataUrl = await captureLayoutImage({
         canvas: floorPlanRef.current?.getLayoutCanvas() ?? null,
         element: floorPlanRef.current?.getFloorPlanElement() ?? null,
@@ -375,8 +421,12 @@ export default function SeatingPage() {
       downloadDataUrl(`seating-layout-${stamp}.png`, dataUrl);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Could not export layout image.");
+    } finally {
+      if (previousZoom !== 1) {
+        setZoom(previousZoom);
+      }
     }
-  }, []);
+  }, [zoom]);
 
   const floorSectionTitle = layoutMode
     ? "New layout canvas"
@@ -392,21 +442,47 @@ export default function SeatingPage() {
         </SectionTitle>
 
         {canAssign && (
-          <Button
-            type="button"
-            size="sm"
-            className={cn(
-              "h-9 shrink-0 gap-1.5 rounded-lg border-0 px-3.5 text-xs font-semibold shadow-sm transition-colors",
-              "bg-sky-500 text-white hover:bg-sky-600 hover:shadow-md",
-              "focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2",
-              "dark:bg-sky-500 dark:text-white dark:hover:bg-sky-400",
-              aiPanelOpen && "bg-sky-600 hover:bg-sky-700 dark:bg-sky-600 dark:hover:bg-sky-500",
+          <div className="flex shrink-0 items-center gap-2">
+            {promptLayoutActive && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
+                onClick={resetPromptLayout}
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to Colan
+              </Button>
             )}
-            onClick={() => setAiPanelOpen((open) => !open)}
-          >
-            <Sparkles className="h-3.5 w-3.5 text-white" />
-            {aiPanelOpen ? "Close AI" : "AI generator"}
-          </Button>
+            {layoutMode && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
+                onClick={clearAiLayout}
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to Colan
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              className={cn(
+                "h-9 shrink-0 gap-1.5 rounded-lg border-0 px-3.5 text-xs font-semibold shadow-sm transition-colors",
+                "bg-sky-500 text-white hover:bg-sky-600 hover:shadow-md",
+                "focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2",
+                "dark:bg-sky-500 dark:text-white dark:hover:bg-sky-400",
+                aiPanelOpen && "bg-sky-600 hover:bg-sky-700 dark:bg-sky-600 dark:hover:bg-sky-500",
+              )}
+              onClick={() => setAiPanelOpen((open) => !open)}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-white" />
+              {aiPanelOpen ? "Close AI" : "AI generator"}
+            </Button>
+          </div>
         )}
       </div>
 
@@ -437,44 +513,16 @@ export default function SeatingPage() {
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <SeatingZoomControls zoom={zoom} onZoomChange={setZoom} />
 
-          {canAssign && (promptLayoutActive || layoutMode || colanFrozen) && (
-            <>
-              {promptLayoutActive && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-9 rounded-lg gap-1.5 px-2.5 text-xs"
-                  onClick={resetPromptLayout}
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back to Colan
-                </Button>
-              )}
-              {layoutMode && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-9 rounded-lg gap-1.5 px-2.5 text-xs"
-                  onClick={clearAiLayout}
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back to Colan
-                </Button>
-              )}
-              {colanFrozen && !layoutMode && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9 rounded-lg gap-1.5 px-2.5 text-xs"
-                  onClick={exitColanFrozenView}
-                >
-                  Show live seating
-                </Button>
-              )}
-            </>
+          {canAssign && colanFrozen && !layoutMode && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 rounded-lg gap-1.5 px-2.5 text-xs"
+              onClick={exitColanFrozenView}
+            >
+              Show live seating
+            </Button>
           )}
 
           <Button
@@ -519,7 +567,7 @@ export default function SeatingPage() {
               embedded
               open={aiPanelOpen}
               onOpenChange={setAiPanelOpen}
-              loading={aiGenerating}
+              loading={aiGenerating || layoutEditing}
               suggestion={aiSuggestion}
               onGenerateText={handleGenerateText}
               onGenerateImage={handleGenerateImage}
@@ -531,30 +579,34 @@ export default function SeatingPage() {
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)] scroll-smooth">
-          <div className="flex min-h-full min-w-full items-center justify-center p-4 sm:p-6">
-            <SeatingFloorPlan
-              ref={floorPlanRef}
-              occupancy={displayOccupancy}
-              selectedSeat={selectedSeat}
-              highlightSeats={highlights}
-              layoutMode={layoutMode}
-              rows={activeRows}
-              generatedLayout={aiSuggestion?.layout ?? null}
-              layoutSeats={layoutSeats}
-              layoutZones={layoutZones}
-              zoneBySeat={zoneBySeat}
-              teamFilter={teamFilter}
-              search={search}
-              viewMode={viewMode}
-              canAssign={canAssign && !promptLayoutActive}
-              zoom={zoom}
-              showCabins={!layoutMode}
-              onSeatClick={handleSeatClick}
-              onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}
-            />
-          </div>
-        </div>
+        <SeatingScrollViewport
+          paddingClassName="p-4 sm:p-6"
+          className="bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)]"
+        >
+          <SeatingFloorPlan
+            ref={floorPlanRef}
+            occupancy={displayOccupancy}
+            selectedSeat={selectedSeat}
+            highlightSeats={highlights}
+            layoutMode={layoutMode}
+            rows={activeRows}
+            generatedLayout={aiSuggestion?.layout ?? null}
+            layoutSeats={layoutSeats}
+            layoutZones={layoutZones}
+            zoneBySeat={zoneBySeat}
+            teamFilter={teamFilter}
+            search={search}
+            viewMode={viewMode}
+            canAssign={canAssign && !promptLayoutActive}
+            zoom={zoom}
+            showCabins={!layoutMode}
+            cabinsBeforeA={activeCabinsBeforeA}
+            cabinsAfterG={activeCabinsAfterG}
+            sideCabins={activeSideCabins}
+            onSeatClick={handleSeatClick}
+            onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}
+          />
+        </SeatingScrollViewport>
       </section>
 
       {!canAssign && (
@@ -589,6 +641,9 @@ export default function SeatingPage() {
         canAssign={canAssign && !promptLayoutActive}
         zoom={zoom}
         showCabins={!layoutMode}
+        cabinsBeforeA={activeCabinsBeforeA}
+        cabinsAfterG={activeCabinsAfterG}
+        sideCabins={activeSideCabins}
         onZoomChange={setZoom}
         onSeatClick={handleSeatClick}
         onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}

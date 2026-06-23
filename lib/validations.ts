@@ -27,6 +27,24 @@ const projectStatuses: [ProjectStatus, ...ProjectStatus[]] = [
 
 export const teamNameSchema = z.string().trim().min(1).max(80);
 
+export const teamCodeSchema = z
+  .string()
+  .trim()
+  .min(1, "Team code is required")
+  .max(24, "Team code must be at most 24 characters")
+  .regex(/^[A-Za-z0-9-]+$/, "Team code may only contain letters, numbers, and hyphens");
+
+const optionalEmployeeRefSchema = z.preprocess(
+  (value) => (value === null || value === undefined ? null : value),
+  z
+    .union([z.string(), z.null()])
+    .transform((value) => {
+      if (value === null) return null;
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }),
+);
+
 export const genderSchema = z.enum(["male", "female", "other"]);
 
 
@@ -34,11 +52,17 @@ export const genderSchema = z.enum(["male", "female", "other"]);
 export const teamCreateSchema = z.object({
 
   name: teamNameSchema,
+  code: teamCodeSchema,
+  teamLeadId: optionalEmployeeRefSchema,
+  teamManagerId: optionalEmployeeRefSchema,
 
 });
 
 export const teamUpdateSchema = z.object({
   name: teamNameSchema,
+  code: teamCodeSchema,
+  teamLeadId: optionalEmployeeRefSchema,
+  teamManagerId: optionalEmployeeRefSchema,
 });
 
 
@@ -148,6 +172,7 @@ export const appUserImageSchema = z
 export const appUserCreateSchema = z
   .object({
     email: z.string().email(),
+    personalEmail: z.string().email(),
     password: z.union([z.string().min(6), z.literal("")]).optional(),
     name: z.string().min(1),
     appRole: z.string().trim().min(1),
@@ -202,6 +227,8 @@ export const appUserUpdateSchema = z.object({
   imageUrl: appUserImageSchema.optional(),
 
   workEmail: z.union([z.string().email(), z.literal("")]).optional(),
+
+  personalEmail: z.union([z.string().email(), z.literal("")]).optional(),
 
   phone: z.string().optional(),
 
@@ -345,6 +372,27 @@ export const seatingAiGenerateSchema = z.discriminatedUnion("mode", [
     notes: z.string().trim().max(500).optional(),
   }),
 ]);
+
+export const seatingLayoutEditSchema = z.object({
+  prompt: z.string().trim().min(3).max(2000),
+  layout: z.object({
+    rows: z.array(z.any()),
+    cabinsBeforeA: z.array(z.object({
+      id: z.string(),
+      label: z.string(),
+      placement: z.enum(["before-A", "after-G"]),
+    })),
+    cabinsAfterG: z.array(z.object({
+      id: z.string(),
+      label: z.string(),
+      placement: z.enum(["before-A", "after-G"]),
+    })),
+    sideCabins: z.object({
+      hrManager: z.string(),
+      manager: z.string(),
+    }),
+  }),
+});
 
 
 

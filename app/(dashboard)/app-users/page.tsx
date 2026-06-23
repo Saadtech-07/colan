@@ -7,7 +7,6 @@ import {
   CircleCheckBig,
   Mail,
   Pencil,
-  Plus,
   Search,
   ShieldCheck,
   Trash2,
@@ -23,10 +22,7 @@ import {
   buildFormFromAppUserRecord,
   type AppUserAccountFormValues,
 } from "@/components/features/app-user-account-form-fields";
-import {
-  CreateAppUserWizardDialog,
-  type AccountSetupForm,
-} from "@/components/features/create-app-user-wizard-dialog";
+import { CreateAppUserTrigger } from "@/components/features/create-app-user-trigger";
 import { EditAppUserDialog } from "@/components/features/edit-app-user-dialog";
 import { UNASSIGNED_SEAT } from "@/components/features/app-user-account-form-fields";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -47,13 +43,14 @@ import {
 import { profileNameInitial } from "@/lib/profile-image";
 import { useClientPagination } from "@/lib/client-pagination";
 import { ListPagination } from "@/components/ui/list-pagination";
-import { LoadingIndicator } from "@/components/ui/loading-indicator";
+import { PageLoadingShell } from "@/components/ui/page-loading-shell";
 import { SectionTitle } from "@/components/ui/page-typography";
 import { cn } from "@/lib/utils";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
 import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
+import { consumeCreateAccountToast } from "@/lib/create-app-user-client";
 import { resolveAppUserFromQuery } from "@/lib/app-user-navigation";
 import type { AppRole, TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
@@ -64,16 +61,6 @@ type CreateAccountToast = {
   variant: "success" | "warning";
   title: string;
   description: string;
-};
-
-type AppUserMutationResponse = AppUserPublicDTO & {
-  emailDelivery?: {
-    attempted: boolean;
-    sent: boolean;
-    provider: "nodemailer";
-    message?: string;
-    id?: string;
-  };
 };
 
 const FALLBACK_TEAM = "React Team" as TeamName;
@@ -112,7 +99,8 @@ function profileStatusMeta(isProfileCompleted: boolean) {
 export default function AppUsersPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isAdmin, user, refreshData, teamNames, workspaceRoles, employees } = useAppState();
+  const { isAdmin, user, refreshData, teamNames, workspaceRoles, employees, dataLoading } =
+    useAppState();
   const { withLoading, isLoadingKey } = useGlobalLoading();
 
   const defaultTeam = (teamNames[0] ?? FALLBACK_TEAM) as TeamName;
@@ -124,7 +112,6 @@ export default function AppUsersPage() {
   const [toast, setToast] = React.useState<CreateAccountToast | null>(null);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = React.useState(false);
-  const [createWizardOpen, setCreateWizardOpen] = React.useState(false);
   const [editingEmployeeId, setEditingEmployeeId] = React.useState<string | undefined>(
     undefined,
   );
@@ -229,12 +216,12 @@ export default function AppUsersPage() {
   }, []);
 
   React.useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin || dataLoading) return;
     const timer = window.setTimeout(() => {
       void fetchUsers();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [fetchUsers, isAdmin]);
+  }, [fetchUsers, isAdmin, dataLoading]);
 
   const showToast = React.useCallback((next: CreateAccountToast) => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -242,8 +229,15 @@ export default function AppUsersPage() {
     toastTimerRef.current = window.setTimeout(() => {
       setToast(null);
       toastTimerRef.current = null;
-    }, 5000);
+    }, 2000);
   }, []);
+
+  React.useEffect(() => {
+    const pending = consumeCreateAccountToast();
+    if (!pending) return;
+    showToast(pending);
+    void fetchUsers();
+  }, [fetchUsers, showToast]);
 
   const showSuccessMessage = React.useCallback((message: string) => {
     if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
@@ -288,74 +282,6 @@ export default function AppUsersPage() {
     setTeamFilter("all");
   };
 
-  const startCreate = () => {
-    setError(null);
-    setSuccess(null);
-    setCreateWizardOpen(true);
-  };
-
-  const handleCreateAccount = async (account: AccountSetupForm) => {
-    setError(null);
-    setSuccess(null);
-
-    await withLoading("app-users-submit", LOADING_PRESETS.creatingAccount, async () => {
-      const body = {
-        email: account.email.trim().toLowerCase(),
-        name: account.name.trim(),
-        appRole: account.appRole,
-        ...(roleNeedsEmployeeIdentity(account.appRole)
-          ? {
-              employeeId: account.employeeId.trim(),
-              team: account.team,
-            }
-          : {}),
-        password: account.password.trim(),
-        ...(account.imageUrl.trim() ? { imageUrl: account.imageUrl.trim() } : {}),
-        workEmail: account.workEmail.trim() || account.email.trim().toLowerCase(),
-        phone: account.phone.trim() || undefined,
-        currentAddress: account.currentAddress.trim() || undefined,
-        permanentAddress: account.permanentAddress.trim() || undefined,
-        joinedDate: account.joinedDate.trim() || undefined,
-        gender: account.gender,
-        bayNumber:
-          account.bayNumber && account.bayNumber !== UNASSIGNED_SEAT
-            ? account.bayNumber
-            : undefined,
-      };
-
-      const res = await fetch("/api/app-users", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        throw new Error(await parseApiError(res));
-      }
-
-      const result = (await res.json()) as AppUserMutationResponse;
-      await fetchUsers();
-      await refreshData();
-
-      if (result.emailDelivery?.sent) {
-        showToast({
-          variant: "success",
-          title: "Employee account created successfully",
-          description: "Login credentials email sent.",
-        });
-        return;
-      }
-
-      showToast({
-        variant: "warning",
-        title: "Employee created but email could not be sent",
-        description:
-          result.emailDelivery?.message ||
-          "Check the email configuration and resend the credentials manually.",
-      });
-    });
-  };
-
   const handleSaveEdit = async () => {
     if (!editingId) return;
 
@@ -380,6 +306,7 @@ export default function AppUsersPage() {
               }
             : {}),
           workEmail: form.workEmail.trim() || form.email.trim(),
+          personalEmail: form.personalEmail.trim() || undefined,
           phone: form.phone.trim() || undefined,
           currentAddress: form.currentAddress.trim() || undefined,
           permanentAddress: form.permanentAddress.trim() || undefined,
@@ -464,6 +391,7 @@ export default function AppUsersPage() {
           team: userRecord.team,
           defaultTeam,
           workEmail: userRecord.workEmail,
+          personalEmail: userRecord.personalEmail,
           phone: userRecord.phone,
           location: userRecord.location,
           fullAddress: userRecord.fullAddress,
@@ -577,7 +505,15 @@ export default function AppUsersPage() {
         </div>
       )}
 
-      <div className="space-y-4">
+      <PageLoadingShell
+        loading={loading}
+        title={LOADING_PRESETS.loadingAccounts.title}
+        description={LOADING_PRESETS.loadingAccounts.description}
+        deferWhileWorkspaceBootstrapping
+        centerInSection
+        minLoadingHeight="0"
+      >
+        <div className="space-y-4">
         <SectionTitle as="h2" className="font-semibold text-muted-foreground">
           Account directory
         </SectionTitle>
@@ -634,26 +570,13 @@ export default function AppUsersPage() {
             )}
           </div>
 
-          <Button
-            type="button"
-            className="h-10 shrink-0 gap-2 rounded-xl px-4 shadow-sm"
-            onClick={startCreate}
-          >
-            <Plus className="h-4 w-4" />
-            Create account
-          </Button>
+          <CreateAppUserTrigger />
         </div>
-      </div>
 
       <Card className="overflow-hidden rounded-[28px] border-border/70 shadow-sm">
         <CardContent className="p-4 sm:p-5">
-          {loading ? (
-            <LoadingIndicator
-              title={LOADING_PRESETS.loadingAccounts.title}
-              description={LOADING_PRESETS.loadingAccounts.description}
-              className="min-h-[360px] py-12"
-            />
-          ) : filteredUsers.length === 0 ? (
+          {!loading ? (
+            filteredUsers.length === 0 ? (
             <div className="rounded-[24px] border border-dashed border-border/70 bg-muted/20 px-6 py-12 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-background shadow-sm">
                 <Search className="h-5 w-5 text-muted-foreground" />
@@ -789,9 +712,12 @@ export default function AppUsersPage() {
                 onPageChange={setPage}
               />
             </div>
-          )}
+            )
+          ) : null}
         </CardContent>
       </Card>
+        </div>
+      </PageLoadingShell>
 
       <ConfirmDeleteDialog
         open={deleteTarget !== null}
@@ -801,18 +727,6 @@ export default function AppUsersPage() {
         target={deleteTarget}
         onConfirm={confirmDelete}
         loading={deleting}
-      />
-
-      <CreateAppUserWizardDialog
-        open={createWizardOpen}
-        onOpenChange={setCreateWizardOpen}
-        defaultTeam={defaultTeam}
-        teamNames={teamNames}
-        workspaceRoles={workspaceRoles}
-        users={users}
-        employees={employees}
-        submitting={submitting}
-        onSubmit={handleCreateAccount}
       />
 
       <EditAppUserDialog

@@ -29,7 +29,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AddTeamDialog } from "@/components/features/add-team-dialog";
+import { CreateTeamTrigger } from "@/components/features/create-team-trigger";
+import { useTeamAssignableAccounts } from "@/components/features/use-team-assignable-accounts";
+import { accountsById, type TeamAssignableAccount } from "@/lib/team-assignees";
 import { TeamActionsMenu } from "@/components/features/team-actions-menu";
 import { ProjectStatusSelect } from "@/components/features/project-status-select";
 import {
@@ -46,6 +48,7 @@ import {
   UNASSIGNED_PROJECTS_SECTION,
 } from "@/lib/project-teams";
 import { canViewAllWorkspaceProjects } from "@/lib/permissions";
+import { registerTeamUpdatedHandler } from "@/lib/projects-team-panel";
 import { teamTabLabel } from "@/lib/team-utils";
 import { cn } from "@/lib/utils";
 import { parseApiError, useAppState } from "@/providers/app-state";
@@ -220,9 +223,13 @@ export default function ProjectsPage() {
     refreshData,
     dataLoading,
     dataSummary,
-    updateWorkspaceTeam,
     deleteWorkspaceTeam,
   } = useAppState();
+  const { accounts: teamAssignableAccounts } = useTeamAssignableAccounts(isAdmin);
+  const teamAccountById = React.useMemo(
+    () => accountsById(teamAssignableAccounts),
+    [teamAssignableAccounts],
+  );
   const [tab, setTab] = React.useState<string>(ALL_TAB);
   const [statusError, setStatusError] = React.useState<string | null>(null);
   const [teamActionError, setTeamActionError] = React.useState<string | null>(null);
@@ -319,21 +326,27 @@ export default function ProjectsPage() {
     [refreshData, showToast],
   );
 
-  const handleRenameTeam = React.useCallback(
-    async (team: TeamDTO, nextName: string) => {
-      setTeamActionError(null);
-      const updated = await updateWorkspaceTeam(team.id, nextName);
-      await refreshData();
-      if (tab === team.name) {
-        setTab(updated.name);
-      }
-      showToast({
-        title: "Changes saved",
-        description: `Team renamed to ${updated.name}.`,
-      });
-    },
-    [refreshData, showToast, tab, updateWorkspaceTeam],
-  );
+  React.useEffect(() => {
+    return registerTeamUpdatedHandler((previous, updated) => {
+      void (async () => {
+        await refreshData();
+        if (tab === previous.name) {
+          setTab(updated.name);
+        }
+        showToast({
+          title: "Changes saved",
+          description: `Team updated: ${updated.name}.`,
+        });
+      })();
+    });
+  }, [refreshData, showToast, tab]);
+
+  React.useEffect(() => {
+    if (tab === ALL_TAB) return;
+    if (!teamNames.includes(tab)) {
+      setTab(ALL_TAB);
+    }
+  }, [tab, teamNames]);
 
   const handleDeleteTeam = React.useCallback(
     async (team: TeamDTO) => {
@@ -416,7 +429,7 @@ export default function ProjectsPage() {
 
         {(isAdmin || access?.canManageProjects) && (
           <div className="flex shrink-0 justify-end gap-2">
-            {isAdmin && <AddTeamDialog />}
+            {isAdmin && <CreateTeamTrigger />}
             {access?.canManageProjects && (
               <Button
                 asChild
@@ -452,7 +465,7 @@ export default function ProjectsPage() {
             canManageTeam={false}
             emptyMessage="No projects in your workspace yet. Add a project or check MongoDB connection in .env.local."
             onStatusChange={updateProjectStatus}
-            onRenameTeam={handleRenameTeam}
+            teamAccountById={teamAccountById}
             onDeleteTeam={handleDeleteTeam}
             onTeamActionError={setTeamActionError}
             today={today}
@@ -473,7 +486,7 @@ export default function ProjectsPage() {
                 : "No projects for this team yet."
             }
             onStatusChange={updateProjectStatus}
-            onRenameTeam={handleRenameTeam}
+            teamAccountById={teamAccountById}
             onDeleteTeam={handleDeleteTeam}
             onTeamActionError={setTeamActionError}
             today={today}
@@ -500,7 +513,7 @@ function TeamProjectSection({
   canEditStatus,
   canManageTeam,
   onStatusChange,
-  onRenameTeam,
+  teamAccountById,
   onDeleteTeam,
   onTeamActionError,
   emptyMessage,
@@ -510,17 +523,23 @@ function TeamProjectSection({
   teamRecord: TeamDTO | null;
   items: Project[];
   employees: ReturnType<typeof useAppState>["employees"];
+  teamAccountById: Map<string, TeamAssignableAccount>;
   canEditStatus: boolean;
   canManageTeam: boolean;
   emptyMessage: string;
   onStatusChange: (project: Project, status: ProjectStatus) => Promise<void>;
-  onRenameTeam: (team: TeamDTO, nextName: string) => Promise<void>;
   onDeleteTeam: (team: TeamDTO) => Promise<void>;
   onTeamActionError: (message: string | null) => void;
   today: Date;
 }) {
   const completion = teamCompletionPercentage(items);
   const overdueCount = items.filter((project) => isProjectDelayed(project, today)).length;
+  const teamLead = teamRecord?.teamLeadId
+    ? teamAccountById.get(teamRecord.teamLeadId)
+    : null;
+  const teamManager = teamRecord?.teamManagerId
+    ? teamAccountById.get(teamRecord.teamManagerId)
+    : null;
 
   return (
     <Card className="overflow-hidden border-border/50 bg-card/80 shadow-sm backdrop-blur-sm">
@@ -545,6 +564,29 @@ function TeamProjectSection({
                     ? "Projects with no squad or unknown squad — edit project teams to fix"
                     : `${items.length} project${items.length === 1 ? "" : "s"} • ${completion}% completed`}
               </CardDescription>
+              {teamRecord && team !== ALL_PROJECTS_SECTION && team !== UNASSIGNED_PROJECTS_SECTION ? (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {teamRecord.code ? (
+                    <Badge
+                      variant="outline"
+                      className="rounded-md border-border/60 bg-background/80 px-2 py-0.5 font-mono text-[10px] font-medium"
+                    >
+                      {teamRecord.code}
+                    </Badge>
+                  ) : null}
+                  {teamLead ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      Lead: <span className="font-medium text-foreground">{teamLead.name}</span>
+                    </span>
+                  ) : null}
+                  {teamManager ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      Manager:{" "}
+                      <span className="font-medium text-foreground">{teamManager.name}</span>
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -566,17 +608,6 @@ function TeamProjectSection({
             {canManageTeam && teamRecord ? (
               <TeamActionsMenu
                 team={teamRecord}
-                onRename={async (record, nextName) => {
-                  onTeamActionError(null);
-                  try {
-                    await onRenameTeam(record, nextName);
-                  } catch (error) {
-                    const message =
-                      error instanceof Error ? error.message : "Could not update team.";
-                    onTeamActionError(message);
-                    throw error;
-                  }
-                }}
                 onDelete={async (record) => {
                   onTeamActionError(null);
                   try {

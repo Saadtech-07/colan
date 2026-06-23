@@ -98,7 +98,7 @@ type Props = {
     fileName?: string;
   }) => Promise<void>;
   onBackToColan: () => void;
-  onApplyColanPrompt?: (prompt: string) => void;
+  onApplyColanPrompt?: (prompt: string) => void | Promise<void>;
   colanPromptSummary?: string | null;
   colanPromptWarnings?: string[];
   /** Rendered inside the floor plan card — tighter chrome and option buttons. */
@@ -193,6 +193,7 @@ export function SeatingAiPanel({
   const [step, setStep] = React.useState<GeneratorStep>("choose");
   const [prompt, setPrompt] = React.useState("");
   const [colanPrompt, setColanPrompt] = React.useState("");
+  const [colanError, setColanError] = React.useState<string | null>(null);
   const [imageNotes, setImageNotes] = React.useState("");
   const [layoutImage, setLayoutImage] = React.useState<LayoutImagePayload | null>(null);
   const [error, setError] = React.useState<string | null>(null);
@@ -359,8 +360,8 @@ export function SeatingAiPanel({
             <div className="space-y-1">
               <p className="text-sm font-semibold text-foreground">Prompt-based edits</p>
               <p className="text-xs text-muted-foreground">
-                Examples: replace A row with B row · create X row between A and B · remove G and E rows.
-                Each prompt builds on your current layout.
+                Examples: replace A row with B row · add pillar between G5 and G6 · remove G7 and G8 ·
+                insert row X between C and D · rename HR team cabin.
               </p>
             </div>
             <div className="space-y-2">
@@ -378,8 +379,13 @@ export function SeatingAiPanel({
               <Button
                 type="button"
                 className="rounded-2xl"
-                disabled={loading || colanPrompt.trim().length < 5}
-                onClick={() => onApplyColanPrompt(colanPrompt)}
+                disabled={loading || colanPrompt.trim().length < 3}
+                onClick={() => {
+                  setColanError(null);
+                  void Promise.resolve(onApplyColanPrompt(colanPrompt)).catch((nextError) => {
+                    setColanError(formatAiError(nextError));
+                  });
+                }}
               >
                 {loading ? (
                   <>
@@ -402,6 +408,10 @@ export function SeatingAiPanel({
                 Clear
               </button>
             </div>
+
+            {colanError ? (
+              <p className="text-sm text-destructive">{colanError}</p>
+            ) : null}
 
             {colanPromptSummary && (
               <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">

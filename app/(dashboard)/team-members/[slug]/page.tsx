@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { EmployeeWorkspaceView } from "@/components/features/employee-workspace-view";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import type { EmployeeDetail } from "@/types";
-import { LoadingIndicator } from "@/components/ui/loading-indicator";
+import { PageLoadingShell } from "@/components/ui/page-loading-shell";
 
 export default function TeamMemberDetailPage() {
   const params = useParams();
@@ -69,7 +69,12 @@ export default function TeamMemberDetailPage() {
   }, [loadEmployee]);
 
   return (
-    <div className="w-full space-y-4">
+    <PageLoadingShell
+      loading={pageLoading}
+      title="Loading employee workspace"
+      minLoadingHeight="480px"
+      className="w-full space-y-4"
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <Button variant="ghost" size="sm" className="gap-1 -ml-2 h-8 rounded-lg px-2" asChild>
@@ -86,10 +91,6 @@ export default function TeamMemberDetailPage() {
         </div>
       </div>
 
-      {pageLoading && (
-        <LoadingIndicator title="Loading employee workspace" className="min-h-[480px]" />
-      )}
-
       {error && !pageLoading && (
         <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
@@ -103,6 +104,6 @@ export default function TeamMemberDetailPage() {
           access={access}
         />
       )}
-    </div>
+    </PageLoadingShell>
   );
 }

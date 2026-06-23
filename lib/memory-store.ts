@@ -5,13 +5,14 @@ import {
   MOCK_GALLERY,
   MOCK_PROJECTS,
 } from "@/lib/mock-data";
-import { DEFAULT_TEAM_NAMES, teamSlugFromName } from "@/lib/team-utils";
+import { DEFAULT_TEAM_NAMES, teamCodeFromName, teamSlugFromName } from "@/lib/team-utils";
 
 function cloneTeams(): TeamDTO[] {
   return DEFAULT_TEAM_NAMES.map((name, index) => ({
     id: `team-seed-${index}`,
     name,
     slug: teamSlugFromName(name),
+    code: teamCodeFromName(name),
     displayOrder: index,
   }));
 }

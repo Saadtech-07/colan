@@ -1,10 +1,14 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { ArrowLeft, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SeatingFloorPlan } from "@/components/seating/seating-floor-plan";
+import { SeatingScrollViewport } from "@/components/seating/seating-scroll-viewport";
 import type { SeatingRowConfig } from "@/lib/seating-layout";
+import type { SeatingCabin } from "@/lib/seating-cabins";
+import type { SideCabinsConfig } from "@/lib/seating-layout-editor-types";
 import type { GeneratedSeatingLayout } from "@/lib/seating-layout-types";
 import type { SeatingAiZone } from "@/lib/seating-ai-types";
 import type { Employee } from "@/types";
@@ -29,6 +33,9 @@ type Props = {
   canAssign: boolean;
   zoom: number;
   showCabins?: boolean;
+  cabinsBeforeA?: SeatingCabin[];
+  cabinsAfterG?: SeatingCabin[];
+  sideCabins?: SideCabinsConfig;
   onZoomChange: (zoom: number) => void;
   onSeatClick: (seatId: string) => void;
   onAssignSeat: (seatId: string, employeeId: string) => void;
@@ -46,6 +53,12 @@ export function SeatingFloorPlanFullscreen({
   onZoomChange,
   ...floorPlanProps
 }: Props) {
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   React.useEffect(() => {
     if (!open) return;
     const previous = document.body.style.overflow;
@@ -64,10 +77,10 @@ export function SeatingFloorPlanFullscreen({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex h-dvh max-h-dvh flex-col bg-background">
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-background/95 px-4 py-3 backdrop-blur sm:px-5">
         <div className="flex min-w-0 items-center gap-2">
           <Button
@@ -113,11 +126,13 @@ export function SeatingFloorPlanFullscreen({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-auto bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)] scroll-smooth">
-        <div className="flex min-h-full min-w-full items-center justify-center p-4 sm:p-8">
-          <SeatingFloorPlan zoom={zoom} {...floorPlanProps} />
-        </div>
-      </div>
-    </div>
+      <SeatingScrollViewport
+        autoFocus
+        className="bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)]"
+      >
+        <SeatingFloorPlan zoom={zoom} {...floorPlanProps} />
+      </SeatingScrollViewport>
+    </div>,
+    document.body,
   );
 }

@@ -68,6 +68,7 @@ export async function POST(req: Request) {
 
     const created = await createAppUser({
       email: payload.email,
+      personalEmail: payload.personalEmail,
       password: temporaryPassword,
       name: payload.name,
       appRole: payload.appRole,
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
           }
         : {}),
       imageUrl: payload.imageUrl,
-      workEmail: payload.workEmail,
+      workEmail: payload.workEmail || payload.email,
       phone: payload.phone,
       location: payload.location,
       joinedDate: payload.joinedDate,
@@ -86,11 +87,14 @@ export async function POST(req: Request) {
       bayNumber: payload.bayNumber,
     });
     const loginUrl = resolveLoginUrl(new URL(req.url).origin);
+    const loginEmail = payload.email.toLowerCase().trim();
+    const personalEmail = payload.personalEmail.toLowerCase().trim();
     const emailDelivery =
       loginUrl
         ? await sendAccountCreatedEmail({
             employeeName: payload.name.trim(),
-            employeeEmail: payload.email.toLowerCase().trim(),
+            recipientEmail: personalEmail,
+            loginEmail,
             temporaryPassword,
             loginUrl,
           })

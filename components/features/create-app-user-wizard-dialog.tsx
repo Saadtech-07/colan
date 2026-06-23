@@ -39,19 +39,18 @@ type Props = {
   onSubmit: (account: AppUserAccountFormValues) => Promise<void>;
 };
 
-function validateAccountStep(
+export function validateCreateAppUserAccountStep(
   account: AppUserAccountFormValues,
   users: AppUserPublicDTO[],
   employees: Employee[],
 ): string | null {
-  const email = account.email.trim().toLowerCase();
+  const personalEmail = account.personalEmail.trim().toLowerCase();
   const needsIdentity = roleNeedsEmployeeIdentity(account.appRole);
   const employeeId = account.employeeId.trim();
 
-  if (!email) return "Email is required.";
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Enter a valid email address.";
-  if (users.some((user) => user.email.toLowerCase() === email)) {
-    return "An account with this email already exists.";
+  if (!personalEmail) return "Personal email is required.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personalEmail)) {
+    return "Enter a valid personal email address.";
   }
 
   if (!account.name.trim()) return "Full name is required.";
@@ -74,6 +73,21 @@ function validateAccountStep(
     return "Password must be at least 6 characters.";
   }
 
+  return null;
+}
+
+export function validateCreateAppUserWorkEmailStep(
+  account: AppUserAccountFormValues,
+  users: AppUserPublicDTO[],
+): string | null {
+  const workEmail = account.workEmail.trim().toLowerCase();
+  if (!workEmail) return "Work email is required.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(workEmail)) {
+    return "Enter a valid work email address.";
+  }
+  if (users.some((user) => user.email.toLowerCase() === workEmail)) {
+    return "An account with this work email already exists.";
+  }
   return null;
 }
 
@@ -118,7 +132,7 @@ export function CreateAppUserWizardDialog({
 
   const continueToWorkspace = () => {
     setError(null);
-    const validationError = validateAccountStep(account, users, employees);
+    const validationError = validateCreateAppUserAccountStep(account, users, employees);
     if (validationError) {
       setError(validationError);
       return;
@@ -128,18 +142,26 @@ export function CreateAppUserWizardDialog({
 
   const handleCreate = async () => {
     setError(null);
-    const accountError = validateAccountStep(account, users, employees);
+    const accountError = validateCreateAppUserAccountStep(account, users, employees);
     if (accountError) {
       setError(accountError);
       setStep("account");
       return;
     }
 
+    const workEmailError = validateCreateAppUserWorkEmailStep(account, users);
+    if (workEmailError) {
+      setError(workEmailError);
+      setStep("workspace");
+      return;
+    }
+
     try {
       await onSubmit({
         ...account,
-        email: account.email.trim().toLowerCase(),
-        workEmail: account.workEmail.trim() || account.email.trim().toLowerCase(),
+        personalEmail: account.personalEmail.trim().toLowerCase(),
+        workEmail: account.workEmail.trim().toLowerCase(),
+        email: account.workEmail.trim().toLowerCase(),
       });
       handleOpenChange(false);
     } catch (e) {

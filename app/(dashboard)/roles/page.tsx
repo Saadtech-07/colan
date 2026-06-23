@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ManageRoleDialog } from "@/components/features/manage-role-dialog";
-import { LoadingIndicator } from "@/components/ui/loading-indicator";
+import { PageLoadingShell } from "@/components/ui/page-loading-shell";
 import {
   MODULE_LABELS,
   RBAC_MODULES,
@@ -63,7 +63,7 @@ function moduleAccessLabels(role: WorkspaceRole): { title: string; mode: string 
 }
 
 export default function RolesPage() {
-  const { access, workspaceRoles, refreshWorkspaceRoles, canManageRoles } =
+  const { access, workspaceRoles, refreshWorkspaceRoles, canManageRoles, dataLoading } =
     useAppState();
   const { withLoading } = useGlobalLoading();
   const [search, setSearch] = React.useState("");
@@ -89,9 +89,9 @@ export default function RolesPage() {
   }, [refreshWorkspaceRoles]);
 
   React.useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadRoles();
-  }, [loadRoles]);
+    if (dataLoading) return;
+    setLoading(false);
+  }, [dataLoading]);
 
   const filtered = workspaceRoles.filter((r) => {
     const q = search.trim().toLowerCase();
@@ -159,29 +159,37 @@ export default function RolesPage() {
         </div>
       )}
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative min-w-0 flex-1 sm:max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search roles…"
-            className="h-10 rounded-xl border-border/70 bg-background pl-9 shadow-sm transition-colors focus-visible:border-primary focus-visible:ring-primary/20"
-          />
-        </div>
+      <PageLoadingShell
+        loading={loading}
+        title="Loading Roles"
+        deferWhileWorkspaceBootstrapping
+        centerInSection
+        minLoadingHeight="0"
+      >
+        <div className="space-y-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative min-w-0 flex-1 sm:max-w-md">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search roles…"
+                className="h-10 rounded-xl border-border/70 bg-background pl-9 shadow-sm transition-colors focus-visible:border-primary focus-visible:ring-primary/20"
+              />
+            </div>
 
-        {canManageRoles && (
-          <Button className="h-10 shrink-0 gap-2 rounded-xl px-4 shadow-sm" onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            Create role
-          </Button>
-        )}
-      </div>
+            {canManageRoles && (
+              <Button className="h-10 shrink-0 gap-2 rounded-xl px-4 shadow-sm" onClick={openCreate}>
+                <Plus className="h-4 w-4" />
+                Create role
+              </Button>
+            )}
+          </div>
 
-      {loading ? (
-        <LoadingIndicator title="Loading Roles" className="py-12" />
-      ) : (
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {!loading && (
+            <>
+              {filtered.length > 0 ? (
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((role, index) => {
             const Icon = ROLE_ICONS[role.key] ?? Shield;
             const isCurrent = currentRoleKey === role.key;
@@ -313,12 +321,14 @@ export default function RolesPage() {
               </Card>
             );
           })}
+                </div>
+              ) : (
+                <p className="text-center text-sm text-muted-foreground">No roles match your search.</p>
+              )}
+            </>
+          )}
         </div>
-      )}
-
-      {!loading && filtered.length === 0 && (
-        <p className="text-center text-sm text-muted-foreground">No roles match your search.</p>
-      )}
+      </PageLoadingShell>
 
       <ManageRoleDialog
         key={editing ? `role-${editing.id}` : "role-new"}

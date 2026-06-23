@@ -201,8 +201,9 @@ export function getOpenRouterTextModelFallbacks(): string[] {
   const primary =
     process.env.OPENROUTER_TEXT_MODEL?.trim() || "openai/gpt-4o-mini";
   const fallback =
-    process.env.OPENROUTER_TEXT_MODEL_FALLBACK?.trim() || "google/gemini-2.0-flash-001";
-  return [...new Set([primary, fallback].filter(Boolean))];
+    process.env.OPENROUTER_TEXT_MODEL_FALLBACK?.trim() || "google/gemini-2.5-flash";
+  const tertiary = "openai/gpt-4o-mini";
+  return [...new Set([primary, fallback, tertiary].filter(Boolean))];
 }
 
 export function getOpenRouterVisionModelFallbacks(): string[] {

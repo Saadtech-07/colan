@@ -34,6 +34,7 @@ export type AppUserPublicDTO = {
   isProfileCompleted: boolean;
   updatedProfileAt?: string;
   workEmail?: string;
+  personalEmail?: string;
   phone?: string;
   location?: string;
   fullAddress?: string;

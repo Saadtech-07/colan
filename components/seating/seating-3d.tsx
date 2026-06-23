@@ -207,7 +207,7 @@ type FloorSceneProps = {
 
 export function SeatingFloor3DScene({ children, className }: FloorSceneProps) {
   return (
-    <div className={cn("relative w-max", className)}>
+    <div className={cn("relative w-max", className)} data-seating-export-scene>
       <div className="relative overflow-visible rounded-[24px] border border-slate-200/90 bg-gradient-to-br from-[#f8fafc] via-[#f1f5f9] to-[#e8edf2] p-5 shadow-[0_16px_48px_-20px_rgba(15,23,42,0.2),inset_0_1px_0_rgba(255,255,255,0.95)] sm:p-7 lg:p-8">
         <div
           aria-hidden

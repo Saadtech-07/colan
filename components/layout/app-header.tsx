@@ -68,6 +68,10 @@ const PAGE_META: Array<{
     title: "Roles & access",
   },
   {
+    match: /^\/app-users\/new$/,
+    title: "Create account",
+  },
+  {
     match: /^\/app-users$/,
     title: "App user",
   },

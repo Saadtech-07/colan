@@ -25,6 +25,7 @@ export const UNASSIGNED_SEAT = "__unassigned__";
 
 export type AppUserAccountFormValues = {
   email: string;
+  personalEmail: string;
   name: string;
   password: string;
   employeeId: string;
@@ -43,6 +44,7 @@ export type AppUserAccountFormValues = {
 export function buildDefaultAppUserForm(defaultTeam: TeamName): AppUserAccountFormValues {
   return {
     email: "",
+    personalEmail: "",
     name: "",
     password: generateTemporaryPassword(),
     employeeId: "",
@@ -83,6 +85,7 @@ export function buildFormFromAppUserRecord(args: {
   team?: TeamName;
   defaultTeam: TeamName;
   workEmail?: string;
+  personalEmail?: string;
   phone?: string;
   location?: string;
   /** @deprecated Legacy; mapped into currentAddress when loading. */
@@ -103,6 +106,7 @@ export function buildFormFromAppUserRecord(args: {
 
   return {
     email: args.email,
+    personalEmail: args.personalEmail ?? "",
     name: args.name,
     password: "",
     employeeId: args.employeeId ?? "",
@@ -128,6 +132,7 @@ export function directoryFieldsFromForm(
     },
     {
       workEmail: values.workEmail.trim() || values.email.trim().toLowerCase(),
+      personalEmail: values.personalEmail.trim() || undefined,
       phone: values.phone.trim() || undefined,
       joinedDate: values.joinedDate.trim() || undefined,
     },
@@ -164,30 +169,42 @@ export function AppUserAccountDetailsStep({
       </p>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="account-email">
-            Email
-            {mode === "create" ? (
+        {mode === "create" ? (
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="account-personal-email">
+              Personal email
               <span className="ml-0.5 text-destructive" aria-hidden="true">
                 *
               </span>
-            ) : null}
-          </Label>
-          <Input
-            id="account-email"
-            type="email"
-            value={values.email}
-            onChange={(e) => onChange({ email: e.target.value })}
-            disabled={disabled || mode === "edit"}
-            placeholder="name@colan.io"
-            className="h-11 rounded-2xl border-border/70 disabled:opacity-60"
-          />
-          {mode === "edit" ? (
+            </Label>
+            <Input
+              id="account-personal-email"
+              type="email"
+              value={values.personalEmail}
+              onChange={(e) => onChange({ personalEmail: e.target.value })}
+              disabled={disabled}
+              placeholder="name@gmail.com"
+              className="h-11 rounded-2xl border-border/70"
+            />
             <p className="text-xs text-muted-foreground">
-              Email remains fixed after account creation.
+              Login credentials are sent to this personal email address.
             </p>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="account-email">Work email (login)</Label>
+            <Input
+              id="account-email"
+              type="email"
+              value={values.email}
+              disabled
+              className="h-11 rounded-2xl border-border/70 disabled:opacity-60"
+            />
+            <p className="text-xs text-muted-foreground">
+              Work email is the login identity and cannot be changed here.
+            </p>
+          </div>
+        )}
 
         <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="account-name">
@@ -370,17 +387,44 @@ export function AppUserWorkspaceDetailsStep({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="account-work-email">Work email</Label>
+            <Label htmlFor="account-work-email">
+              Work email
+              {mode === "create" ? (
+                <span className="ml-0.5 text-destructive" aria-hidden="true">
+                  *
+                </span>
+              ) : null}
+            </Label>
             <Input
               id="account-work-email"
               type="email"
               value={values.workEmail}
               onChange={(e) => onChange({ workEmail: e.target.value })}
-              disabled={disabled}
-              placeholder="work@colan.io"
-              className="h-11 rounded-2xl border-border/70"
+              disabled={disabled || mode === "edit"}
+              placeholder="name@colan.io"
+              className="h-11 rounded-2xl border-border/70 disabled:opacity-60"
             />
+            <p className="text-xs text-muted-foreground">
+              {mode === "create"
+                ? "Used to sign in to the workspace with the account password."
+                : "Work email matches the login identity for this account."}
+            </p>
           </div>
+
+          {mode === "edit" ? (
+            <div className="space-y-2 sm:col-span-2">
+              <Label htmlFor="account-personal-email">Personal email</Label>
+              <Input
+                id="account-personal-email"
+                type="email"
+                value={values.personalEmail}
+                onChange={(e) => onChange({ personalEmail: e.target.value })}
+                disabled={disabled}
+                placeholder="name@gmail.com"
+                className="h-11 rounded-2xl border-border/70"
+              />
+            </div>
+          ) : null}
 
           <div className="space-y-2 sm:col-span-2">
             <Label htmlFor="account-phone">Phone</Label>

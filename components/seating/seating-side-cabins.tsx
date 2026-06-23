@@ -7,13 +7,16 @@ import {
   SIDE_CABIN_TOP_OFFSET,
   SIDE_CABIN_WIDTH,
 } from "@/lib/seating-layout-metrics";
+import { DEFAULT_SIDE_CABINS } from "@/lib/seating-layout-editor-snapshot";
+import type { SideCabinsConfig } from "@/lib/seating-layout-editor-types";
 import { cn } from "@/lib/utils";
 
 type Props = {
   className?: string;
+  sideCabins?: SideCabinsConfig;
 };
 
-export function SeatingSideCabins({ className }: Props) {
+export function SeatingSideCabins({ className, sideCabins = DEFAULT_SIDE_CABINS }: Props) {
   return (
     <div
       className={cn("flex shrink-0 flex-col", className)}
@@ -21,19 +24,23 @@ export function SeatingSideCabins({ className }: Props) {
       aria-label="Side office cabins"
     >
       <div style={{ height: SIDE_CABIN_TOP_OFFSET }} aria-hidden />
-      <SeatingCabinBlock
-        label="HR Manager"
-        width={SIDE_CABIN_WIDTH}
-        height={ROW_BLOCK_HEIGHT}
-        vertical
-      />
+      {sideCabins.hrManager ? (
+        <SeatingCabinBlock
+          label={sideCabins.hrManager}
+          width={SIDE_CABIN_WIDTH}
+          height={ROW_BLOCK_HEIGHT}
+          vertical
+        />
+      ) : null}
       <div style={{ height: ROW_AISLE_MARGIN }} aria-hidden />
-      <SeatingCabinBlock
-        label="Manager"
-        width={SIDE_CABIN_WIDTH}
-        height={ROW_BLOCK_HEIGHT}
-        vertical
-      />
+      {sideCabins.manager ? (
+        <SeatingCabinBlock
+          label={sideCabins.manager}
+          width={SIDE_CABIN_WIDTH}
+          height={ROW_BLOCK_HEIGHT}
+          vertical
+        />
+      ) : null}
     </div>
   );
 }

@@ -11,7 +11,8 @@ import {
 } from "@/lib/permissions";
 import { hydrateRoleRegistry } from "@/lib/role-registry";
 import { sanitizeSessionImageUrl } from "@/lib/session-token";
-import type { TeamDTO, WorkspaceRole } from "@/models";
+import { loggedFetch } from "@/lib/logged-fetch";
+import type { TeamDTO, TeamUpsertInput, WorkspaceRole } from "@/models";
 import type { AuthUser, Employee, GalleryImage, Project } from "@/types";
 import type { DataLayerSummary } from "@/types/data-layer";
 
@@ -35,11 +36,14 @@ type AppStateContextValue = {
   /** Where workspace data is stored (MongoDB vs in-memory) and Atlas ping result. */
   dataSummary: DataLayerSummary | null;
   refreshData: () => Promise<void>;
+  /** Apply profile fields already loaded elsewhere (no network). */
+  applyProfileSnapshot: (profile: ProfileSessionSync & { imageUrl?: string }) => Promise<void>;
+  /** Explicit profile refresh from the server (Profile Settings page only). */
   refreshProfileAvatar: () => Promise<void>;
   addEmployee: (input: Omit<Employee, "id">) => Promise<void>;
   addProject: (input: Omit<Project, "id" | "slug">) => Promise<Project>;
-  addWorkspaceTeam: (name: string) => Promise<void>;
-  updateWorkspaceTeam: (id: string, name: string) => Promise<TeamDTO>;
+  addWorkspaceTeam: (input: TeamUpsertInput) => Promise<void>;
+  updateWorkspaceTeam: (id: string, input: TeamUpsertInput) => Promise<TeamDTO>;
   deleteWorkspaceTeam: (id: string) => Promise<void>;
   addGalleryItem: (input: Omit<GalleryImage, "id">) => Promise<void>;
   assignEmployeeToBay: (bayId: string, employeeId: string | null) => Promise<void>;
@@ -53,7 +57,6 @@ export async function parseApiError(res: Response): Promise<string> {
       error?: string;
       issues?: { fieldErrors?: Record<string, string[]>; formErrors?: string[] };
     };
-    if (j.error) return j.error;
     const fe = j.issues?.fieldErrors;
     if (fe && typeof fe === "object") {
       const parts = Object.entries(fe).flatMap(([k, arr]) =>
@@ -63,6 +66,7 @@ export async function parseApiError(res: Response): Promise<string> {
     }
     const form = j.issues?.formErrors;
     if (Array.isArray(form) && form.length) return form.join("; ");
+    if (j.error) return j.error;
     return res.statusText;
   } catch {
     return res.statusText;
@@ -77,7 +81,6 @@ type ProfileSessionSync = {
 };
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
   const { data: session, status: sessionStatus, update: updateSession } = useSession();
 
   const [employees, setEmployees] = React.useState<Employee[]>([]);
@@ -145,6 +148,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [sessionTeamForRole, updateSession],
   );
 
+  const applyProfileSnapshot = React.useCallback(
+    async (profile: ProfileSessionSync & { imageUrl?: string }) => {
+      const nextAvatar = profile?.imageUrl?.trim() || undefined;
+      setProfileAvatarUrl((prev) => (prev === nextAvatar ? prev : nextAvatar));
+      await syncSessionFromProfile(profile);
+    },
+    [syncSessionFromProfile],
+  );
+
   const refreshProfileAvatar = React.useCallback(async () => {
     if (sessionStatus !== "authenticated") {
       setProfileAvatarUrl(undefined);
@@ -154,27 +166,26 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
     profileRefreshInFlightRef.current = true;
     try {
-      const res = await fetch("/api/profile-settings", {
-        credentials: "include",
-        cache: "no-store",
-      });
+      const res = await loggedFetch(
+        "/api/profile-settings",
+        {
+          credentials: "include",
+          cache: "no-store",
+          source: "AppStateProvider.refreshProfileAvatar (explicit)",
+        },
+      );
       if (!res.ok) {
         setProfileAvatarUrl(undefined);
         return;
       }
       const profile = (await res.json()) as ProfileSessionSync & { imageUrl?: string };
-      const nextAvatar = profile?.imageUrl?.trim() || undefined;
-      setProfileAvatarUrl((prev) => (prev === nextAvatar ? prev : nextAvatar));
-      await syncSessionFromProfile(profile);
+      await applyProfileSnapshot(profile);
     } catch {
       setProfileAvatarUrl(undefined);
     } finally {
       profileRefreshInFlightRef.current = false;
     }
-  }, [sessionStatus, syncSessionFromProfile]);
-
-  const refreshProfileAvatarRef = React.useRef(refreshProfileAvatar);
-  refreshProfileAvatarRef.current = refreshProfileAvatar;
+  }, [applyProfileSnapshot, sessionStatus]);
 
   const profileSessionEmail = session?.user?.email?.trim().toLowerCase() ?? "";
 
@@ -182,21 +193,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     if (sessionStatus !== "authenticated" || !profileSessionEmail) {
       setProfileAvatarUrl(undefined);
       lastSessionSyncKeyRef.current = null;
-      return;
     }
-
-    void refreshProfileAvatarRef.current();
-
-    const refresh = () => {
-      void refreshProfileAvatarRef.current();
-    };
-    window.addEventListener("focus", refresh);
-    const interval = window.setInterval(refresh, 30_000);
-
-    return () => {
-      window.removeEventListener("focus", refresh);
-      window.clearInterval(interval);
-    };
   }, [profileSessionEmail, sessionStatus]);
 
   const user = React.useMemo<AuthUser | null>(() => {
@@ -402,12 +399,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     hydrateRoleRegistry(roles);
   }, []);
 
-  const addWorkspaceTeam = React.useCallback(async (name: string) => {
+  const addWorkspaceTeam = React.useCallback(async (input: TeamUpsertInput) => {
     const res = await fetch("/api/teams", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(input),
     });
     if (!res.ok) throw new Error(await parseApiError(res));
     const created = (await res.json()) as TeamDTO;
@@ -416,12 +413,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  const updateWorkspaceTeam = React.useCallback(async (id: string, name: string) => {
+  const updateWorkspaceTeam = React.useCallback(async (id: string, input: TeamUpsertInput) => {
     const res = await fetch(`/api/teams/${id}`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(input),
     });
     if (!res.ok) throw new Error(await parseApiError(res));
     const updated = (await res.json()) as TeamDTO;
@@ -504,6 +501,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       dataError,
       dataSummary,
       refreshData,
+      applyProfileSnapshot,
       refreshProfileAvatar,
       addEmployee,
       addProject,
@@ -531,6 +529,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       dataError,
       dataSummary,
       refreshData,
+      applyProfileSnapshot,
       refreshProfileAvatar,
       addEmployee,
       addProject,

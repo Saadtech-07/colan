@@ -120,6 +120,9 @@ async function ensureColanModelIndexesWork(db: Db): Promise<void> {
     .collection<TeamDocument>(COLLECTIONS.teams)
     .createIndex({ name: 1 }, { unique: true });
   await db.collection<TeamDocument>(COLLECTIONS.teams).createIndex({ slug: 1 }, { unique: true });
+  await db
+    .collection<TeamDocument>(COLLECTIONS.teams)
+    .createIndex({ code: 1 }, { unique: true, sparse: true });
 
   await removeInvalidCompanyRoleKeys(db);
   await db
