@@ -10,6 +10,7 @@ import {
   type AccessContext,
 } from "@/lib/permissions";
 import { hydrateRoleRegistry } from "@/lib/role-registry";
+import { resolveProfileImageSrc } from "@/lib/profile-image";
 import { sanitizeSessionImageUrl } from "@/lib/session-token";
 import { loggedFetch } from "@/lib/logged-fetch";
 import type { TeamDTO, TeamUpsertInput, WorkspaceRole } from "@/models";
@@ -38,7 +39,7 @@ type AppStateContextValue = {
   refreshData: () => Promise<void>;
   /** Apply profile fields already loaded elsewhere (no network). */
   applyProfileSnapshot: (profile: ProfileSessionSync & { imageUrl?: string }) => Promise<void>;
-  /** Explicit profile refresh from the server (Profile Settings page only). */
+  /** Load profile image from the server (session omits large data URLs). */
   refreshProfileAvatar: () => Promise<void>;
   addEmployee: (input: Omit<Employee, "id">) => Promise<void>;
   addProject: (input: Omit<Project, "id" | "slug">) => Promise<Project>;
@@ -150,7 +151,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const applyProfileSnapshot = React.useCallback(
     async (profile: ProfileSessionSync & { imageUrl?: string }) => {
-      const nextAvatar = profile?.imageUrl?.trim() || undefined;
+      const nextAvatar = resolveProfileImageSrc(profile?.imageUrl);
       setProfileAvatarUrl((prev) => (prev === nextAvatar ? prev : nextAvatar));
       await syncSessionFromProfile(profile);
     },
@@ -193,8 +194,22 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     if (sessionStatus !== "authenticated" || !profileSessionEmail) {
       setProfileAvatarUrl(undefined);
       lastSessionSyncKeyRef.current = null;
+      return;
     }
-  }, [profileSessionEmail, sessionStatus]);
+
+    void refreshProfileAvatar();
+  }, [profileSessionEmail, refreshProfileAvatar, sessionStatus]);
+
+  const linkedEmployeeAvatar = React.useMemo(() => {
+    if (!session?.user?.email) return undefined;
+    const normalized = session.user.email.toLowerCase();
+    const employee = employees.find(
+      (item) =>
+        item.email?.toLowerCase() === normalized ||
+        item.directory?.workEmail?.toLowerCase() === normalized,
+    );
+    return resolveProfileImageSrc(employee?.imageUrl);
+  }, [employees, session?.user?.email]);
 
   const user = React.useMemo<AuthUser | null>(() => {
     if (!session?.user) {
@@ -213,12 +228,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       email,
       appRole: normalizeAppRole(u.appRole),
       team: u.team,
-      avatarUrl: profileAvatarUrl ?? sessionAvatar,
+      avatarUrl: profileAvatarUrl ?? sessionAvatar ?? linkedEmployeeAvatar,
       isProfileCompleted: u.isProfileCompleted !== false,
     };
     lastKnownUserRef.current = next;
     return next;
-  }, [profileAvatarUrl, session?.user, sessionStatus]);
+  }, [linkedEmployeeAvatar, profileAvatarUrl, session?.user, sessionStatus]);
 
   const access = React.useMemo(
     () => (user ? buildAccessContext(user.appRole, user.team) : null),

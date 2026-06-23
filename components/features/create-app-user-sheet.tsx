@@ -36,6 +36,9 @@ import { useGlobalLoading } from "@/providers/global-loading";
 import type { TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
 
+const APP_USER_SHEET_OVERLAY =
+  "bg-black/50 backdrop-blur-none data-[state=open]:opacity-100 data-[state=closed]:opacity-0";
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -147,7 +150,11 @@ export function CreateAppUserSheet({ open, onOpenChange }: Props) {
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-[min(100vw-2rem,32rem)]">
+      <SheetContent
+        side="right"
+        overlayClassName={APP_USER_SHEET_OVERLAY}
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-[min(100vw-2rem,32rem)]"
+      >
         <SheetHeader className="space-y-4 border-b border-border/60 px-6 py-5 pr-14">
           <Badge
             variant="muted"

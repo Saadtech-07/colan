@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Building2,
   CircleCheckBig,
@@ -17,14 +17,7 @@ import {
   ConfirmDeleteDialog,
   type ConfirmDeleteTarget,
 } from "@/components/features/confirm-delete-dialog";
-import {
-  buildDefaultAppUserForm,
-  buildFormFromAppUserRecord,
-  type AppUserAccountFormValues,
-} from "@/components/features/app-user-account-form-fields";
 import { CreateAppUserTrigger } from "@/components/features/create-app-user-trigger";
-import { EditAppUserDialog } from "@/components/features/edit-app-user-dialog";
-import { UNASSIGNED_SEAT } from "@/components/features/app-user-account-form-fields";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,13 +42,12 @@ import { cn } from "@/lib/utils";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
-import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
 import { consumeCreateAccountToast } from "@/lib/create-app-user-client";
+import { consumeEditAccountSuccess } from "@/lib/edit-app-user-client";
+import { getCachedAppUsers, setCachedAppUsers } from "@/lib/app-users-page-cache";
 import { resolveAppUserFromQuery } from "@/lib/app-user-navigation";
 import type { AppRole, TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
-
-type AppUserFormState = AppUserAccountFormValues;
 
 type CreateAccountToast = {
   variant: "success" | "warning";
@@ -63,24 +55,7 @@ type CreateAccountToast = {
   description: string;
 };
 
-const FALLBACK_TEAM = "React Team" as TeamName;
 const APP_USERS_PAGE_SIZE = 6;
-
-function buildInitialForm(defaultTeam: TeamName): AppUserFormState {
-  return buildDefaultAppUserForm(defaultTeam);
-}
-
-function findLinkedEmployeeId(
-  userRecord: AppUserPublicDTO,
-  employees: ReturnType<typeof useAppState>["employees"],
-) {
-  const email = userRecord.email.toLowerCase();
-  return employees.find(
-    (employee) =>
-      employee.directory?.workEmail?.toLowerCase() === email ||
-      employee.employeeId.toLowerCase() === userRecord.employeeId?.toLowerCase(),
-  )?.id;
-}
 
 function profileStatusMeta(isProfileCompleted: boolean) {
   if (isProfileCompleted) {
@@ -98,27 +73,20 @@ function profileStatusMeta(isProfileCompleted: boolean) {
 
 export default function AppUsersPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { isAdmin, user, refreshData, teamNames, workspaceRoles, employees, dataLoading } =
     useAppState();
   const { withLoading, isLoadingKey } = useGlobalLoading();
 
-  const defaultTeam = (teamNames[0] ?? FALLBACK_TEAM) as TeamName;
-
-  const [users, setUsers] = React.useState<AppUserPublicDTO[]>([]);
-  const [loading, setLoading] = React.useState(true);
+  const [users, setUsers] = React.useState<AppUserPublicDTO[]>(
+    () => getCachedAppUsers() ?? [],
+  );
+  const [loading, setLoading] = React.useState(() => getCachedAppUsers() === null);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState<string | null>(null);
   const [toast, setToast] = React.useState<CreateAccountToast | null>(null);
-  const [editingId, setEditingId] = React.useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = React.useState(false);
-  const [editingEmployeeId, setEditingEmployeeId] = React.useState<string | undefined>(
-    undefined,
-  );
   const [deleteTarget, setDeleteTarget] = React.useState<ConfirmDeleteTarget | null>(null);
-  const [form, setForm] = React.useState<AppUserFormState>(() =>
-    buildInitialForm(FALLBACK_TEAM),
-  );
   const [searchQuery, setSearchQuery] = React.useState("");
   const [roleFilter, setRoleFilter] = React.useState("all");
   const [teamFilter, setTeamFilter] = React.useState("all");
@@ -127,8 +95,7 @@ export default function AppUsersPage() {
   const successTimerRef = React.useRef<number | null>(null);
   const openedFromQueryRef = React.useRef(false);
 
-  const submitting = isLoadingKey("app-users-submit");
-  const showEmployeeIdentityFields = roleNeedsEmployeeIdentity(form.appRole);
+  const deleting = isLoadingKey("app-users-delete");
 
   const roleNameMap = React.useMemo(
     () => new Map(workspaceRoles.map((role) => [role.key, role.name])),
@@ -197,8 +164,11 @@ export default function AppUsersPage() {
     [workspaceRoles],
   );
 
-  const fetchUsers = React.useCallback(async () => {
-    setLoading(true);
+  const fetchUsers = React.useCallback(async (options?: { silent?: boolean }) => {
+    const hasCachedData = getCachedAppUsers() !== null;
+    if (!options?.silent && !hasCachedData) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const res = await fetch("/api/app-users", {
@@ -207,7 +177,9 @@ export default function AppUsersPage() {
       if (!res.ok) {
         throw new Error(await parseApiError(res));
       }
-      setUsers((await res.json()) as AppUserPublicDTO[]);
+      const data = (await res.json()) as AppUserPublicDTO[];
+      setUsers(data);
+      setCachedAppUsers(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load accounts.");
     } finally {
@@ -218,7 +190,7 @@ export default function AppUsersPage() {
   React.useEffect(() => {
     if (!isAdmin || dataLoading) return;
     const timer = window.setTimeout(() => {
-      void fetchUsers();
+      void fetchUsers({ silent: getCachedAppUsers() !== null });
     }, 0);
     return () => window.clearTimeout(timer);
   }, [fetchUsers, isAdmin, dataLoading]);
@@ -232,13 +204,6 @@ export default function AppUsersPage() {
     }, 2000);
   }, []);
 
-  React.useEffect(() => {
-    const pending = consumeCreateAccountToast();
-    if (!pending) return;
-    showToast(pending);
-    void fetchUsers();
-  }, [fetchUsers, showToast]);
-
   const showSuccessMessage = React.useCallback((message: string) => {
     if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
     setSuccess(message);
@@ -248,6 +213,21 @@ export default function AppUsersPage() {
     }, 4000);
   }, []);
 
+  React.useEffect(() => {
+    const pending = consumeCreateAccountToast();
+    if (pending) {
+      showToast(pending);
+      void fetchUsers({ silent: true });
+      return;
+    }
+
+    const editSuccess = consumeEditAccountSuccess();
+    if (editSuccess) {
+      showSuccessMessage(editSuccess);
+      void fetchUsers({ silent: true });
+    }
+  }, [fetchUsers, showSuccessMessage, showToast]);
+
   React.useEffect(
     () => () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -256,90 +236,11 @@ export default function AppUsersPage() {
     [],
   );
 
-  const resetForm = React.useCallback(
-    (opts?: { clearFeedback?: boolean }) => {
-      setEditingId(null);
-      setEditingEmployeeId(undefined);
-      setForm(buildInitialForm(defaultTeam));
-      if (opts?.clearFeedback !== false) {
-        setSuccess(null);
-        setError(null);
-      }
-    },
-    [defaultTeam],
-  );
-
-  const handleDialogOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen && !submitting) {
-      resetForm();
-    }
-    setDialogOpen(nextOpen);
-  };
-
   const clearFilters = () => {
     setSearchQuery("");
     setRoleFilter("all");
     setTeamFilter("all");
   };
-
-  const handleSaveEdit = async () => {
-    if (!editingId) return;
-
-    setError(null);
-    setSuccess(null);
-
-    const preset = LOADING_PRESETS.updatingAccount;
-
-    try {
-      await withLoading("app-users-submit", preset, async () => {
-        const body = {
-          name: form.name.trim(),
-          appRole: form.appRole,
-          ...(showEmployeeIdentityFields
-            ? {
-                team: form.team,
-                employeeId: form.employeeId.trim(),
-                bayNumber:
-                  form.bayNumber && form.bayNumber !== UNASSIGNED_SEAT
-                    ? form.bayNumber
-                    : UNASSIGNED_SEAT,
-              }
-            : {}),
-          workEmail: form.workEmail.trim() || form.email.trim(),
-          personalEmail: form.personalEmail.trim() || undefined,
-          phone: form.phone.trim() || undefined,
-          currentAddress: form.currentAddress.trim() || undefined,
-          permanentAddress: form.permanentAddress.trim() || undefined,
-          joinedDate: form.joinedDate.trim() || undefined,
-          gender: form.gender,
-          ...(form.imageUrl.trim() ? { imageUrl: form.imageUrl.trim() } : {}),
-          ...(form.password ? { password: form.password } : {}),
-        };
-
-        const res = await fetch(`/api/app-users/${editingId}`, {
-          method: "PATCH",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-          throw new Error(await parseApiError(res));
-        }
-
-        await res.json();
-        await fetchUsers();
-        await refreshData();
-
-        setDialogOpen(false);
-        resetForm({ clearFeedback: false });
-        showSuccessMessage("Account updated successfully.");
-      });
-    } catch (e) {
-      throw e;
-    }
-  };
-
-  const deleting = isLoadingKey("app-users-delete");
 
   const requestDelete = (record: AppUserPublicDTO) => {
     setDeleteTarget({
@@ -364,50 +265,21 @@ export default function AppUsersPage() {
         if (!res.ok) {
           throw new Error(await parseApiError(res));
         }
-        await fetchUsers();
+        await fetchUsers({ silent: true });
         await refreshData();
         showSuccessMessage("Account removed.");
         setDeleteTarget(null);
-        if (editingId === id) {
-          setDialogOpen(false);
-          resetForm({ clearFeedback: false });
-        }
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to delete account.");
     }
   };
 
-  const startEdit = React.useCallback(
+  const openEdit = React.useCallback(
     (userRecord: AppUserPublicDTO) => {
-      setEditingId(userRecord.id);
-      setEditingEmployeeId(findLinkedEmployeeId(userRecord, employees));
-      setForm(
-        buildFormFromAppUserRecord({
-          email: userRecord.email,
-          name: userRecord.name,
-          employeeId: userRecord.employeeId,
-          appRole: userRecord.appRole,
-          team: userRecord.team,
-          defaultTeam,
-          workEmail: userRecord.workEmail,
-          personalEmail: userRecord.personalEmail,
-          phone: userRecord.phone,
-          location: userRecord.location,
-          fullAddress: userRecord.fullAddress,
-          currentAddress: userRecord.currentAddress,
-          permanentAddress: userRecord.permanentAddress,
-          joinedDate: userRecord.joinedDate,
-          bayNumber: userRecord.bayNumber,
-          gender: (userRecord.gender as AppUserFormState["gender"]) ?? "male",
-          imageUrl: userRecord.imageUrl,
-        }),
-      );
-      setSuccess(null);
-      setError(null);
-      setDialogOpen(true);
+      router.push(`/app-users/${userRecord.id}/edit`);
     },
-    [defaultTeam, employees],
+    [router],
   );
 
   React.useEffect(() => {
@@ -422,9 +294,8 @@ export default function AppUsersPage() {
     if (!target) return;
 
     openedFromQueryRef.current = true;
-    startEdit(target);
-    router.replace("/app-users", { scroll: false });
-  }, [employees, isAdmin, loading, router, searchParams, startEdit, users]);
+    router.replace(`/app-users/${target.id}/edit`, { scroll: false });
+  }, [employees, isAdmin, loading, router, searchParams, users]);
 
   if (!isAdmin) {
     return (
@@ -482,13 +353,13 @@ export default function AppUsersPage() {
         </div>
       )}
 
-      {error && !submitting && (
+      {error && !deleting && (
         <div className="rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
-      {success && !submitting && (
+      {success && !deleting && (
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-primary">
           <span>{success}</span>
           <button
@@ -591,7 +462,7 @@ export default function AppUsersPage() {
               {paginatedUsers.map((record) => {
                 const status = profileStatusMeta(record.isProfileCompleted);
                 const isCurrentUser = record.email === user?.email;
-                const isEditing = editingId === record.id && dialogOpen;
+                const isEditing = pathname === `/app-users/${record.id}/edit`;
                 const roleMeta = getRoleMeta(record.appRole);
 
                 return (
@@ -676,7 +547,7 @@ export default function AppUsersPage() {
                           variant="ghost"
                           size="icon"
                           className="h-10 w-10 rounded-full bg-background/80 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                          onClick={() => startEdit(record)}
+                          onClick={() => openEdit(record)}
                           aria-label={`Edit ${record.email}`}
                           title="Edit account"
                         >
@@ -729,23 +600,6 @@ export default function AppUsersPage() {
         loading={deleting}
       />
 
-      <EditAppUserDialog
-        open={dialogOpen && !!editingId}
-        onOpenChange={handleDialogOpenChange}
-        values={form}
-        onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
-        workspaceRoles={workspaceRoles}
-        teamNames={teamNames}
-        defaultTeam={defaultTeam}
-        employees={employees}
-        editingEmployeeId={editingEmployeeId}
-        submitting={submitting}
-        onSubmit={() => {
-          void handleSaveEdit().catch((e) => {
-            setError(e instanceof Error ? e.message : "Unable to save account.");
-          });
-        }}
-      />
     </div>
   );
 }

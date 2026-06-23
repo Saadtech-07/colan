@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useSidebar } from "@/components/layout/sidebar-context";
-import { profileNameInitial } from "@/lib/profile-image";
+import { profileNameInitial, resolveProfileImageSrc } from "@/lib/profile-image";
 import { resolveWorkspaceRoleLabelForChrome } from "@/lib/workspace-label";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
@@ -70,6 +70,10 @@ const PAGE_META: Array<{
   {
     match: /^\/app-users\/new$/,
     title: "Create account",
+  },
+  {
+    match: /^\/app-users\/[^/]+\/edit$/,
+    title: "Edit account",
   },
   {
     match: /^\/app-users$/,
@@ -149,7 +153,10 @@ export function AppHeader() {
               className="h-10 gap-2 rounded-full border-border/80 pl-1 pr-3 hover:bg-accent/80"
             >
               <Avatar className="h-8 w-8">
-                <AvatarImage src={user?.avatarUrl} alt={user?.name} />
+                <AvatarImage
+                  src={resolveProfileImageSrc(user?.avatarUrl)}
+                  alt={user?.name}
+                />
                 <AvatarFallback className="text-xs font-medium">
                   {profileNameInitial(user?.name, user?.email)}
                 </AvatarFallback>

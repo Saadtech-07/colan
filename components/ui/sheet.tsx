@@ -30,14 +30,15 @@ const sheetVariants = {
 
 type SheetContentProps = React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content> & {
   side?: keyof typeof sheetVariants;
+  overlayClassName?: string;
 };
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
->(({ side = "right", className, children, ...props }, ref) => (
+>(({ side = "right", className, overlayClassName, children, ...props }, ref) => (
   <SheetPortal>
-    <SheetOverlay />
+    <SheetOverlay className={overlayClassName} />
     <SheetPrimitive.Content
       ref={ref}
       className={cn(
