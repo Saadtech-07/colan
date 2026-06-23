@@ -224,6 +224,8 @@ export function ManageRoleDialog({ open, onOpenChange, editing, onSaved }: Props
     }
   };
 
+  const permissionsLocked = editing?.key === "admin" && editing.isSystem;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-5xl">
@@ -294,27 +296,34 @@ export function ManageRoleDialog({ open, onOpenChange, editing, onSaved }: Props
 
               <section className="space-y-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 p-4">
                 <Label>Quick presets</Label>
-                <div className="flex flex-wrap gap-2">
-                  {PRESETS.map((preset) => (
-                    <Button
-                      key={preset.id}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPermissions(applyPreset(preset.id))}
-                      className="h-8 rounded-lg bg-white px-3 text-xs"
-                    >
-                      {preset.label}
-                    </Button>
-                  ))}
-                </div>
+                {permissionsLocked ? (
+                  <p className="text-sm text-muted-foreground">
+                    The built-in Admin role always has full workspace access and cannot be
+                    downgraded.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {PRESETS.map((preset) => (
+                      <Button
+                        key={preset.id}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPermissions(applyPreset(preset.id))}
+                        className="h-8 rounded-lg bg-white px-3 text-xs"
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
+                  </div>
+                )}
               </section>
 
               <PermissionGrid
                 key={editing?.id ?? "new-role"}
                 value={permissions}
                 onChange={setPermissions}
-                disabled={false}
+                disabled={permissionsLocked}
               />
             </div>
           </div>

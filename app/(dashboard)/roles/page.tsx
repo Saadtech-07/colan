@@ -63,7 +63,7 @@ function moduleAccessLabels(role: WorkspaceRole): { title: string; mode: string 
 }
 
 export default function RolesPage() {
-  const { access, workspaceRoles, refreshWorkspaceRoles, canManageRoles, dataLoading } =
+  const { access, workspaceRoles, refreshWorkspaceRoles, removeWorkspaceRole, canManageRoles, dataLoading } =
     useAppState();
   const { withLoading } = useGlobalLoading();
   const [search, setSearch] = React.useState("");
@@ -90,8 +90,8 @@ export default function RolesPage() {
 
   React.useEffect(() => {
     if (dataLoading) return;
-    setLoading(false);
-  }, [dataLoading]);
+    void loadRoles();
+  }, [dataLoading, loadRoles]);
 
   const filtered = workspaceRoles.filter((r) => {
     const q = search.trim().toLowerCase();
@@ -125,16 +125,19 @@ export default function RolesPage() {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    const deletedId = deleteTarget.id;
+    const deletedName = deleteTarget.name;
     setDeleting(true);
     try {
       await withLoading("role-delete", LOADING_PRESETS.removingAccount, async () => {
-        const res = await fetch(`/api/roles/${deleteTarget.id}`, {
+        const res = await fetch(`/api/roles/${deletedId}`, {
           method: "DELETE",
           credentials: "include",
         });
         if (!res.ok) throw new Error(await parseApiError(res));
       });
-      showToast(`Role "${deleteTarget.name}" deleted.`);
+      removeWorkspaceRole(deletedId);
+      showToast(`Role "${deletedName}" deleted.`);
       setDeleteTarget(null);
       await loadRoles();
     } catch (e) {

@@ -315,8 +315,15 @@ function detailsToDirectory(
     workEmail: dto.workEmail,
     phone: dto.phone,
     location: dto.location,
+    fullAddress: dto.fullAddress,
+    currentAddress: dto.currentAddress,
+    permanentAddress: dto.permanentAddress,
     joinedDate: dto.joinedDate,
     notes: dto.notes,
+    resumeUrl: dto.resumeUrl,
+    resumeFileName: dto.resumeFileName,
+    resumeMimeType: dto.resumeMimeType,
+    resumeUploadedAt: dto.resumeUploadedAt,
   };
 }
 
@@ -336,7 +343,11 @@ function mergeEmployeeDirectory(
     currentAddress: fromCollection.currentAddress ?? embedded.currentAddress,
     permanentAddress: fromCollection.permanentAddress ?? embedded.permanentAddress,
     joinedDate: fromCollection.joinedDate ?? embedded.joinedDate,
-    notes: fromCollection.notes,
+    notes: fromCollection.notes ?? embedded.notes,
+    resumeUrl: fromCollection.resumeUrl ?? embedded.resumeUrl,
+    resumeFileName: fromCollection.resumeFileName ?? embedded.resumeFileName,
+    resumeMimeType: fromCollection.resumeMimeType ?? embedded.resumeMimeType,
+    resumeUploadedAt: fromCollection.resumeUploadedAt ?? embedded.resumeUploadedAt,
   };
   const hasValue = Object.values(merged).some(
     (value) => typeof value === "string" && value.trim().length > 0,

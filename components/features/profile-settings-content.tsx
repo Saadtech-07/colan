@@ -3,12 +3,16 @@
 import * as React from "react";
 import {
   CircleCheckBig,
+  Download,
+  Eye,
+  FileText,
   ImagePlus,
   KeyRound,
   Loader2,
   MapPin,
   ShieldCheck,
   TriangleAlert,
+  UploadCloud,
   UserRound,
   Users,
   X,
@@ -22,11 +26,22 @@ import { Label } from "@/components/ui/label";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
 import { formatWorkspaceDate, parseSeatAllocation } from "@/lib/employee-workspace-ui";
 import { profileNameInitial } from "@/lib/profile-image";
+import {
+  downloadResumeDocument,
+  formatResumeUploadedAt,
+  hasResumeDocument,
+  resolveResumeFileName,
+  viewResumeDocument,
+} from "@/lib/resume-document";
+import { RESUME_UPLOAD_ACCEPT } from "@/lib/resume-upload";
 import { cn } from "@/lib/utils";
 import type { AppUserProfileDTO } from "@/lib/app-users";
 
 export type ProfileSettingsFormState = {
   imageUrl: string;
+  resumeUrl: string;
+  resumeFileName: string;
+  resumeMimeType: string;
   currentPassword: string;
   newPassword: string;
   confirmNewPassword: string;
@@ -34,6 +49,9 @@ export type ProfileSettingsFormState = {
 
 export const initialProfileSettingsForm: ProfileSettingsFormState = {
   imageUrl: "",
+  resumeUrl: "",
+  resumeFileName: "",
+  resumeMimeType: "",
   currentPassword: "",
   newPassword: "",
   confirmNewPassword: "",
@@ -86,7 +104,10 @@ type Props = {
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onRemovePhoto: () => void;
+  onResumeFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemoveResume: () => void;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
+  resumeInputRef: React.RefObject<HTMLInputElement | null>;
 };
 
 export function ProfileSettingsContent({
@@ -103,11 +124,29 @@ export function ProfileSettingsContent({
   onSubmit,
   onFileChange,
   onRemovePhoto,
+  onResumeFileChange,
+  onRemoveResume,
   fileInputRef,
+  resumeInputRef,
 }: Props) {
   const strength = passwordStrength(form.newPassword);
   const isOnboarding = profile?.isProfileCompleted === false;
   const previewImage = form.imageUrl || profile?.imageUrl || "";
+  const previewResumeUrl = form.resumeUrl || profile?.resumeUrl || "";
+  const previewResumeFileName = resolveResumeFileName(
+    {
+      resumeUrl: previewResumeUrl,
+      resumeFileName: form.resumeFileName || profile?.resumeFileName,
+    },
+    "resume.pdf",
+  );
+  const previewResumeUploadedAt =
+    profile?.resumeUploadedAt && !form.resumeUrl
+      ? profile.resumeUploadedAt
+      : form.resumeUrl
+        ? new Date().toISOString()
+        : profile?.resumeUploadedAt;
+  const hasResume = hasResumeDocument({ resumeUrl: previewResumeUrl });
   const previewName = profile?.name || sessionEmail || "User";
   const seat = parseSeatAllocation(profile?.bayNumber);
   const accessRole =
@@ -301,6 +340,101 @@ export function ProfileSettingsContent({
                 ) : null}
 
                 <RecordPanel
+                  title="Resume"
+                  description="Upload a PDF resume for your employee profile"
+                  icon={FileText}
+                >
+                  <div className="space-y-4 px-5 py-5">
+                    {hasResume ? (
+                      <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-foreground">
+                              {previewResumeFileName}
+                            </p>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Uploaded {formatResumeUploadedAt(previewResumeUploadedAt)}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 rounded-xl"
+                              onClick={() => viewResumeDocument(previewResumeUrl)}
+                              disabled={saving}
+                            >
+                              <Eye className="h-4 w-4" />
+                              View
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 rounded-xl"
+                              onClick={() =>
+                                downloadResumeDocument(
+                                  previewResumeUrl,
+                                  previewResumeFileName,
+                                )
+                              }
+                              disabled={saving}
+                            >
+                              <Download className="h-4 w-4" />
+                              Download
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-6 text-center">
+                        <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
+                        <p className="mt-3 text-sm font-medium text-foreground">
+                          No resume uploaded yet
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          PDF only, up to 8 MB.
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2 rounded-xl"
+                        onClick={() => resumeInputRef.current?.click()}
+                        disabled={saving}
+                      >
+                        <UploadCloud className="h-4 w-4" />
+                        {hasResume ? "Replace resume" : "Upload resume"}
+                      </Button>
+                      {hasResume ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="rounded-xl"
+                          onClick={onRemoveResume}
+                          disabled={saving}
+                        >
+                          Remove
+                        </Button>
+                      ) : null}
+                      <input
+                        ref={resumeInputRef}
+                        type="file"
+                        accept={RESUME_UPLOAD_ACCEPT}
+                        className="hidden"
+                        onChange={onResumeFileChange}
+                      />
+                    </div>
+                  </div>
+                </RecordPanel>
+
+                <RecordPanel
                   title="Security"
                   description={
                     isOnboarding
@@ -432,6 +566,7 @@ export function ProfileSettingsContent({
                 done={Boolean(previewImage)}
                 label="Upload a profile photo (optional)."
               />
+              <ChecklistItem done={hasResume} label="Upload a resume (optional)." />
               <ChecklistItem
                 done={!isOnboarding}
                 label={

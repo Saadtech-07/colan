@@ -72,6 +72,81 @@ export async function syncSystemRoleChatPermissions(
   }
 }
 
+function adminPermissionsNeedRestore(
+  current: ModulePermissionsMap,
+  seed: ModulePermissionsMap,
+): boolean {
+  return Object.entries(seed).some(([moduleKey, seedPerms]) => {
+    const currentPerms = current[moduleKey as keyof ModulePermissionsMap];
+    if (!currentPerms) return true;
+    if (seedPerms.manage && !currentPerms.manage) return true;
+    if (seedPerms.view && !currentPerms.view) return true;
+    return false;
+  });
+}
+
+/** Restores the built-in Admin role to full access if it was downgraded. */
+export async function ensureAdminRoleFullAccess(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  options?: { force?: boolean },
+): Promise<boolean> {
+  const adminSeed = seedForKey("admin");
+  if (!adminSeed) return false;
+
+  const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
+  const existing = await col.findOne({ key: "admin", isSystem: true });
+  if (!existing) return false;
+
+  const needsRestore =
+    options?.force === true ||
+    adminPermissionsNeedRestore(existing.permissions, adminSeed.permissions);
+
+  if (!needsRestore) return false;
+
+  await col.updateOne(
+    { _id: existing._id },
+    {
+      $set: {
+        permissions: adminSeed.permissions,
+        responsibilities: adminSeed.responsibilities,
+        scopes: adminSeed.scopes,
+        updatedAt: new Date(),
+      },
+    },
+  );
+  invalidateServerRoleCache();
+  return true;
+}
+
+function ensureMemoryAdminRoleFullAccess(): boolean {
+  const adminSeed = seedForKey("admin");
+  if (!adminSeed) return false;
+
+  const index = memoryRoles.findIndex((role) => role.key === "admin" && role.isSystem);
+  if (index < 0) return false;
+
+  const current = memoryRoles[index];
+  if (!adminPermissionsNeedRestore(current.permissions, adminSeed.permissions)) {
+    return false;
+  }
+
+  const doc: CompanyRoleDocument = {
+    _id: new ObjectId(current.id.length === 24 ? current.id : "0".repeat(24)),
+    key: current.key,
+    name: adminSeed.name,
+    description: adminSeed.description,
+    color: current.color,
+    permissions: adminSeed.permissions,
+    responsibilities: adminSeed.responsibilities,
+    scopes: adminSeed.scopes,
+    isSystem: true,
+    displayOrder: current.displayOrder,
+  };
+  memoryRoles[index] = docToWorkspaceRole(doc);
+  invalidateServerRoleCache();
+  return true;
+}
+
 export async function ensureRolesSeed(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
 ): Promise<void> {
@@ -79,6 +154,7 @@ export async function ensureRolesSeed(
   const count = await col.countDocuments();
   if (count > 0) {
     await syncSystemRoleChatPermissions(db);
+    await ensureAdminRoleFullAccess(db);
     return;
   }
 
@@ -112,6 +188,7 @@ export async function listWorkspaceRoles(): Promise<WorkspaceRole[]> {
     if (memoryRoles.length === 0) {
       memoryRoles.push(...cloneMemoryRolesFromSeed());
     }
+    ensureMemoryAdminRoleFullAccess();
     return [...memoryRoles].sort((a, b) => a.displayOrder - b.displayOrder);
   }
 
@@ -244,6 +321,9 @@ export async function updateWorkspaceRole(
     if (current.isSystem && patch.name && patch.name !== current.name) {
       throw new Error("System roles cannot be renamed.");
     }
+    if (current.key === "admin" && current.isSystem && patch.permissions !== undefined) {
+      throw new Error("Admin permissions are fixed and cannot be changed.");
+    }
     const permissions = patch.permissions
       ? normalizeModulePermissions(patch.permissions)
       : current.permissions;
@@ -276,6 +356,10 @@ export async function updateWorkspaceRole(
 
   if (existing.isSystem && patch.name && patch.name.trim() !== existing.name) {
     throw new Error("System roles cannot be renamed.");
+  }
+
+  if (existing.key === "admin" && existing.isSystem && patch.permissions !== undefined) {
+    throw new Error("Admin permissions are fixed and cannot be changed.");
   }
 
   const updates: Partial<CompanyRoleDocument> = { updatedAt: new Date() };

@@ -224,6 +224,10 @@ export type AppUserProfileDTO = {
   permanentAddress?: string;
   joinedDate?: string;
   bayNumber?: string;
+  resumeUrl?: string;
+  resumeFileName?: string;
+  resumeMimeType?: string;
+  resumeUploadedAt?: string;
 };
 
 export type AppUserSessionRefresh = {
@@ -237,6 +241,9 @@ export type AppUserSessionRefresh = {
 export type ProfileSetupUpdateInput = {
   email: string;
   imageUrl?: string;
+  resumeUrl?: string;
+  resumeFileName?: string;
+  resumeMimeType?: string;
   currentPassword?: string;
   newPassword?: string;
 };
@@ -976,7 +983,116 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
   profile.permanentAddress = permanentAddress || undefined;
   profile.location = currentAddress || mergedDirectory.location?.trim() || undefined;
 
+  const embeddedResume = embeddedDirectory as
+    | {
+        resumeUrl?: string;
+        resumeFileName?: string;
+        resumeMimeType?: string;
+        resumeUploadedAt?: string;
+      }
+    | undefined;
+
+  const resumeSource = details?.resumeUrl?.trim()
+    ? details
+    : embeddedResume?.resumeUrl?.trim()
+      ? embeddedResume
+      : null;
+
+  if (resumeSource?.resumeUrl?.trim()) {
+    profile.resumeUrl = resumeSource.resumeUrl.trim();
+    profile.resumeFileName = resumeSource.resumeFileName?.trim() || "resume.pdf";
+    profile.resumeMimeType = resumeSource.resumeMimeType?.trim() || "application/pdf";
+    profile.resumeUploadedAt = resumeSource.resumeUploadedAt?.trim() || undefined;
+  } else {
+    profile.resumeUrl = "";
+  }
+
   return profile;
+}
+
+type ResumePatch = {
+  resumeUrl: string;
+  resumeFileName?: string;
+  resumeMimeType?: string;
+};
+
+async function upsertLinkedEmployeeResume(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  email: string,
+  resume: ResumePatch,
+) {
+  const employee = await db.collection(COLLECTIONS.employees).findOne({
+    $or: [{ email }, { "directory.workEmail": email }],
+  });
+  if (!employee) return;
+
+  const employeeRef = employee._id;
+  const employeeCol = db.collection(COLLECTIONS.employees);
+  const detailsCol = db.collection(COLLECTIONS.employeeDetails);
+
+  if (!resume.resumeUrl.trim()) {
+    await detailsCol.updateOne(
+      { employeeRef },
+      {
+        $unset: {
+          resumeUrl: "",
+          resumeFileName: "",
+          resumeMimeType: "",
+          resumeUploadedAt: "",
+        },
+        $set: { updatedAt: new Date() },
+      },
+    );
+    await employeeCol.updateOne(
+      { _id: employeeRef },
+      {
+        $unset: {
+          "directory.resumeUrl": "",
+          "directory.resumeFileName": "",
+          "directory.resumeMimeType": "",
+          "directory.resumeUploadedAt": "",
+        },
+        $set: { updatedAt: new Date() },
+      },
+    );
+    return;
+  }
+
+  const uploadedAt = new Date().toISOString();
+  const resumeFileName = resume.resumeFileName?.trim() || "resume.pdf";
+  const resumeMimeType = resume.resumeMimeType?.trim() || "application/pdf";
+
+  await detailsCol.updateOne(
+    { employeeRef },
+    {
+      $set: {
+        employeeRef,
+        resumeUrl: resume.resumeUrl.trim(),
+        resumeFileName,
+        resumeMimeType,
+        resumeUploadedAt: uploadedAt,
+        updatedAt: new Date(),
+      },
+      $setOnInsert: {
+        _id: new ObjectId(),
+        createdAt: new Date(),
+      },
+    },
+    { upsert: true },
+  );
+
+  await employeeCol.updateOne(
+    { _id: employeeRef },
+    {
+      $set: {
+        "directory.resumeUrl": resume.resumeUrl.trim(),
+        "directory.resumeFileName": resumeFileName,
+        "directory.resumeMimeType": resumeMimeType,
+        "directory.resumeUploadedAt": uploadedAt,
+        updatedAt: new Date(),
+      },
+    },
+  );
 }
 
 export async function completeCurrentAppUserProfile(
@@ -1037,6 +1153,14 @@ export async function completeCurrentAppUserProfile(
       },
     },
   );
+
+  if (input.resumeUrl !== undefined) {
+    await upsertLinkedEmployeeResume(db, email, {
+      resumeUrl: input.resumeUrl.trim(),
+      resumeFileName: input.resumeFileName,
+      resumeMimeType: input.resumeMimeType,
+    });
+  }
 
   return getCurrentAppUserProfile(email);
 }

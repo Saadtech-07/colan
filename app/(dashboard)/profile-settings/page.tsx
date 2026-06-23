@@ -10,6 +10,11 @@ import {
 import type { AppUserProfileDTO } from "@/lib/app-users";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { loggedFetch } from "@/lib/logged-fetch";
+import {
+  readResumeAsDataUrl,
+  sanitizeResumeFileName,
+  validateResumeUpload,
+} from "@/lib/resume-upload";
 
 type ToastState = {
   variant: "success" | "warning";
@@ -21,6 +26,7 @@ export default function ProfileSettingsPage() {
   const { data: session, status, update } = useSession();
   const { applyProfileSnapshot } = useAppState();
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const resumeInputRef = React.useRef<HTMLInputElement | null>(null);
   const toastTimerRef = React.useRef<number | null>(null);
   const loadedForEmailRef = React.useRef<string | null>(null);
   const loadInFlightRef = React.useRef(false);
@@ -55,12 +61,24 @@ export default function ProfileSettingsPage() {
           !prev.imageUrl || prev.imageUrl === profile?.imageUrl
             ? nextProfile.imageUrl
             : prev.imageUrl,
+        resumeUrl:
+          !prev.resumeUrl || prev.resumeUrl === profile?.resumeUrl
+            ? nextProfile.resumeUrl ?? ""
+            : prev.resumeUrl,
+        resumeFileName:
+          !prev.resumeFileName || prev.resumeFileName === profile?.resumeFileName
+            ? nextProfile.resumeFileName ?? ""
+            : prev.resumeFileName,
+        resumeMimeType:
+          !prev.resumeMimeType || prev.resumeMimeType === profile?.resumeMimeType
+            ? nextProfile.resumeMimeType ?? ""
+            : prev.resumeMimeType,
         currentPassword: preservePasswordFields ? prev.currentPassword : "",
         newPassword: preservePasswordFields ? prev.newPassword : "",
         confirmNewPassword: preservePasswordFields ? prev.confirmNewPassword : "",
       }));
     },
-    [profile?.imageUrl],
+    [profile?.imageUrl, profile?.resumeFileName, profile?.resumeMimeType, profile?.resumeUrl],
   );
 
   const loadProfile = React.useCallback(async (email: string) => {
@@ -109,12 +127,16 @@ export default function ProfileSettingsPage() {
     if (!profile) return;
     setForm({
       imageUrl: profile.imageUrl,
+      resumeUrl: profile.resumeUrl ?? "",
+      resumeFileName: profile.resumeFileName ?? "",
+      resumeMimeType: profile.resumeMimeType ?? "",
       currentPassword: "",
       newPassword: "",
       confirmNewPassword: "",
     });
     setError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (resumeInputRef.current) resumeInputRef.current.value = "";
   };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -133,6 +155,30 @@ export default function ProfileSettingsPage() {
     };
     reader.onerror = () => setError("Unable to read the selected image.");
     reader.readAsDataURL(file);
+  };
+
+  const handleResumeFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const validationError = validateResumeUpload(file);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    try {
+      const dataUrl = await readResumeAsDataUrl(file);
+      setForm((prev) => ({
+        ...prev,
+        resumeUrl: dataUrl,
+        resumeFileName: sanitizeResumeFileName(file.name),
+        resumeMimeType: file.type || "application/pdf",
+      }));
+      setError(null);
+    } catch {
+      setError("Unable to read the selected resume.");
+    }
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -161,6 +207,9 @@ export default function ProfileSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           imageUrl: form.imageUrl,
+          resumeUrl: form.resumeUrl,
+          resumeFileName: form.resumeFileName,
+          resumeMimeType: form.resumeMimeType,
           currentPassword: form.currentPassword,
           newPassword: form.newPassword,
           confirmNewPassword: form.confirmNewPassword,
@@ -174,11 +223,15 @@ export default function ProfileSettingsPage() {
       setProfile(updated);
       setForm({
         imageUrl: updated.imageUrl,
+        resumeUrl: updated.resumeUrl ?? "",
+        resumeFileName: updated.resumeFileName ?? "",
+        resumeMimeType: updated.resumeMimeType ?? "",
         currentPassword: "",
         newPassword: "",
         confirmNewPassword: "",
       });
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (resumeInputRef.current) resumeInputRef.current.value = "";
 
       await update({
         name: updated.name,
@@ -203,7 +256,7 @@ export default function ProfileSettingsPage() {
       showToast({
         variant: "success",
         title: "Profile updated",
-        description: "Your photo and password have been saved.",
+        description: "Your profile settings have been saved.",
       });
     } catch (nextError) {
       const message =
@@ -237,7 +290,18 @@ export default function ProfileSettingsPage() {
         setForm((prev) => ({ ...prev, imageUrl: "" }));
         if (fileInputRef.current) fileInputRef.current.value = "";
       }}
+      onResumeFileChange={handleResumeFileChange}
+      onRemoveResume={() => {
+        setForm((prev) => ({
+          ...prev,
+          resumeUrl: "",
+          resumeFileName: "",
+          resumeMimeType: "",
+        }));
+        if (resumeInputRef.current) resumeInputRef.current.value = "";
+      }}
       fileInputRef={fileInputRef}
+      resumeInputRef={resumeInputRef}
     />
   );
 }

@@ -36,6 +36,10 @@ export type EmployeeDirectoryInfo = {
   permanentAddress?: string;
   joinedDate?: string;
   notes?: string;
+  resumeUrl?: string;
+  resumeFileName?: string;
+  resumeMimeType?: string;
+  resumeUploadedAt?: string;
 };
 
 export interface Employee {

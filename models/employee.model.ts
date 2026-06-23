@@ -16,14 +16,19 @@ export type EmployeeDocument = {
   imageUrl: string;
   email?: string;
   directory?: {
-  workEmail?: string;
-  personalEmail?: string;
-  phone?: string;
+    workEmail?: string;
+    personalEmail?: string;
+    phone?: string;
     location?: string;
     fullAddress?: string;
     currentAddress?: string;
     permanentAddress?: string;
     joinedDate?: string;
+    notes?: string;
+    resumeUrl?: string;
+    resumeFileName?: string;
+    resumeMimeType?: string;
+    resumeUploadedAt?: string;
   };
   createdAt?: Date;
   updatedAt?: Date;

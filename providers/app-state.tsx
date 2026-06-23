@@ -31,7 +31,8 @@ type AppStateContextValue = {
   /** Squad names sorted for tabs and selects. */
   teamNames: string[];
   canManageRoles: boolean;
-  refreshWorkspaceRoles: () => Promise<void>;
+  refreshWorkspaceRoles: () => Promise<WorkspaceRole[]>;
+  removeWorkspaceRole: (id: string) => void;
   dataLoading: boolean;
   dataError: string | null;
   /** Where workspace data is stored (MongoDB vs in-memory) and Atlas ping result. */
@@ -272,7 +273,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const fetchWorkspaceData = React.useCallback(async () => {
     // Load roles before projects so server permission checks are not racing
     // with /api/roles clearing the in-memory role registry.
-    const roRes = await fetch("/api/roles", { credentials: "include" });
+    const roRes = await fetch("/api/roles", { credentials: "include", cache: "no-store" });
     let ro: WorkspaceRole[] = [];
     if (roRes.ok) {
       ro = (await roRes.json()) as WorkspaceRole[];
@@ -407,11 +408,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshWorkspaceRoles = React.useCallback(async () => {
-    const res = await fetch("/api/roles", { credentials: "include" });
+    const res = await fetch("/api/roles", { credentials: "include", cache: "no-store" });
     if (!res.ok) throw new Error(await parseApiError(res));
     const roles = (await res.json()) as WorkspaceRole[];
     setWorkspaceRoles(roles);
     hydrateRoleRegistry(roles);
+    return roles;
+  }, []);
+
+  const removeWorkspaceRole = React.useCallback((id: string) => {
+    setWorkspaceRoles((prev) => {
+      const next = prev.filter((role) => role.id !== id);
+      hydrateRoleRegistry(next);
+      return next;
+    });
   }, []);
 
   const addWorkspaceTeam = React.useCallback(async (input: TeamUpsertInput) => {
@@ -512,6 +522,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       teamNames,
       canManageRoles,
       refreshWorkspaceRoles,
+      removeWorkspaceRole,
       dataLoading,
       dataError,
       dataSummary,
@@ -540,6 +551,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       teamNames,
       canManageRoles,
       refreshWorkspaceRoles,
+      removeWorkspaceRole,
       dataLoading,
       dataError,
       dataSummary,

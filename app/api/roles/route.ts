@@ -6,26 +6,36 @@ import {
   canViewModule,
   normalizeAppRole,
 } from "@/lib/permissions";
+import { hydrateRoleRegistry } from "@/lib/role-registry";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
-import { createWorkspaceRole } from "@/lib/roles-data";
+import { createWorkspaceRole, listWorkspaceRoles } from "@/lib/roles-data";
 import {
   parseRolePermissionsInput,
   workspaceRoleCreateSchema,
 } from "@/lib/validations";
+
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const registry = await ensureRoleRegistry();
+  await ensureRoleRegistry();
   const roleKey = normalizeAppRole(session.user.appRole);
   if (!canViewModule(roleKey, "roles")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const roles = [...registry.values()].sort(
+
+  const roles = await listWorkspaceRoles();
+  hydrateRoleRegistry(roles);
+
+  const sorted = [...roles].sort(
     (a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name),
   );
-  return NextResponse.json(roles);
+  return NextResponse.json(sorted, {
+    headers: { "Cache-Control": "no-store" },
+  });
 }
 
 export async function POST(req: Request) {

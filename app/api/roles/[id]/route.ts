@@ -12,6 +12,8 @@ import {
   workspaceRoleUpdateSchema,
 } from "@/lib/validations";
 
+export const dynamic = "force-dynamic";
+
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: Request, { params }: Params) {

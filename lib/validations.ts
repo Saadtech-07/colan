@@ -169,6 +169,20 @@ export const appUserImageSchema = z
     "Use an image URL or upload an image file.",
   );
 
+export const resumeDocumentSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) =>
+      value === "" ||
+      /^data:application\/pdf;base64,/.test(value) ||
+      /^https?:\/\/.+\.pdf(?:[?#].*)?$/i.test(value) ||
+      /^https?:\/\//.test(value),
+    "Upload a PDF resume or use a valid PDF URL.",
+  );
+
+export const resumeFileNameSchema = z.string().trim().max(120).optional();
+
 export const appUserCreateSchema = z
   .object({
     email: z.string().email(),
@@ -253,6 +267,9 @@ const profileImageSchema = appUserImageSchema;
 export const profileSettingsUpdateSchema = z
   .object({
     imageUrl: profileImageSchema.optional(),
+    resumeUrl: resumeDocumentSchema.optional(),
+    resumeFileName: resumeFileNameSchema,
+    resumeMimeType: z.string().trim().optional(),
     currentPassword: z.string().optional().default(""),
     newPassword: z.string().optional().default(""),
     confirmNewPassword: z.string().optional().default(""),

@@ -21,6 +21,10 @@ export type EmployeeDetailsDocument = {
   joinedDate?: string;
   reportsToEmployeeRef?: ObjectId;
   notes?: string;
+  resumeUrl?: string;
+  resumeFileName?: string;
+  resumeMimeType?: string;
+  resumeUploadedAt?: string;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -38,6 +42,10 @@ export type EmployeeDetailsDTO = {
   joinedDate?: string;
   reportsToEmployeeId?: string;
   notes?: string;
+  resumeUrl?: string;
+  resumeFileName?: string;
+  resumeMimeType?: string;
+  resumeUploadedAt?: string;
 };
 
 export function employeeDetailsDocToDTO(
@@ -55,5 +63,9 @@ export function employeeDetailsDocToDTO(
     joinedDate: doc.joinedDate,
     reportsToEmployeeId: doc.reportsToEmployeeRef?.toHexString(),
     notes: doc.notes,
+    resumeUrl: doc.resumeUrl,
+    resumeFileName: doc.resumeFileName,
+    resumeMimeType: doc.resumeMimeType,
+    resumeUploadedAt: doc.resumeUploadedAt,
   };
 }

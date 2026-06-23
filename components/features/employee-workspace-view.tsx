@@ -5,6 +5,9 @@ import {
   Briefcase,
   Building2,
   Calendar,
+  Download,
+  Eye,
+  FileText,
   Mail,
   MapPin,
   Pencil,
@@ -19,6 +22,13 @@ import { addressesFromDirectory } from "@/lib/employee-address";
 import { formatWorkspaceDate, parseSeatAllocation } from "@/lib/employee-workspace-ui";
 import { buildWorkforceAccess } from "@/lib/team-members-ui";
 import { appUserEditHref } from "@/lib/app-user-navigation";
+import {
+  downloadResumeDocument,
+  formatResumeUploadedAt,
+  hasResumeDocument,
+  resolveResumeFileName,
+  viewResumeDocument,
+} from "@/lib/resume-document";
 import type { AccessContext } from "@/lib/permissions";
 import { profileNameInitial } from "@/lib/profile-image";
 import { cn } from "@/lib/utils";
@@ -39,6 +49,17 @@ export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
   const workEmail = directory?.workEmail?.trim() || "";
   const phone = directory?.phone?.trim() || "";
   const { currentAddress, permanentAddress } = addressesFromDirectory(directory);
+  const resumeFields = {
+    resumeUrl: directory?.resumeUrl,
+    resumeFileName: directory?.resumeFileName,
+    resumeMimeType: directory?.resumeMimeType,
+    resumeUploadedAt: directory?.resumeUploadedAt,
+  };
+  const hasResume = hasResumeDocument(resumeFields);
+  const resumeFileName = resolveResumeFileName(
+    resumeFields,
+    `${employee.name.replace(/\s+/g, "_")}_Resume.pdf`,
+  );
 
   const assignedProjects =
     employee.assignedProjects.length > 0
@@ -195,6 +216,55 @@ export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
           </InfoGrid>
         </RecordPanel>
       </div>
+
+      <RecordPanel
+        title="Resume"
+        icon={FileText}
+        description="Employee resume document"
+      >
+        {hasResume ? (
+          <div className="space-y-4 px-6 py-5">
+            <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-4">
+              <p className="truncate text-sm font-semibold text-foreground">{resumeFileName}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Uploaded {formatResumeUploadedAt(resumeFields.resumeUploadedAt)}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2 rounded-xl"
+                onClick={() => viewResumeDocument(resumeFields.resumeUrl!)}
+              >
+                <Eye className="h-4 w-4" />
+                View resume
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2 rounded-xl"
+                onClick={() =>
+                  downloadResumeDocument(resumeFields.resumeUrl!, resumeFileName)
+                }
+              >
+                <Download className="h-4 w-4" />
+                Download resume
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="px-6 py-8 text-center">
+            <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
+            <p className="mt-3 text-sm font-medium text-foreground">No resume uploaded yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The employee can upload a PDF resume from Profile settings.
+            </p>
+          </div>
+        )}
+      </RecordPanel>
 
       <RecordPanel
         title="Workspace allocation"
