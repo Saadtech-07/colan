@@ -80,3 +80,7 @@ export async function PATCH(req: Request, { params }: Params) {
   const detail = await getProjectDetailBySlug(updated.slug);
   return NextResponse.json(detail);
 }
+
+export async function PUT(req: Request, ctx: Params) {
+  return PATCH(req, ctx);
+}

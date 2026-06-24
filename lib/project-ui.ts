@@ -51,7 +51,7 @@ export function isProjectDueSoon(
   return deadline >= start && deadline <= end;
 }
 
-/** Progress shown in UI bars — matches project status values. */
+/** Progress shown in UI bars — uses task stats when available, else status. */
 export function projectStatusProgressPercent(status: ProjectStatus): number {
   if (status === "Completed") return 100;
   if (status === "In Progress") return 50;
@@ -59,9 +59,19 @@ export function projectStatusProgressPercent(status: ProjectStatus): number {
 }
 
 export function projectProgressPercent(
-  project: Pick<Project, "status">,
+  project: Pick<Project, "status" | "totalTasks" | "completedTasks" | "progressPercentage">,
   _today?: Date,
 ) {
+  if (
+    typeof project.progressPercentage === "number" &&
+    (project.totalTasks ?? 0) > 0
+  ) {
+    return project.progressPercentage;
+  }
+  if ((project.totalTasks ?? 0) > 0) {
+    const completed = project.completedTasks ?? 0;
+    return Math.round((completed / (project.totalTasks ?? 1)) * 100);
+  }
   return projectStatusProgressPercent(project.status);
 }
 

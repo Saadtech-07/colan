@@ -235,6 +235,15 @@
     font-family: var(--font-heading);
   }
 
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   .gallery-glass-float {
     animation: gallery-glass-float 5.5s ease-in-out infinite;
     will-change: transform;

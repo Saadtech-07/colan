@@ -313,6 +313,8 @@ export const projectCreateSchema = z.object({
 
   projectManagerId: z.string().min(1),
 
+  teamLeadId: z.string().optional(),
+
   teams: z.array(teamNameSchema).min(1),
 
   assignedDate: z.string().min(1),
@@ -349,6 +351,48 @@ export const projectUpdateSchema = z.object({
 
   memberIds: z.array(z.string()).optional(),
 
+  teamLeadId: z.string().optional(),
+
+});
+
+
+
+const taskStatuses = ["Todo", "In Progress", "Review", "Done"] as const;
+const taskPriorities = ["Low", "Medium", "High", "Critical"] as const;
+
+export const taskCreateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().max(5000).optional(),
+  projectId: z.string().min(1),
+  assigneeId: z.string().optional(),
+  status: z.enum(taskStatuses).optional(),
+  priority: z.enum(taskPriorities).optional(),
+  dueDate: z.string().optional(),
+  comment: z.string().max(2000).optional(),
+});
+
+export const taskUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().max(5000).optional(),
+  projectId: z.string().min(1).optional(),
+  assigneeId: z.string().nullable().optional(),
+  status: z.enum(taskStatuses).optional(),
+  priority: z.enum(taskPriorities).optional(),
+  dueDate: z.string().nullable().optional(),
+  comment: z.string().max(2000).optional(),
+});
+
+export const taskStatusPatchSchema = z.object({
+  status: z.enum(taskStatuses),
+  comment: z.string().max(2000).optional(),
+});
+
+export const dailyUpdateCreateSchema = z.object({
+  projectId: z.string().min(1),
+  date: z.string().min(1),
+  workDone: z.string().trim().min(1).max(5000),
+  blockers: z.string().max(5000).optional(),
+  tomorrowPlan: z.string().trim().min(1).max(5000),
 });
 
 

@@ -1,9 +1,11 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
+import { normalizeAppRole } from "@/lib/permissions";
 import {
   COLLECTIONS,
   ensureColanModelIndexes,
   notificationDocToDTO,
+  type AppUserDocument,
   type NotificationDocument,
   type NotificationDTO,
 } from "@/models";
@@ -15,6 +17,24 @@ export type NotificationActor = {
   name: string;
 };
 
+async function listWorkflowNotificationRecipientUserIds(): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  await ensureColanModelIndexes(db);
+  const users = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).find({}).toArray();
+  const recipientIds = new Set<string>();
+
+  for (const user of users) {
+    const role = normalizeAppRole(user.appRole);
+    if (role === "admin" || role === "manager" || role === "lead") {
+      recipientIds.add(user._id.toHexString());
+    }
+  }
+
+  return [...recipientIds];
+}
+
 function sortNotifications(docs: NotificationDocument[]): NotificationDTO[] {
   return docs
     .slice()
@@ -25,23 +45,113 @@ function sortNotifications(docs: NotificationDocument[]): NotificationDTO[] {
 export async function listNotificationsForUser(
   recipientUserId: string,
   limit = 50,
+  unreadOnly = false,
 ): Promise<NotificationDTO[]> {
   const db = await getDb();
   if (!db) {
     return sortNotifications(
-      memoryNotifications.filter((item) => item.recipientUserId === recipientUserId),
+      memoryNotifications.filter(
+        (item) =>
+          item.recipientUserId === recipientUserId && (!unreadOnly || !item.readAt),
+      ),
     ).slice(0, limit);
   }
 
   await ensureColanModelIndexes(db);
   const docs = await db
     .collection<NotificationDocument>(COLLECTIONS.notifications)
-    .find({ recipientUserId })
+    .find({
+      recipientUserId,
+      ...(unreadOnly
+        ? { $or: [{ readAt: { $exists: false } }, { readAt: null }] }
+        : {}),
+    })
     .sort({ createdAt: -1 })
     .limit(limit)
     .toArray();
 
-  return docs.map(notificationDocToDTO);
+  return docs.map((doc) => ({
+    ...notificationDocToDTO(doc),
+    recipientUserId: doc.recipientUserId,
+  }));
+}
+
+export async function countNotificationsForUser(recipientUserId: string): Promise<number> {
+  const db = await getDb();
+  if (!db) {
+    return memoryNotifications.filter((item) => item.recipientUserId === recipientUserId).length;
+  }
+
+  await ensureColanModelIndexes(db);
+  return db.collection<NotificationDocument>(COLLECTIONS.notifications).countDocuments({
+    recipientUserId,
+  });
+}
+
+async function enrichNotificationsWithRecipients(
+  docs: NotificationDocument[],
+): Promise<NotificationDTO[]> {
+  const db = await getDb();
+  if (!db || docs.length === 0) {
+    return docs.map((doc) => ({
+      ...notificationDocToDTO(doc),
+      recipientUserId: doc.recipientUserId,
+    }));
+  }
+
+  const recipientIds = [...new Set(docs.map((doc) => doc.recipientUserId))].filter((id) =>
+    ObjectId.isValid(id),
+  );
+  const users = await db
+    .collection(COLLECTIONS.appUsers)
+    .find({ _id: { $in: recipientIds.map((id) => new ObjectId(id)) } })
+    .project({ name: 1 })
+    .toArray();
+
+  const nameById = new Map(users.map((user) => [user._id.toHexString(), user.name]));
+
+  return docs.map((doc) => ({
+    ...notificationDocToDTO(doc),
+    recipientUserId: doc.recipientUserId,
+    recipientName: nameById.get(doc.recipientUserId) ?? "Workspace user",
+  }));
+}
+
+export async function listAllNotifications(
+  limit = 100,
+  unreadOnly = false,
+): Promise<NotificationDTO[]> {
+  const db = await getDb();
+  if (!db) {
+    const items = memoryNotifications
+      .filter((item) => !unreadOnly || !item.readAt)
+      .slice()
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit);
+    return enrichNotificationsWithRecipients(items);
+  }
+
+  await ensureColanModelIndexes(db);
+  const docs = await db
+    .collection<NotificationDocument>(COLLECTIONS.notifications)
+    .find(
+      unreadOnly ? { $or: [{ readAt: { $exists: false } }, { readAt: null }] } : {},
+    )
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+
+  return enrichNotificationsWithRecipients(docs);
+}
+
+export async function countAllNotifications(): Promise<number> {
+  const db = await getDb();
+  if (!db) {
+    return memoryNotifications.length;
+  }
+
+  await ensureColanModelIndexes(db);
+  return db.collection<NotificationDocument>(COLLECTIONS.notifications).countDocuments({});
 }
 
 export async function getUnreadNotificationCount(recipientUserId: string): Promise<number> {
@@ -211,6 +321,137 @@ export async function notifyNewProjectMembers(input: {
       projectName: input.project.name,
       actorUserId,
       actorName,
+    });
+  }
+}
+
+async function resolveProjectContext(projectId: string) {
+  const { getProjectById } = await import("@/lib/data-service");
+  return getProjectById(projectId);
+}
+
+export async function notifyTaskAssigned(input: {
+  task: { id: string; title: string; assigneeId?: string; projectId: string };
+  actor?: NotificationActor;
+}): Promise<void> {
+  if (!input.task.assigneeId) return;
+  const recipientUserId = await findAppUserIdForEmployeeMongoId(input.task.assigneeId);
+  if (!recipientUserId) return;
+  if (input.actor?.id && recipientUserId === input.actor.id) return;
+
+  const project = await resolveProjectContext(input.task.projectId);
+  const actorName = input.actor?.name?.trim() || "A workspace manager";
+
+  await createNotification({
+    recipientUserId,
+    type: "task_assigned",
+    title: "Task assigned to you",
+    message: `${actorName} assigned "${input.task.title}" to you.`,
+    projectId: project?.id,
+    projectSlug: project?.slug,
+    projectName: project?.name,
+    taskId: input.task.id,
+    taskTitle: input.task.title,
+    actorUserId: input.actor?.id,
+    actorName,
+  });
+}
+
+export async function notifyTaskStatusChanged(input: {
+  task: {
+    id: string;
+    title: string;
+    assigneeId?: string;
+    projectId: string;
+    status: string;
+  };
+  previousStatus: string;
+  actor?: NotificationActor;
+}): Promise<void> {
+  if (!input.task.assigneeId) return;
+  const recipientUserId = await findAppUserIdForEmployeeMongoId(input.task.assigneeId);
+  if (!recipientUserId) return;
+
+  const project = await resolveProjectContext(input.task.projectId);
+  const actorName = input.actor?.name?.trim() || "A teammate";
+
+  await createNotification({
+    recipientUserId,
+    type: "task_status_changed",
+    title: "Task status updated",
+    message: `${actorName} moved "${input.task.title}" from ${input.previousStatus} to ${input.task.status}.`,
+    projectId: project?.id,
+    projectSlug: project?.slug,
+    projectName: project?.name,
+    taskId: input.task.id,
+    taskTitle: input.task.title,
+    actorUserId: input.actor?.id,
+    actorName,
+  });
+}
+
+export async function notifyTaskCompleted(input: {
+  task: { id: string; title: string; assigneeId?: string; projectId: string };
+  actor?: NotificationActor;
+}): Promise<void> {
+  const project = await resolveProjectContext(input.task.projectId);
+  const actorName = input.actor?.name?.trim() || "A teammate";
+
+  const managerRecipients = new Set(await listWorkflowNotificationRecipientUserIds());
+
+  if (project?.projectManagerId) {
+    managerRecipients.add(project.projectManagerId);
+  }
+
+  for (const recipientUserId of managerRecipients) {
+    if (input.actor?.id && recipientUserId === input.actor.id) continue;
+    await createNotification({
+      recipientUserId,
+      type: "task_completed",
+      title: "Task completed",
+      message: `${actorName} completed "${input.task.title}".`,
+      projectId: project?.id,
+      projectSlug: project?.slug,
+      projectName: project?.name,
+      taskId: input.task.id,
+      taskTitle: input.task.title,
+      actorUserId: input.actor?.id,
+      actorName,
+    });
+  }
+}
+
+export async function notifyDailyUpdateSubmitted(input: {
+  update: {
+    id: string;
+    employeeId: string;
+    employeeName: string;
+    projectId: string;
+    date: string;
+  };
+  actor?: NotificationActor;
+}): Promise<void> {
+  const project = await resolveProjectContext(input.update.projectId);
+  const submitter = input.update.employeeName.trim() || "An employee";
+
+  const managerRecipients = new Set(await listWorkflowNotificationRecipientUserIds());
+
+  if (project?.projectManagerId) {
+    managerRecipients.add(project.projectManagerId);
+  }
+
+  for (const recipientUserId of managerRecipients) {
+    if (input.actor?.id && recipientUserId === input.actor.id) continue;
+    await createNotification({
+      recipientUserId,
+      type: "daily_update_submitted",
+      title: "Daily update submitted",
+      message: `${submitter} submitted a daily update for ${project?.name ?? "a project"} on ${input.update.date}.`,
+      projectId: project?.id,
+      projectSlug: project?.slug,
+      projectName: project?.name,
+      actorUserId: input.actor?.id,
+      actorName: submitter,
     });
   }
 }

@@ -67,7 +67,29 @@ export type Permission =
   | "appUsers:read"
   | "chat:view"
   | "chat:send"
-  | "chat:manage";
+  | "chat:manage"
+  | "tasks:view"
+  | "tasks:create"
+  | "tasks:edit"
+  | "tasks:delete"
+  | "tasks:manage"
+  | "dailyUpdates:view"
+  | "dailyUpdates:submit"
+  | "dailyUpdates:review"
+  | "dailyUpdates:manage"
+  | "progress:view"
+  | "progress:analytics"
+  | "progress:manage"
+  | "peopleDirectory:view"
+  | "peopleDirectory:create"
+  | "peopleDirectory:edit"
+  | "peopleDirectory:delete"
+  | "peopleDirectory:manage"
+  | "notifications:view"
+  | "notifications:manage"
+  | "approvals:view"
+  | "approvals:approve"
+  | "approvals:manage";
 
 export type RoleDefinition = {
   role: string;

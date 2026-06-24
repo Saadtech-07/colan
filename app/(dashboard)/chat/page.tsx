@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { canAccessChat } from "@/lib/chat-access";
 import { useAppState } from "@/providers/app-state";
@@ -32,5 +33,15 @@ export default function ChatPage() {
     return null;
   }
 
-  return <ChatWorkspace />;
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[400px] items-center justify-center">
+          <LoadingIndicator title="Loading messages" description="Opening chat…" />
+        </div>
+      }
+    >
+      <ChatWorkspace />
+    </Suspense>
+  );
 }

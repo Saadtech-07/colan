@@ -5,6 +5,7 @@ import {
   Briefcase,
   Building2,
   Calendar,
+  CheckSquare,
   Download,
   Eye,
   FileText,
@@ -22,6 +23,7 @@ import { addressesFromDirectory } from "@/lib/employee-address";
 import { formatWorkspaceDate, parseSeatAllocation } from "@/lib/employee-workspace-ui";
 import { buildWorkforceAccess } from "@/lib/team-members-ui";
 import { appUserEditHref } from "@/lib/app-user-navigation";
+import { EntityTasksPanel } from "@/components/features/tasks/entity-tasks-panel";
 import {
   downloadResumeDocument,
   formatResumeUploadedAt,
@@ -47,6 +49,13 @@ export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
   const joinedDate = formatWorkspaceDate(directory?.joinedDate);
   const loginEmail = employee.email?.trim() || "";
   const workEmail = directory?.workEmail?.trim() || "";
+  const canAssignTask =
+    !!access &&
+    (access.canManageProjects ||
+      access.has("projects:manage") ||
+      access.has("projects:manage_team") ||
+      access.role === "admin" ||
+      access.role === "manager");
   const phone = directory?.phone?.trim() || "";
   const { currentAddress, permanentAddress } = addressesFromDirectory(directory);
   const resumeFields = {
@@ -126,6 +135,14 @@ export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
                   </Link>
                 </Button>
               ) : null}
+              {canAssignTask ? (
+                <Button variant="outline" size="sm" className="h-9 rounded-lg bg-background/80" asChild>
+                  <Link href={`/projects/tasks?assignee=${employee.id}&create=1`}>
+                    <CheckSquare className="mr-1.5 h-4 w-4" />
+                    Assign task
+                  </Link>
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -178,6 +195,13 @@ export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
           </div>
         )}
       </RecordPanel>
+
+      <EntityTasksPanel
+        assigneeId={employee.id}
+        title="Assigned tasks"
+        description="Tasks currently assigned to this employee"
+        emptyMessage="No tasks assigned to this employee yet."
+      />
 
       <div className="grid gap-5 lg:grid-cols-2">
         <RecordPanel

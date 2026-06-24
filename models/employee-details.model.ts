@@ -20,6 +20,9 @@ export type EmployeeDetailsDocument = {
   /** ISO date string YYYY-MM-DD */
   joinedDate?: string;
   reportsToEmployeeRef?: ObjectId;
+  department?: string;
+  designation?: string;
+  status?: string;
   notes?: string;
   resumeUrl?: string;
   resumeFileName?: string;
@@ -41,6 +44,9 @@ export type EmployeeDetailsDTO = {
   permanentAddress?: string;
   joinedDate?: string;
   reportsToEmployeeId?: string;
+  department?: string;
+  designation?: string;
+  status?: string;
   notes?: string;
   resumeUrl?: string;
   resumeFileName?: string;
@@ -62,6 +68,9 @@ export function employeeDetailsDocToDTO(
     permanentAddress: doc.permanentAddress,
     joinedDate: doc.joinedDate,
     reportsToEmployeeId: doc.reportsToEmployeeRef?.toHexString(),
+    department: doc.department,
+    designation: doc.designation,
+    status: doc.status,
     notes: doc.notes,
     resumeUrl: doc.resumeUrl,
     resumeFileName: doc.resumeFileName,

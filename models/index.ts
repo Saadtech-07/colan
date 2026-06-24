@@ -14,4 +14,6 @@ export * from "./gallery-image.model";
 export * from "./conversation.model";
 export * from "./message.model";
 export * from "./notification.model";
+export * from "./task.model";
+export * from "./daily-update.model";
 

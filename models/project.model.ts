@@ -11,6 +11,7 @@ export type ProjectDocument = {
   name: string;
   clientName?: string;
   projectManagerId?: string;
+  teamLeadId?: string;
   /** @deprecated Legacy single team; prefer `teams`. */
   team?: TeamName;
   teams?: TeamName[];
@@ -19,6 +20,9 @@ export type ProjectDocument = {
   status: ProjectStatus;
   description?: string;
   memberIds: string[];
+  totalTasks?: number;
+  completedTasks?: number;
+  progressPercentage?: number;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -50,17 +54,27 @@ export function projectDocToDTO(doc: ProjectDocument): Project {
           .trim()
           .replace(/[^a-z0-9]+/g, "-")
           .replace(/^-+|-+$/g, "") || "project";
+  const totalTasks = doc.totalTasks ?? 0;
+  const completedTasks = doc.completedTasks ?? 0;
+  const progressPercentage =
+    doc.progressPercentage ??
+    (totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : undefined);
+
   return {
     id: doc._id.toHexString(),
     slug,
     name: doc.name,
     clientName: doc.clientName ?? "",
     projectManagerId: doc.projectManagerId ?? "",
+    teamLeadId: doc.teamLeadId ?? "",
     teams: normalizeProjectTeams(doc),
     assignedDate: doc.assignedDate,
     lastDate: doc.lastDate,
     status: normalizeProjectStatus(doc.status),
     description: doc.description ?? "",
     memberIds: doc.memberIds ?? [],
+    totalTasks,
+    completedTasks,
+    progressPercentage,
   };
 }

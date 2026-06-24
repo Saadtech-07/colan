@@ -3,7 +3,12 @@ import { COLLECTIONS } from "./collections";
 
 export const NOTIFICATION_COLLECTION = COLLECTIONS.notifications;
 
-export type NotificationType = "project_assigned";
+export type NotificationType =
+  | "project_assigned"
+  | "task_assigned"
+  | "task_status_changed"
+  | "task_completed"
+  | "daily_update_submitted";
 
 export type NotificationDocument = {
   _id: ObjectId;
@@ -14,6 +19,8 @@ export type NotificationDocument = {
   projectId?: string;
   projectSlug?: string;
   projectName?: string;
+  taskId?: string;
+  taskTitle?: string;
   actorUserId?: string;
   actorName?: string;
   readAt?: Date | null;
@@ -28,7 +35,11 @@ export type NotificationDTO = {
   projectId?: string;
   projectSlug?: string;
   projectName?: string;
+  taskId?: string;
+  taskTitle?: string;
   actorName?: string;
+  recipientUserId?: string;
+  recipientName?: string;
   readAt: string | null;
   createdAt: string;
 };
@@ -42,6 +53,8 @@ export function notificationDocToDTO(doc: NotificationDocument): NotificationDTO
     projectId: doc.projectId,
     projectSlug: doc.projectSlug,
     projectName: doc.projectName,
+    taskId: doc.taskId,
+    taskTitle: doc.taskTitle,
     actorName: doc.actorName,
     readAt: doc.readAt ? doc.readAt.toISOString() : null,
     createdAt: doc.createdAt.toISOString(),

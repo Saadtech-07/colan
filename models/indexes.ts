@@ -13,6 +13,8 @@ import type { GalleryImageDocument } from "./gallery-image.model";
 import { ensureChatConversationIndexes } from "@/lib/chat-indexes";
 import type { MessageDocument } from "./message.model";
 import type { NotificationDocument } from "./notification.model";
+import type { TaskActivityDocument, TaskCommentDocument, TaskDocument } from "./task.model";
+import type { DailyUpdateDocument } from "./daily-update.model";
 
 async function removeDuplicateEmployeeIds(db: Db): Promise<void> {
   const collection = db.collection<EmployeeDocument>(COLLECTIONS.employees);
@@ -79,7 +81,7 @@ declare global {
   var __colanIndexesPromise: Map<string, Promise<void>> | undefined;
 }
 
-const INDEX_SETUP_VERSION = 3;
+const INDEX_SETUP_VERSION = 4;
 
 function indexesCacheKey(db: Db): string {
   return `${db.databaseName}:v${INDEX_SETUP_VERSION}`;
@@ -174,4 +176,23 @@ async function ensureColanModelIndexesWork(db: Db): Promise<void> {
   await db
     .collection<NotificationDocument>(COLLECTIONS.notifications)
     .createIndex({ recipientUserId: 1, readAt: 1 });
+
+  await db.collection<TaskDocument>(COLLECTIONS.tasks).createIndex({ projectId: 1, status: 1 });
+  await db.collection<TaskDocument>(COLLECTIONS.tasks).createIndex({ assigneeId: 1, status: 1 });
+  await db.collection<TaskDocument>(COLLECTIONS.tasks).createIndex({ createdAt: -1 });
+
+  await db
+    .collection<TaskCommentDocument>(COLLECTIONS.taskComments)
+    .createIndex({ taskId: 1, createdAt: 1 });
+
+  await db
+    .collection<TaskActivityDocument>(COLLECTIONS.taskActivity)
+    .createIndex({ taskId: 1, createdAt: -1 });
+
+  await db
+    .collection<DailyUpdateDocument>(COLLECTIONS.dailyUpdates)
+    .createIndex({ date: -1, projectId: 1 });
+  await db
+    .collection<DailyUpdateDocument>(COLLECTIONS.dailyUpdates)
+    .createIndex({ employeeId: 1, date: -1 });
 }

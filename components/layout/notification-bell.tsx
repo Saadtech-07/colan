@@ -2,74 +2,74 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Bell, Briefcase, CheckCheck } from "lucide-react";
+import { Bell, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { formatChatTime } from "@/lib/chat-client";
+import { NotificationListItem } from "@/components/notifications/notification-list-item";
 import { cn } from "@/lib/utils";
 import { parseApiError } from "@/providers/app-state";
 import type { NotificationDTO } from "@/models";
 
 const POLL_MS = 45_000;
+const PREVIEW_LIMIT = 2;
+
+type NotificationsResponse = {
+  notifications: NotificationDTO[];
+  unreadCount: number;
+  totalCount: number;
+};
 
 export function NotificationBell() {
   const [notifications, setNotifications] = React.useState<NotificationDTO[]>([]);
   const [unreadCount, setUnreadCount] = React.useState(0);
+  const [totalCount, setTotalCount] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
   const [open, setOpen] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   const refreshNotifications = React.useCallback(async () => {
     try {
-      const res = await fetch("/api/notifications", {
+      const res = await fetch(
+        `/api/notifications?limit=${PREVIEW_LIMIT}&unreadOnly=true`,
+        {
         credentials: "include",
         cache: "no-store",
       });
       if (!res.ok) {
-        if (res.status === 401 || res.status === 404) return;
+        if (res.status === 401 || res.status === 403 || res.status === 404) {
+          setNotifications([]);
+          setUnreadCount(0);
+          setTotalCount(0);
+          setError(null);
+          return;
+        }
         throw new Error(await parseApiError(res));
       }
-      const data = (await res.json()) as {
-        notifications: NotificationDTO[];
-        unreadCount: number;
-      };
+      const data = (await res.json()) as NotificationsResponse;
       setNotifications(data.notifications);
-      setUnreadCount(data.unreadCount);
+      setUnreadCount(
+        data.notifications.length === 0 ? 0 : data.unreadCount,
+      );
+      setTotalCount(data.totalCount);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load notifications");
     }
   }, []);
 
-  const refreshUnreadOnly = React.useCallback(async () => {
-    try {
-      const res = await fetch("/api/notifications/unread", {
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (!res.ok) return;
-      const data = (await res.json()) as { count: number };
-      setUnreadCount(data.count);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   React.useEffect(() => {
     void refreshNotifications();
     const timer = window.setInterval(() => {
-      void refreshUnreadOnly();
+      void refreshNotifications();
     }, POLL_MS);
     return () => window.clearInterval(timer);
-  }, [refreshNotifications, refreshUnreadOnly]);
+  }, [refreshNotifications]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -77,17 +77,27 @@ export function NotificationBell() {
     void refreshNotifications().finally(() => setLoading(false));
   }, [open, refreshNotifications]);
 
+  const removeFromPopup = React.useCallback((notificationId: string) => {
+    setNotifications((prev) => prev.filter((item) => item.id !== notificationId));
+  }, []);
+
   const markRead = async (notification: NotificationDTO) => {
+    removeFromPopup(notification.id);
+
     if (notification.readAt) return;
+
     const res = await fetch(`/api/notifications/${notification.id}/read`, {
       method: "PATCH",
       credentials: "include",
     });
-    if (!res.ok) return;
-    const updated = (await res.json()) as NotificationDTO;
-    setNotifications((prev) =>
-      prev.map((item) => (item.id === updated.id ? updated : item)),
-    );
+    if (!res.ok) {
+      setNotifications((prev) => {
+        if (prev.some((item) => item.id === notification.id)) return prev;
+        return [notification, ...prev].slice(0, PREVIEW_LIMIT);
+      });
+      return;
+    }
+
     setUnreadCount((count) => Math.max(0, count - 1));
   };
 
@@ -97,10 +107,7 @@ export function NotificationBell() {
       credentials: "include",
     });
     if (!res.ok) return;
-    const now = new Date().toISOString();
-    setNotifications((prev) =>
-      prev.map((item) => ({ ...item, readAt: item.readAt ?? now })),
-    );
+    setNotifications([]);
     setUnreadCount(0);
   };
 
@@ -109,6 +116,10 @@ export function NotificationBell() {
     if (!nextOpen) return;
     void refreshNotifications();
   };
+
+  const showViewAll = notifications.length > 0;
+  const popupEmptyMessage =
+    totalCount === 0 ? "No notifications yet." : "No new notifications.";
 
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
@@ -135,18 +146,18 @@ export function NotificationBell() {
 
       <DropdownMenuContent
         align="end"
-        className="w-[min(100vw-1.5rem,22rem)] rounded-2xl p-0"
+        className="w-[min(100vw-1.5rem,27rem)] overflow-hidden rounded-[1.75rem] border-0 p-0 shadow-lg"
       >
-        <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
-          <DropdownMenuLabel className="p-0 text-sm font-semibold">
+        <div className="flex items-center justify-between gap-4 px-6 py-5">
+          <DropdownMenuLabel className="p-0 font-heading text-[11px] font-bold uppercase leading-none tracking-[0.12em] text-foreground">
             Notifications
           </DropdownMenuLabel>
-          {unreadCount > 0 ? (
+          {unreadCount > 0 && notifications.length > 0 ? (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 gap-1.5 rounded-lg px-2 text-xs"
+              className="h-8 gap-1.5 rounded-full px-3 text-xs font-normal"
               onClick={() => void markAllRead()}
             >
               <CheckCheck className="h-3.5 w-3.5" />
@@ -155,94 +166,61 @@ export function NotificationBell() {
           ) : null}
         </div>
 
-        <ScrollArea className="max-h-[min(24rem,60vh)]">
+        <div className="max-h-[min(20rem,55vh)] overflow-y-auto">
           {loading && notifications.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+            <p className="px-6 py-10 text-center text-sm text-muted-foreground">
               Loading…
             </p>
           ) : error ? (
-            <p className="px-4 py-6 text-center text-sm text-destructive">{error}</p>
+            <p className="px-6 py-8 text-center text-sm text-destructive">{error}</p>
           ) : notifications.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No notifications yet.
+            <p className="px-6 py-10 text-center text-sm text-muted-foreground">
+              {popupEmptyMessage}
             </p>
           ) : (
-            <div className="py-1">
-              {notifications.map((notification) => {
-                const content = (
-                  <div className="flex w-full items-start gap-3">
-                    <NotificationRow notification={notification} />
-                  </div>
-                );
-
-                if (notification.projectSlug) {
-                  return (
-                    <DropdownMenuItem
-                      key={notification.id}
-                      className={cn(
-                        "cursor-pointer rounded-none px-3 py-3 focus:bg-muted/60",
-                        !notification.readAt && "bg-primary/5",
-                      )}
-                      asChild
-                    >
-                      <Link
-                        href={`/projects/${notification.projectSlug}`}
-                        onClick={() => void markRead(notification)}
-                      >
-                        {content}
-                      </Link>
-                    </DropdownMenuItem>
-                  );
-                }
-
-                return (
+            <div className="px-3 py-2">
+              {notifications.map((notification, index) => (
+                <div
+                  key={notification.id}
+                  className={cn(
+                    index < notifications.length - 1 &&
+                      "mb-3 border-b border-border/50 pb-3",
+                  )}
+                >
                   <DropdownMenuItem
-                    key={notification.id}
-                    className={cn(
-                      "cursor-pointer rounded-none px-3 py-3 focus:bg-muted/60",
-                      !notification.readAt && "bg-primary/5",
-                    )}
-                    onClick={() => void markRead(notification)}
+                    className="cursor-pointer rounded-none p-0 focus:bg-transparent"
+                    asChild
                   >
-                    {content}
+                    <NotificationListItem
+                      notification={notification}
+                      variant="compact"
+                      onNavigate={(item) => {
+                        void markRead(item);
+                        setOpen(false);
+                      }}
+                    />
                   </DropdownMenuItem>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
-        </ScrollArea>
+        </div>
+
+        {showViewAll ? (
+          <div className="px-6 py-5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-11 w-full rounded-full border-border/70 text-sm font-normal"
+              asChild
+            >
+              <Link href="/notifications" onClick={() => setOpen(false)}>
+                View all
+              </Link>
+            </Button>
+          </div>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-function NotificationRow({ notification }: { notification: NotificationDTO }) {
-  return (
-    <>
-      <div
-        className={cn(
-          "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl",
-          notification.readAt ? "bg-muted" : "bg-primary/10 text-primary",
-        )}
-      >
-        <Briefcase className="h-4 w-4" />
-      </div>
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-medium leading-snug text-foreground">
-            {notification.title}
-          </p>
-          {!notification.readAt ? (
-            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
-          ) : null}
-        </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          {notification.message}
-        </p>
-        <p className="text-[10px] text-muted-foreground/80">
-          {formatChatTime(notification.createdAt)}
-        </p>
-      </div>
-    </>
   );
 }

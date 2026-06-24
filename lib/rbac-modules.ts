@@ -3,12 +3,18 @@ import type { Permission } from "@/lib/permissions";
 export const RBAC_MODULES = [
   "dashboard",
   "projects",
+  "tasks",
+  "dailyUpdates",
+  "progress",
   "teamMembers",
+  "peopleDirectory",
   "seating",
   "gallery",
   "roles",
   "appUsers",
   "chat",
+  "notifications",
+  "approvals",
 ] as const;
 
 export type RbacModule = (typeof RBAC_MODULES)[number];
@@ -287,6 +293,125 @@ export const MODULE_PERMISSION_CATALOG: Record<RbacModule, ModuleCatalogEntry> =
       },
     ],
   },
+  tasks: {
+    title: "Tasks",
+    description: "Task boards, assignments, and delivery tracking.",
+    view: "View Tasks",
+    manage: "Manage Tasks",
+    viewPermission: "tasks:view",
+    managePermission: "tasks:manage",
+    actions: [
+      {
+        key: "create",
+        label: "Create",
+        description: "Create and assign tasks.",
+        permission: "tasks:create",
+      },
+      {
+        key: "edit",
+        label: "Edit",
+        description: "Edit task details and assignments.",
+        permission: "tasks:edit",
+      },
+      {
+        key: "delete",
+        label: "Delete",
+        description: "Delete tasks from the workspace.",
+        permission: "tasks:delete",
+      },
+    ],
+  },
+  dailyUpdates: {
+    title: "Daily Updates",
+    description: "Daily standup submissions and manager review.",
+    view: "View Daily Updates",
+    manage: "Manage Daily Updates",
+    viewPermission: "dailyUpdates:view",
+    managePermission: "dailyUpdates:manage",
+    actions: [
+      {
+        key: "submit",
+        label: "Submit",
+        description: "Submit personal daily updates.",
+        permission: "dailyUpdates:submit",
+      },
+      {
+        key: "review",
+        label: "Review",
+        description: "Review team daily updates.",
+        permission: "dailyUpdates:review",
+      },
+    ],
+  },
+  progress: {
+    title: "Progress",
+    description: "Executive analytics and delivery dashboards.",
+    view: "View Progress",
+    manage: "Manage Progress",
+    viewPermission: "progress:view",
+    managePermission: "progress:manage",
+    actions: [
+      {
+        key: "analytics",
+        label: "Analytics",
+        description: "Open progress analytics widgets.",
+        permission: "progress:analytics",
+      },
+    ],
+  },
+  peopleDirectory: {
+    title: "People Directory",
+    description: "Company-wide employee directory and org chart.",
+    view: "View People Directory",
+    manage: "Manage People Directory",
+    viewPermission: "peopleDirectory:view",
+    managePermission: "peopleDirectory:manage",
+    actions: [
+      {
+        key: "create",
+        label: "Create",
+        description: "Add people records to the directory.",
+        permission: "peopleDirectory:create",
+      },
+      {
+        key: "edit",
+        label: "Edit",
+        description: "Edit directory profiles.",
+        permission: "peopleDirectory:edit",
+      },
+      {
+        key: "delete",
+        label: "Delete",
+        description: "Remove people from the directory.",
+        permission: "peopleDirectory:delete",
+      },
+    ],
+  },
+  notifications: {
+    title: "Notifications",
+    description: "In-app notification inbox and delivery settings.",
+    view: "View Notifications",
+    manage: "Manage Notifications",
+    viewPermission: "notifications:view",
+    managePermission: "notifications:manage",
+    actions: [],
+  },
+  approvals: {
+    title: "Approvals",
+    description: "Workflow approvals for projects and organization changes.",
+    view: "View Approvals",
+    manage: "Manage Approvals",
+    viewPermission: "approvals:view",
+    managePermission: "approvals:manage",
+    actions: [
+      {
+        key: "approve",
+        label: "Approve",
+        description: "Approve pending workflow items.",
+        permission: "approvals:approve",
+      },
+    ],
+  },
 };
 
 export const MODULE_LABELS: Record<
@@ -308,12 +433,17 @@ export const MODULE_LABELS: Record<
 export const NAV_PATH_MODULES: Record<string, RbacModule> = {
   "/dashboard": "dashboard",
   "/projects": "projects",
+  "/projects/tasks": "projects",
+  "/projects/daily-updates": "projects",
+  "/organization/team-members": "teamMembers",
+  "/organization/roles": "roles",
   "/team-members": "teamMembers",
   "/seating": "seating",
   "/gallery": "gallery",
   "/roles": "roles",
   "/app-users": "appUsers",
   "/chat": "chat",
+  "/notifications": "notifications",
 };
 
 export function getModuleActionConfigs(module: RbacModule): readonly ModuleActionConfig[] {
@@ -563,6 +693,50 @@ export function resolveLegacyAccess(
   ) {
     permissions.add("appUsers:read");
     permissions.add("appUsers:manage");
+  }
+
+  if (modules.peopleDirectory.view) {
+    permissions.add("employees:read");
+  }
+  if (
+    modules.peopleDirectory.manage ||
+    hasModulePermissionAction("peopleDirectory", modules.peopleDirectory, "create") ||
+    hasModulePermissionAction("peopleDirectory", modules.peopleDirectory, "edit") ||
+    hasModulePermissionAction("peopleDirectory", modules.peopleDirectory, "delete")
+  ) {
+    permissions.add("employees:read");
+    permissions.add("employees:read_all");
+    permissions.add("employees:write");
+  }
+
+  if (modules.tasks.view) permissions.add("tasks:view");
+  if (modules.tasks.manage) {
+    permissions.add("tasks:view");
+    permissions.add("tasks:manage");
+  }
+
+  if (modules.dailyUpdates.view) permissions.add("dailyUpdates:view");
+  if (modules.dailyUpdates.manage) {
+    permissions.add("dailyUpdates:view");
+    permissions.add("dailyUpdates:manage");
+  }
+
+  if (modules.progress.view) permissions.add("progress:view");
+  if (modules.progress.manage) {
+    permissions.add("progress:view");
+    permissions.add("progress:manage");
+  }
+
+  if (modules.notifications.view) permissions.add("notifications:view");
+  if (modules.notifications.manage) {
+    permissions.add("notifications:view");
+    permissions.add("notifications:manage");
+  }
+
+  if (modules.approvals.view) permissions.add("approvals:view");
+  if (modules.approvals.manage) {
+    permissions.add("approvals:view");
+    permissions.add("approvals:manage");
   }
 
   return {

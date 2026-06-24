@@ -324,6 +324,10 @@ function detailsToDirectory(
     resumeFileName: dto.resumeFileName,
     resumeMimeType: dto.resumeMimeType,
     resumeUploadedAt: dto.resumeUploadedAt,
+    department: dto.department,
+    designation: dto.designation,
+    status: dto.status as EmployeeDirectoryInfo["status"],
+    reportsToEmployeeId: dto.reportsToEmployeeId,
   };
 }
 
@@ -348,6 +352,10 @@ function mergeEmployeeDirectory(
     resumeFileName: fromCollection.resumeFileName ?? embedded.resumeFileName,
     resumeMimeType: fromCollection.resumeMimeType ?? embedded.resumeMimeType,
     resumeUploadedAt: fromCollection.resumeUploadedAt ?? embedded.resumeUploadedAt,
+    department: fromCollection.department ?? embedded.department,
+    designation: fromCollection.designation ?? embedded.designation,
+    status: (fromCollection.status ?? embedded.status) as EmployeeDirectoryInfo["status"],
+    reportsToEmployeeId: fromCollection.reportsToEmployeeId ?? embedded.reportsToEmployeeId,
   };
   const hasValue = Object.values(merged).some(
     (value) => typeof value === "string" && value.trim().length > 0,
@@ -475,6 +483,22 @@ async function upsertEmployeeDirectory(
       directory.joinedDate !== undefined
         ? directory.joinedDate || undefined
         : existing?.joinedDate,
+    department:
+      directory.department !== undefined
+        ? directory.department || undefined
+        : existing?.department,
+    designation:
+      directory.designation !== undefined
+        ? directory.designation || undefined
+        : existing?.designation,
+    status:
+      directory.status !== undefined ? directory.status || undefined : existing?.status,
+    reportsToEmployeeRef:
+      directory.reportsToEmployeeId !== undefined
+        ? directory.reportsToEmployeeId && ObjectId.isValid(directory.reportsToEmployeeId)
+          ? new ObjectId(directory.reportsToEmployeeId)
+          : undefined
+        : existing?.reportsToEmployeeRef,
     notes:
       directory.notes !== undefined ? directory.notes || undefined : existing?.notes,
     updatedAt: new Date(),
@@ -790,6 +814,7 @@ export async function createProject(
       ...input,
       clientName: input.clientName ?? "",
       projectManagerId: input.projectManagerId ?? "",
+      teamLeadId: input.teamLeadId ?? "",
       description: input.description ?? "",
       memberIds,
       slug,
@@ -823,6 +848,7 @@ export async function createProject(
     name: input.name,
     clientName: input.clientName ?? "",
     projectManagerId: input.projectManagerId ?? "",
+    teamLeadId: input.teamLeadId ?? "",
     teams: input.teams,
     assignedDate: input.assignedDate,
     lastDate: input.lastDate,
@@ -856,6 +882,7 @@ export async function updateProjectBySlug(
       | "name"
       | "clientName"
       | "projectManagerId"
+      | "teamLeadId"
       | "teams"
       | "assignedDate"
       | "lastDate"
@@ -916,6 +943,47 @@ export async function updateProjectBySlug(
   }
 
   return updated;
+}
+
+export async function getProjectById(id: string): Promise<Project | null> {
+  if (!ObjectId.isValid(id)) return null;
+  const db = await getDb();
+  if (!db) {
+    return memoryStore.projects.find((project) => project.id === id) ?? null;
+  }
+  await ensureMongoSeed(db);
+  const catalog = await listTeams();
+  const doc = await db.collection<ProjectDocument>(COLLECTIONS.projects).findOne({
+    _id: new ObjectId(id),
+  });
+  if (!doc) return null;
+  const dto = projectDocToDTO(doc);
+  const resolved = resolveProjectTeamsFromDoc(doc, catalog);
+  return { ...dto, teams: mergeProjectTeamNames(resolved, doc) };
+}
+
+export async function updateProjectById(
+  id: string,
+  patch: Partial<
+    Pick<
+      Project,
+      | "name"
+      | "clientName"
+      | "projectManagerId"
+      | "teamLeadId"
+      | "teams"
+      | "assignedDate"
+      | "lastDate"
+      | "status"
+      | "description"
+      | "memberIds"
+    >
+  >,
+  options?: { actor?: { id: string; name: string } },
+): Promise<Project | null> {
+  const project = await getProjectById(id);
+  if (!project) return null;
+  return updateProjectBySlug(project.slug, patch, options);
 }
 
 /**

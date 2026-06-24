@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, MessageCircle } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,80 @@ function ChatHeader({
 
 export function ChatWorkspace() {
   const chat = useChatSafe();
+  const searchParams = useSearchParams();
+  const withEmployeeId = searchParams.get("with")?.trim() ?? "";
+  const deepLinkHandledRef = React.useRef<string | null>(null);
+
+  const conversations = chat?.conversations ?? [];
+  const loadingConversations = chat?.loadingConversations ?? false;
+  const openConversation = chat?.setActiveConversationId;
+  const reloadConversations = chat?.refreshConversations;
+
+  const handleStartWithUser = React.useCallback(
+    async (userId: string) => {
+      if (!openConversation || !reloadConversations) return;
+
+      const res = await fetch("/api/chat/conversations/start", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: userId }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? "Could not start conversation");
+      }
+      const data = (await res.json()) as { conversation: ChatConversationSummary };
+      await reloadConversations();
+      openConversation(data.conversation.id);
+    },
+    [openConversation, reloadConversations],
+  );
+
+  React.useEffect(() => {
+    if (!chat || !openConversation) return;
+    if (!withEmployeeId || loadingConversations) return;
+    if (deepLinkHandledRef.current === withEmployeeId) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      const res = await fetch(`/api/chat/users/by-employee/${withEmployeeId}`, {
+        credentials: "include",
+      });
+      if (!res.ok || cancelled) return;
+
+      const data = (await res.json()) as { userId: string };
+      if (!data.userId || cancelled) return;
+
+      const existingByUser = conversations.find(
+        (conversation) => conversation.participant.id === data.userId,
+      );
+      if (existingByUser) {
+        deepLinkHandledRef.current = withEmployeeId;
+        openConversation(existingByUser.id);
+        return;
+      }
+
+      try {
+        await handleStartWithUser(data.userId);
+        if (!cancelled) deepLinkHandledRef.current = withEmployeeId;
+      } catch {
+        // Deep link failures are non-blocking; user can pick a chat manually.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    chat,
+    conversations,
+    handleStartWithUser,
+    loadingConversations,
+    openConversation,
+    withEmployeeId,
+  ]);
 
   if (!chat) {
     return (
@@ -81,36 +156,15 @@ export function ChatWorkspace() {
 
   const {
     connected,
-    conversations,
     activeConversationId,
     messages,
-    loadingConversations,
     loadingMessages,
-    setActiveConversationId,
     sendMessage,
     loadError,
-    refreshConversations,
     currentUserId,
+    setActiveConversationId,
+    refreshConversations,
   } = chat;
-
-  const handleStartWithUser = React.useCallback(
-    async (userId: string) => {
-      const res = await fetch("/api/chat/conversations/start", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetUserId: userId }),
-      });
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(err.error ?? "Could not start conversation");
-      }
-      const data = (await res.json()) as { conversation: ChatConversationSummary };
-      await refreshConversations();
-      setActiveConversationId(data.conversation.id);
-    },
-    [refreshConversations, setActiveConversationId],
-  );
 
   const active = conversations.find((c) => c.id === activeConversationId) ?? null;
 

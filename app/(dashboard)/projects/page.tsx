@@ -777,6 +777,11 @@ function ProjectLinkList({
                       style={{ width: `${Math.max(progress, progress > 0 ? 4 : 0)}%` }}
                     />
                   </div>
+                  {(project.totalTasks ?? 0) > 0 ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      {project.completedTasks ?? 0} of {project.totalTasks} tasks completed
+                    </p>
+                  ) : null}
                 </div>
               </Link>
 

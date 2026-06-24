@@ -41,8 +41,24 @@ const PAGE_META: Array<{
     title: "New project",
   },
   {
+    match: /^\/projects\/daily-updates$/,
+    title: "Daily Updates",
+  },
+  {
+    match: /^\/projects\/tasks$/,
+    title: "Tasks",
+  },
+  {
     match: /^\/projects\/.+$/,
     title: "Project details",
+  },
+  {
+    match: /^\/organization\/team-members$/,
+    title: "Team Members",
+  },
+  {
+    match: /^\/organization\/roles$/,
+    title: "Roles & Permissions",
   },
   {
     match: /^\/team-members$/,
@@ -55,6 +71,10 @@ const PAGE_META: Array<{
   {
     match: /^\/chat$/,
     title: "Messages",
+  },
+  {
+    match: /^\/notifications$/,
+    title: "Notifications",
   },
   {
     match: /^\/gallery$/,

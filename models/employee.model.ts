@@ -29,6 +29,10 @@ export type EmployeeDocument = {
     resumeFileName?: string;
     resumeMimeType?: string;
     resumeUploadedAt?: string;
+    department?: string;
+    designation?: string;
+    status?: string;
+    reportsToEmployeeId?: string;
   };
   createdAt?: Date;
   updatedAt?: Date;

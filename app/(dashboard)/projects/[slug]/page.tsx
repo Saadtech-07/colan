@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ProjectDetailEditor } from "@/components/features/project-detail-editor";
+import { EntityTasksPanel } from "@/components/features/tasks/entity-tasks-panel";
 import { ProjectStatusSelect } from "@/components/features/project-status-select";
 import { PageTitle } from "@/components/ui/page-typography";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
@@ -82,6 +83,17 @@ export default function ProjectDetailPage() {
     canManageProject(access.role, project.teams, access.team);
   const today = React.useMemo(() => new Date(), []);
 
+  const reloadProject = React.useCallback(async () => {
+    if (!slug) return;
+    try {
+      const res = await fetch(`/api/projects/${slug}`, { credentials: "include" });
+      if (!res.ok) return;
+      setProject((await res.json()) as ProjectDetail);
+    } catch {
+      // Keep current project snapshot if refresh fails.
+    }
+  }, [slug]);
+
   const onSaved = React.useCallback(
     (detail: ProjectDetail) => {
       setProject(detail);
@@ -95,6 +107,25 @@ export default function ProjectDetailPage() {
     setSaveSuccessOpen(false);
     router.push("/projects");
   }, [router]);
+
+  const handleTasksChange = React.useCallback(() => {
+    void reloadProject();
+  }, [reloadProject]);
+
+  const projectTasksPanel = React.useMemo(
+    () =>
+      project ? (
+        <EntityTasksPanel
+          variant="embedded"
+          projectId={project.id}
+          title="Project tasks"
+          description="Tasks created for this project workspace"
+          emptyMessage="No tasks for this project yet."
+          onTasksChange={handleTasksChange}
+        />
+      ) : null,
+    [handleTasksChange, project],
+  );
 
   return (
     <div className="space-y-6">
@@ -162,7 +193,9 @@ export default function ProjectDetailPage() {
             teamRoster={employees}
             canEdit={canEdit}
             lockedTeam={access?.role === "lead" ? user?.team : undefined}
+            embedTasksInOverview={access?.role === "employee"}
             onSaved={onSaved}
+            tasksPanel={projectTasksPanel}
           />
         </>
       )}
@@ -201,15 +234,19 @@ function ProjectWorkspaceHero({
                     {team.replace(" Team", "")}
                   </Badge>
                 ))}
-                <ProjectStatusSelect value={project.status} canEdit={false} />
-                <div
-                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${priority.toneClass}`}
-                >
-                  {priority.label}
-                </div>
-                <div className="inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                  {progress}% progress
-                </div>
+                {canEdit ? (
+                  <>
+                    <ProjectStatusSelect value={project.status} canEdit={false} />
+                    <div
+                      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${priority.toneClass}`}
+                    >
+                      {priority.label}
+                    </div>
+                    <div className="inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                      {progress}% progress
+                    </div>
+                  </>
+                ) : null}
               </div>
             </div>
             <p className="max-w-3xl text-sm text-muted-foreground">

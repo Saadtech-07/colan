@@ -41,7 +41,9 @@ type Props = {
   teamRoster: Employee[];
   canEdit: boolean;
   lockedTeam?: TeamName;
+  embedTasksInOverview?: boolean;
   onSaved: (detail: ProjectDetail) => void;
+  tasksPanel?: React.ReactNode;
 };
 
 export function ProjectDetailEditor({
@@ -49,7 +51,9 @@ export function ProjectDetailEditor({
   teamRoster,
   canEdit,
   lockedTeam,
+  embedTasksInOverview = false,
   onSaved,
+  tasksPanel,
 }: Props) {
   const router = useRouter();
   const { teamNames } = useAppState();
@@ -218,6 +222,10 @@ export function ProjectDetailEditor({
                 value={`${formatProjectDate(project.assignedDate)} to ${formatProjectDate(project.lastDate)}`}
               />
             </div>
+
+            {embedTasksInOverview && tasksPanel ? (
+              <div className="border-t border-border/60 pt-6">{tasksPanel}</div>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -275,6 +283,8 @@ export function ProjectDetailEditor({
               )}
             </CardContent>
           </Card>
+
+          {!embedTasksInOverview ? tasksPanel : null}
         </div>
       </section>
     );
@@ -393,13 +403,16 @@ export function ProjectDetailEditor({
         </div>
 
         <div className="mt-10 border-t border-border/40 pt-8">
-          <AssignTeamMembersPanel
-            rosterForTeam={rosterForTeam}
-            assignedTeams={assignedTeams}
-            memberIds={memberIds}
-            selectedMembersCount={selectedMembers.length}
-            onToggleMember={toggleMember}
-          />
+          <div className="grid items-start gap-x-12 gap-y-8 xl:grid-cols-2">
+            <AssignTeamMembersPanel
+              rosterForTeam={rosterForTeam}
+              assignedTeams={assignedTeams}
+              memberIds={memberIds}
+              selectedMembersCount={selectedMembers.length}
+              onToggleMember={toggleMember}
+            />
+            {tasksPanel ? tasksPanel : null}
+          </div>
         </div>
       </div>
 
@@ -476,7 +489,7 @@ function AssignTeamMembersPanel({
     });
 
   return (
-    <div id="project-members" className="w-full max-w-full space-y-5 lg:w-1/2 lg:max-w-xl">
+    <div id="project-members" className="w-full min-w-0 space-y-5">
       <Label className={projectFormLabelClassName}>Assign team members</Label>
 
       <div className="space-y-5">

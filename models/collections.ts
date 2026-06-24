@@ -17,6 +17,10 @@ export const COLLECTIONS = {
   conversations: "conversations",
   messages: "messages",
   notifications: "notifications",
+  tasks: "tasks",
+  taskComments: "task_comments",
+  taskActivity: "task_activity",
+  dailyUpdates: "daily_updates",
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

@@ -19,6 +19,10 @@ const COLLECTION_LABELS = {
   [COLLECTIONS.conversations]: "Chat conversations",
   [COLLECTIONS.messages]: "Chat messages",
   [COLLECTIONS.notifications]: "Notifications",
+  [COLLECTIONS.tasks]: "Tasks",
+  [COLLECTIONS.taskComments]: "Task comments",
+  [COLLECTIONS.taskActivity]: "Task activity",
+  [COLLECTIONS.dailyUpdates]: "Daily updates",
 } satisfies Record<CollectionName, string>;
 
 /**

@@ -13,7 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PermissionGrid } from "@/components/features/permission-grid";
+import { EnterprisePermissionGrid } from "@/components/features/organization/enterprise-permission-grid";
 import {
   emptyModulePermissions,
   getModuleActionConfigs,
@@ -319,7 +319,7 @@ export function ManageRoleDialog({ open, onOpenChange, editing, onSaved }: Props
                 )}
               </section>
 
-              <PermissionGrid
+              <EnterprisePermissionGrid
                 key={editing?.id ?? "new-role"}
                 value={permissions}
                 onChange={setPermissions}

@@ -5,8 +5,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Briefcase,
+  Building2,
+  CalendarClock,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
+  Bell,
   ImageIcon,
   LayoutDashboard,
   LayoutGrid,
@@ -14,7 +19,6 @@ import {
   Shield,
   MessageCircle,
   UserCog,
-  Users,
   X,
 } from "lucide-react";
 import { canAccessChat } from "@/lib/chat-access";
@@ -29,14 +33,31 @@ import colanlogo from "@/app/image/colanlogo2.png";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/projects", label: "Team Projects", icon: Briefcase },
-  { href: "/team-members", label: "Team Members", icon: Users },
+  { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/chat", label: "Messages", icon: MessageCircle },
   { href: "/gallery", label: "Gallery", icon: ImageIcon },
   { href: "/seating", label: "Seating Arrangement", icon: LayoutGrid },
-  { href: "/roles", label: "Roles", icon: Shield },
   { href: "/app-users", label: "App Users", icon: UserCog },
 ] as const;
+
+const organizationNav = {
+  label: "Organization",
+  icon: Building2,
+  children: [
+    { href: "/organization/team-members", label: "Team Members", icon: UserCog },
+    { href: "/organization/roles", label: "Roles & Permissions", icon: Shield },
+  ],
+} as const;
+
+const projectsNav = {
+  label: "Projects",
+  icon: Briefcase,
+  children: [
+    { href: "/projects", label: "Team Projects", icon: Briefcase },
+    { href: "/projects/tasks", label: "Tasks", icon: ClipboardList },
+    { href: "/projects/daily-updates", label: "Daily Updates", icon: CalendarClock },
+  ],
+} as const;
 
 const SIDEBAR_WIDTH_EXPANDED = "w-[14.5rem]";
 const SIDEBAR_WIDTH_COLLAPSED = "w-16";
@@ -101,6 +122,109 @@ function SidebarNavItem({
   );
 }
 
+function isTeamProjectsRoute(pathname: string) {
+  if (pathname === "/projects") return true;
+  if (!pathname.startsWith("/projects/")) return false;
+  const segment = pathname.slice("/projects/".length).split("/")[0];
+  const reserved = new Set(["tasks", "daily-updates", "teams", "new"]);
+  return !reserved.has(segment);
+}
+
+function isNavItemActive(pathname: string, href: string) {
+  if (href === "/projects") return isTeamProjectsRoute(pathname);
+  if (href === "/organization/team-members") {
+    return (
+      pathname === "/organization/team-members" ||
+      pathname.startsWith("/organization/team-members/") ||
+      pathname === "/team-members" ||
+      pathname.startsWith("/team-members/")
+    );
+  }
+  if (href === "/organization/roles") {
+    return pathname === "/organization/roles" || pathname.startsWith("/organization/roles/") || pathname === "/roles";
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function SidebarNavGroup({
+  label,
+  icon: Icon,
+  children,
+  pathname,
+  collapsed,
+  onNavigate,
+  canAccess,
+}: {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: readonly { href: string; label: string; icon: React.ComponentType<{ className?: string }> }[];
+  pathname: string;
+  collapsed: boolean;
+  onNavigate: () => void;
+  canAccess: (href: string) => boolean;
+}) {
+  const visibleChildren = children.filter((item) => canAccess(item.href));
+  if (visibleChildren.length === 0) return null;
+
+  const groupActive = visibleChildren.some((item) => isNavItemActive(pathname, item.href));
+  const [open, setOpen] = React.useState(groupActive);
+
+  React.useEffect(() => {
+    if (groupActive) setOpen(true);
+  }, [groupActive]);
+
+  if (collapsed) {
+    const activeChild =
+      visibleChildren.find((item) => isNavItemActive(pathname, item.href)) ?? visibleChildren[0];
+    return (
+      <SidebarNavItem
+        href={activeChild.href}
+        label={label}
+        icon={Icon}
+        active={groupActive}
+        collapsed={collapsed}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className={cn(
+          "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-sm font-medium transition-all duration-motion ease-motion",
+          groupActive
+            ? "bg-sidebar-accent/70 text-sidebar-accent-foreground"
+            : "text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+        )}
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        <span className="flex-1 truncate text-left">{label}</span>
+        <ChevronDown
+          className={cn("h-4 w-4 shrink-0 transition-transform", open ? "rotate-180" : "rotate-0")}
+        />
+      </button>
+      {open ? (
+        <div className="ml-3 space-y-1 border-l border-sidebar-border/70 pl-2">
+          {visibleChildren.map((item) => (
+              <SidebarNavItem
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                icon={item.icon}
+                active={isNavItemActive(pathname, item.href)}
+                collapsed={false}
+                onNavigate={onNavigate}
+              />
+            ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
   const { collapsed, setCollapsed, mobileOpen, setMobileOpen } = useSidebar();
@@ -117,6 +241,17 @@ export function AppSidebar() {
     if (item.href === "/chat") return canAccessChat(access.role);
     return canAccessNav(access.role, item.href);
   });
+
+  const canAccessProjectsModule = access ? canAccessNav(access.role, "/projects") : false;
+  const canAccessOrganizationModule =
+    access &&
+    (canAccessNav(access.role, "/organization/team-members") ||
+      canAccessNav(access.role, "/organization/roles"));
+
+  const canAccessHref = React.useCallback(
+    (href: string) => (access ? canAccessNav(access.role, href) : false),
+    [access],
+  );
 
   const isDesktopCollapsed = collapsed;
   const showExpandedChrome = !isDesktopCollapsed || mobileOpen;
@@ -195,7 +330,47 @@ export function AppSidebar() {
           )}
         >
           <nav className={cn("flex flex-col", showExpandedChrome ? "gap-1.5" : "gap-2")}>
-            {visibleNav.map((item) => {
+            {visibleNav.slice(0, 1).map((item) => {
+              const active =
+                pathname === item.href ||
+                (item.href !== "/dashboard" &&
+                  (pathname.startsWith(item.href + "/") ||
+                    pathname.startsWith(item.href)));
+              return (
+                <SidebarNavItem
+                  key={item.href}
+                  href={item.href}
+                  label={item.label}
+                  icon={item.icon}
+                  active={active}
+                  collapsed={!showExpandedChrome}
+                  onNavigate={() => setMobileOpen(false)}
+                />
+              );
+            })}
+            {canAccessProjectsModule ? (
+              <SidebarNavGroup
+                label={projectsNav.label}
+                icon={projectsNav.icon}
+                children={projectsNav.children}
+                pathname={pathname}
+                collapsed={!showExpandedChrome}
+                onNavigate={() => setMobileOpen(false)}
+                canAccess={canAccessHref}
+              />
+            ) : null}
+            {canAccessOrganizationModule ? (
+              <SidebarNavGroup
+                label={organizationNav.label}
+                icon={organizationNav.icon}
+                children={organizationNav.children}
+                pathname={pathname}
+                collapsed={!showExpandedChrome}
+                onNavigate={() => setMobileOpen(false)}
+                canAccess={canAccessHref}
+              />
+            ) : null}
+            {visibleNav.slice(1).map((item) => {
               const active =
                 pathname === item.href ||
                 (item.href !== "/dashboard" &&

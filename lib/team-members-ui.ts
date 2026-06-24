@@ -190,3 +190,50 @@ export function formatCsvValue(value: string | number | undefined) {
   return text;
 }
 
+export function employeePersonStatus(
+  employee: Pick<Employee, "directory">,
+): "Active" | "On Leave" | "Inactive" {
+  const status = employee.directory?.status;
+  if (status === "On Leave" || status === "Inactive") return status;
+  return "Active";
+}
+
+export function employeeMatchesProjectFilter(
+  employee: Pick<Employee, "id">,
+  projectId: string,
+  projects: Project[],
+) {
+  if (!projectId || projectId === "all") return true;
+  const project = projects.find((row) => row.id === projectId);
+  if (!project) return false;
+  return project.memberIds.includes(employee.id);
+}
+
+export function employeeMatchesStatusFilter(
+  employee: Pick<Employee, "directory">,
+  statusFilter: string,
+) {
+  if (!statusFilter || statusFilter === "all") return true;
+  return employeePersonStatus(employee) === statusFilter;
+}
+
+export type EmployeeTaskStats = {
+  total: number;
+  completed: number;
+  progressPercentage: number;
+};
+
+export function employeeTaskStats(
+  employeeId: string,
+  tasks: Array<{ assigneeId?: string; status: string }>,
+): EmployeeTaskStats {
+  const assigned = tasks.filter((task) => task.assigneeId === employeeId);
+  const completed = assigned.filter((task) => task.status === "Done").length;
+  const total = assigned.length;
+  return {
+    total,
+    completed,
+    progressPercentage: total > 0 ? Math.round((completed / total) * 100) : 0,
+  };
+}
+
