@@ -11,6 +11,7 @@ import {
   sessionAccessAsync,
 } from "@/lib/session-access";
 import { projectUpdateSchema } from "@/lib/validations";
+import { resolveAssignmentActorFromEmail } from "@/lib/notification-api";
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -71,7 +72,8 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ error: teamsMissing }, { status: 400 });
   }
 
-  const updated = await updateProjectBySlug(slug, parsed.data);
+  const actor = await resolveAssignmentActorFromEmail(session?.user?.email);
+  const updated = await updateProjectBySlug(slug, parsed.data, { actor });
   if (!updated) {
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }

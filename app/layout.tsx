@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import { AuthSessionProvider } from "@/components/providers/auth-session-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
@@ -24,6 +24,12 @@ export const metadata: Metadata = {
   title: "Colan Infotech — Employee & Project Hub",
   description:
     "Internal dashboard for teams, projects, seating, and gallery at Colan.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

@@ -18,6 +18,7 @@ const COLLECTION_LABELS = {
   [COLLECTIONS.passwordResetTokens]: "Password reset tokens",
   [COLLECTIONS.conversations]: "Chat conversations",
   [COLLECTIONS.messages]: "Chat messages",
+  [COLLECTIONS.notifications]: "Notifications",
 } satisfies Record<CollectionName, string>;
 
 /**

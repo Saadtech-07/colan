@@ -510,7 +510,7 @@ export function ProfileSettingsContent({
                   >
                     Reset
                   </Button>
-                  <Button type="submit" disabled={saving} className="min-w-[180px] rounded-xl">
+                  <Button type="submit" disabled={saving} className="w-full min-w-0 rounded-xl sm:w-auto sm:min-w-[180px]">
                     {saving ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin" />

@@ -21,7 +21,7 @@ function DashboardShellInner({ children }: { children: ReactNode }) {
       <AppSidebar />
       <div className="flex min-h-screen flex-col">
         <AppHeader />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 p-4 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] sm:p-6 sm:pb-6 lg:p-8 lg:pb-8">
           <PageTransition>{children}</PageTransition>
         </main>
       </div>

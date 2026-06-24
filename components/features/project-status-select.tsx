@@ -66,7 +66,7 @@ export function ProjectStatusSelect({
     >
       <SelectTrigger
         className={cn(
-          "h-9 w-auto min-w-[142px] rounded-full border px-3 text-xs font-semibold shadow-sm transition-all duration-200 hover:shadow-md [&>svg]:opacity-70",
+          "h-9 w-full min-w-0 rounded-full border px-3 text-xs font-semibold shadow-sm transition-all duration-200 hover:shadow-md sm:w-auto sm:min-w-[142px] [&>svg]:opacity-70",
           statusChipClasses(value),
           className,
         )}

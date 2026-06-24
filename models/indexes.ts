@@ -12,6 +12,7 @@ import type { ProjectDocument } from "./project.model";
 import type { GalleryImageDocument } from "./gallery-image.model";
 import { ensureChatConversationIndexes } from "@/lib/chat-indexes";
 import type { MessageDocument } from "./message.model";
+import type { NotificationDocument } from "./notification.model";
 
 async function removeDuplicateEmployeeIds(db: Db): Promise<void> {
   const collection = db.collection<EmployeeDocument>(COLLECTIONS.employees);
@@ -166,4 +167,11 @@ async function ensureColanModelIndexesWork(db: Db): Promise<void> {
     .collection<MessageDocument>(COLLECTIONS.messages)
     .createIndex({ conversationId: 1, createdAt: 1 });
   await db.collection<MessageDocument>(COLLECTIONS.messages).createIndex({ receiverId: 1, isRead: 1 });
+
+  await db
+    .collection<NotificationDocument>(COLLECTIONS.notifications)
+    .createIndex({ recipientUserId: 1, createdAt: -1 });
+  await db
+    .collection<NotificationDocument>(COLLECTIONS.notifications)
+    .createIndex({ recipientUserId: 1, readAt: 1 });
 }

@@ -12,6 +12,7 @@ import {
 import { projectBelongsToTeam } from "@/lib/project-teams";
 import { sessionAccessAsync } from "@/lib/session-access";
 import { employeeProjectsUpdateSchema } from "@/lib/validations";
+import { resolveAssignmentActorFromEmail } from "@/lib/notification-api";
 import type { Project } from "@/types";
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -81,11 +82,13 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     canManageProject(access.role, project.teams, access.team);
 
   try {
+    const actor = await resolveAssignmentActorFromEmail(session?.user?.email);
     const projects = await setEmployeeProjects(
       employeeId,
       parsed.data.projectIds,
       canModify,
       employee.team,
+      { actor },
     );
     const assigned = getProjectsForEmployee(employeeId, projects).filter((p) =>
       projectBelongsToTeam(p, employee.team),

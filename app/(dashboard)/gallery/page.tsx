@@ -562,7 +562,7 @@ export default function GalleryPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <SectionTitle as="h2" className="font-semibold text-muted-foreground">
           Company moments
         </SectionTitle>
@@ -570,7 +570,7 @@ export default function GalleryPage() {
         {canWriteGallery ? (
           <Dialog open={open} onOpenChange={addDialogOpenChange}>
             <DialogTrigger asChild>
-              <Button className="h-10 shrink-0 rounded-lg px-4 shadow-sm">
+              <Button className="h-10 w-full shrink-0 rounded-lg px-4 shadow-sm sm:w-auto">
                 <ImagePlus className="h-4 w-4" />
                 Add image
               </Button>

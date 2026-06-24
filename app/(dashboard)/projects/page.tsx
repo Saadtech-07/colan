@@ -780,7 +780,7 @@ function ProjectLinkList({
                 </div>
               </Link>
 
-              <div className="mt-auto flex items-center justify-between gap-3 border-t border-border/40 px-4 py-3">
+              <div className="mt-auto flex flex-col gap-2 border-t border-border/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                 <ProjectStatusSelect
                   value={project.status}
                   canEdit={canEditStatus}

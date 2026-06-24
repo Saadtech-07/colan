@@ -114,6 +114,7 @@ type Props = {
   activeConversationId: string | null;
   onSelectConversation: (id: string) => void;
   onStartWithUser: (userId: string) => Promise<void>;
+  className?: string;
 };
 
 export function AdminChatSidebar({
@@ -122,6 +123,7 @@ export function AdminChatSidebar({
   activeConversationId,
   onSelectConversation,
   onStartWithUser,
+  className,
 }: Props) {
   const [query, setQuery] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<ChatSearchUser[]>([]);
@@ -179,7 +181,12 @@ export function AdminChatSidebar({
   };
 
   return (
-    <aside className="flex w-full max-w-sm flex-col border-r border-border/60 bg-muted/10 md:w-80">
+    <aside
+      className={cn(
+        "flex w-full max-w-none flex-col border-r border-border/60 bg-muted/10 md:max-w-sm md:w-80",
+        className,
+      )}
+    >
       <div className="space-y-2 border-b border-border/60 px-3 py-3">
         <div className="flex items-center justify-between gap-2 px-1">
           <p className="text-sm font-semibold text-foreground">Chats</p>

@@ -8,6 +8,7 @@ import {
   sessionAccessAsync,
 } from "@/lib/session-access";
 import { projectCreateSchema } from "@/lib/validations";
+import { resolveAssignmentActorFromEmail } from "@/lib/notification-api";
 
 export async function GET() {
   const session = await auth();
@@ -49,10 +50,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: teamsMissing }, { status: 400 });
   }
   try {
-    const created = await createProject({
-      ...parsed.data,
-      memberIds: parsed.data.memberIds ?? [],
-    });
+    const actor = await resolveAssignmentActorFromEmail(session?.user?.email);
+    const created = await createProject(
+      {
+        ...parsed.data,
+        memberIds: parsed.data.memberIds ?? [],
+      },
+      { actor },
+    );
     return NextResponse.json(created, { status: 201 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to create project";

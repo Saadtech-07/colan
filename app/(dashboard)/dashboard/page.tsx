@@ -800,7 +800,7 @@ function ProjectAnalyticsPanel({ data, total }: { data: StatusDatum[]; total: nu
 
   return (
     <div className="space-y-5 p-6">
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3">
         <div className="rounded-xl border border-border/50 bg-muted/15 px-3 py-2.5">
           <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Total</p>
           <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">{total}</p>
@@ -877,7 +877,7 @@ function ProjectAnalyticsPanel({ data, total }: { data: StatusDatum[]; total: nu
                 </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-4 gap-1 sm:gap-2">
+              <div className="mt-3 grid grid-cols-2 gap-1 sm:grid-cols-4 sm:gap-2">
                 {data.map((entry) => {
                   const Icon = statusIcon(entry.name);
                   const share = activeTotal === 0 ? 0 : Math.round((entry.value / activeTotal) * 100);
@@ -1052,7 +1052,7 @@ function ActivityFeedPanel({ items, today }: { items: ActivityItem[]; today: Dat
             />
           </div>
         ) : (
-          <ScrollArea className="h-[360px]">
+          <ScrollArea className="h-[min(360px,55vh)]">
             <div className="px-4 py-5 sm:px-5">
               <div className="divide-y divide-border/40">
                 {items.map((item, index) => {
@@ -1145,7 +1145,7 @@ function DeadlinesPanel({ items, today }: { items: DeadlineItem[]; today: Date }
             />
           </div>
         ) : (
-          <ScrollArea className="h-[360px]">
+          <ScrollArea className="h-[min(360px,55vh)]">
             <div className="space-y-3 p-4 sm:p-5">
               {items.map((item, index) => {
                 const dateParts = deadlineDateParts(item.project.lastDate);
@@ -1332,7 +1332,7 @@ function TeamSpotlightCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col p-0">
-        <ScrollArea className="h-[360px]">
+        <ScrollArea className="h-[min(360px,55vh)]">
           <div className="space-y-6 p-6">
             <div className="grid gap-3 sm:grid-cols-3">
               <SpotlightMetric title="Active work" value={String(activeProjects)} />

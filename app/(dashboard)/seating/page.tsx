@@ -436,13 +436,13 @@ export default function SeatingPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <SectionTitle as="h2" className="font-semibold text-muted-foreground">
           {floorSectionTitle}
         </SectionTitle>
 
         {canAssign && (
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {promptLayoutActive && (
               <Button
                 type="button"

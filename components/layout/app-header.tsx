@@ -22,6 +22,7 @@ import { resolveWorkspaceRoleLabelForChrome } from "@/lib/workspace-label";
 import { cn } from "@/lib/utils";
 import { useAppState } from "@/providers/app-state";
 import { PageTitle } from "@/components/ui/page-typography";
+import { NotificationBell } from "@/components/layout/notification-bell";
 
 const PAGE_META: Array<{
   match: RegExp;
@@ -124,7 +125,7 @@ export function AppHeader() {
   const showPageMeta = isMobileViewport ? !mobileOpen : true;
 
   return (
-    <header className="sticky top-0 z-20 flex h-[4.25rem] items-center justify-between border-b border-border/80 bg-background/95 px-4 backdrop-blur transition-colors duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] supports-[backdrop-filter]:bg-background/80 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-20 flex h-14 min-h-14 items-center justify-between gap-2 border-b border-border/80 bg-background/95 px-3 backdrop-blur transition-colors duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] supports-[backdrop-filter]:bg-background/80 sm:h-[4.25rem] sm:gap-3 sm:px-6 lg:px-8">
       <div
         className={cn(
           "min-w-0 transition-all duration-motion ease-motion",
@@ -144,13 +145,14 @@ export function AppHeader() {
           </PageTitle>
         </div>
       </div>
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3">
+        <NotificationBell />
         <ThemeToggle className="text-muted-foreground hover:text-foreground" />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
-              className="h-10 gap-2 rounded-full border-border/80 pl-1 pr-3 hover:bg-accent/80"
+              className="h-9 gap-2 rounded-full border-border/80 pl-1 pr-2 hover:bg-accent/80 sm:h-10 sm:pr-3"
             >
               <Avatar className="h-8 w-8">
                 <AvatarImage

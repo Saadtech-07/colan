@@ -778,6 +778,7 @@ export async function getProjectDetailBySlug(
 
 export async function createProject(
   input: Omit<Project, "id" | "slug"> & { slug?: string },
+  options?: { actor?: { id: string; name: string } },
 ): Promise<Project> {
   const memberIds = input.memberIds ?? [];
   const db = await getDb();
@@ -795,6 +796,15 @@ export async function createProject(
       id: `p-${Date.now()}`,
     };
     memoryStore.projects.push(row);
+    if (memberIds.length > 0) {
+      const { notifyNewProjectMembers } = await import("@/lib/notifications-data");
+      await notifyNewProjectMembers({
+        project: row,
+        previousMemberIds: [],
+        nextMemberIds: memberIds,
+        actor: options?.actor,
+      });
+    }
     return row;
   }
   await ensureMongoSeed(db);
@@ -825,7 +835,17 @@ export async function createProject(
   const catalog = await listTeams();
   const dto = projectDocToDTO(doc);
   const resolved = resolveProjectTeamsFromDoc(doc, catalog);
-  return { ...dto, teams: mergeProjectTeamNames(resolved, doc) };
+  const created = { ...dto, teams: mergeProjectTeamNames(resolved, doc) };
+  if (memberIds.length > 0) {
+    const { notifyNewProjectMembers } = await import("@/lib/notifications-data");
+    await notifyNewProjectMembers({
+      project: created,
+      previousMemberIds: [],
+      nextMemberIds: memberIds,
+      actor: options?.actor,
+    });
+  }
+  return created;
 }
 
 export async function updateProjectBySlug(
@@ -844,6 +864,7 @@ export async function updateProjectBySlug(
       | "memberIds"
     >
   >,
+  options?: { actor?: { id: string; name: string } },
 ): Promise<Project | null> {
   const db = await getDb();
   if (!db) {
@@ -856,20 +877,45 @@ export async function updateProjectBySlug(
       memberIds: patch.memberIds ?? current.memberIds,
     };
     memoryStore.projects[idx] = next;
+    if (patch.memberIds !== undefined) {
+      const { notifyNewProjectMembers } = await import("@/lib/notifications-data");
+      await notifyNewProjectMembers({
+        project: next,
+        previousMemberIds: current.memberIds,
+        nextMemberIds: patch.memberIds,
+        actor: options?.actor,
+      });
+    }
     return next;
   }
   await ensureMongoSeed(db);
   const col = db.collection<ProjectDocument>(COLLECTIONS.projects);
+  const existing = await col.findOne({ slug });
+  if (!existing) return null;
+  const catalog = await listTeams();
+  const current = projectDocToDTO(existing);
+
   const result = await col.findOneAndUpdate(
     { slug },
     { $set: { ...patch, updatedAt: new Date() } },
     { returnDocument: "after" },
   );
   if (!result) return null;
-  const catalog = await listTeams();
   const dto = projectDocToDTO(result);
   const resolved = resolveProjectTeamsFromDoc(result, catalog);
-  return { ...dto, teams: mergeProjectTeamNames(resolved, result) };
+  const updated = { ...dto, teams: mergeProjectTeamNames(resolved, result) };
+
+  if (patch.memberIds !== undefined) {
+    const { notifyNewProjectMembers } = await import("@/lib/notifications-data");
+    await notifyNewProjectMembers({
+      project: updated,
+      previousMemberIds: current.memberIds,
+      nextMemberIds: patch.memberIds,
+      actor: options?.actor,
+    });
+  }
+
+  return updated;
 }
 
 /**
@@ -881,6 +927,7 @@ export async function setEmployeeProjects(
   projectIds: string[],
   canModify: (project: Project) => boolean,
   employeeTeam: Employee["team"],
+  options?: { actor?: { id: string; name: string } },
 ): Promise<Project[]> {
   const normalizedId = String(employeeId).trim();
   if (!normalizedId) throw new Error("Invalid employee id");
@@ -911,7 +958,7 @@ export async function setEmployeeProjects(
       ? [...project.memberIds, normalizedId]
       : project.memberIds.filter((id) => id !== normalizedId);
 
-    await updateProjectBySlug(project.slug, { memberIds });
+    await updateProjectBySlug(project.slug, { memberIds }, { actor: options?.actor });
   }
 
   return listProjects();

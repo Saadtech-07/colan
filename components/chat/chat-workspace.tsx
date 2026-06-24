@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { MessageCircle } from "lucide-react";
+import { ArrowLeft, MessageCircle } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { profileInitials } from "@/lib/profile-image";
@@ -17,15 +17,29 @@ function ChatHeader({
   imageUrl,
   subtitle,
   isOnline,
+  onBack,
 }: {
   name: string;
   imageUrl: string;
   subtitle: string;
   isOnline: boolean;
+  onBack?: () => void;
 }) {
   return (
-    <div className="flex items-center gap-3 border-b border-border/60 bg-background/95 px-4 py-3">
-      <Avatar className="h-10 w-10">
+    <div className="flex items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-3 sm:gap-3 sm:px-4">
+      {onBack ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-9 w-9 shrink-0 rounded-full md:hidden"
+          onClick={onBack}
+          aria-label="Back to conversations"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+      ) : null}
+      <Avatar className="h-10 w-10 shrink-0">
         <AvatarImage src={imageUrl} alt={name} />
         <AvatarFallback>{profileInitials(name)}</AvatarFallback>
       </Avatar>
@@ -35,7 +49,7 @@ function ChatHeader({
       </div>
       <span
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium",
+          "hidden shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium sm:inline-flex",
           isOnline
             ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
             : "bg-muted text-muted-foreground",
@@ -129,9 +143,15 @@ export function ChatWorkspace() {
         activeConversationId={activeConversationId}
         onSelectConversation={setActiveConversationId}
         onStartWithUser={handleStartWithUser}
+        className={cn(activeConversationId && "hidden md:flex")}
       />
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section
+        className={cn(
+          "min-w-0 flex-1 flex-col",
+          activeConversationId ? "flex" : "hidden md:flex",
+        )}
+      >
         {active && currentUserId ? (
           <>
             <ChatHeader
@@ -139,6 +159,7 @@ export function ChatWorkspace() {
               imageUrl={active.participant.imageUrl}
               subtitle={`${active.participant.roleLabel}${active.participant.team ? ` · ${active.participant.team}` : ""}`}
               isOnline={active.participant.isOnline}
+              onBack={() => setActiveConversationId(null)}
             />
             <ChatMessageList
               messages={messages}

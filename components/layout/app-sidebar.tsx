@@ -270,7 +270,7 @@ export function AppSidebar() {
         type="button"
         variant="secondary"
         size="icon"
-        className="fixed bottom-4 left-4 z-50 h-11 w-11 rounded-full shadow-lg lg:hidden"
+        className="fixed bottom-[max(1rem,env(safe-area-inset-bottom,0px))] left-4 z-50 h-11 w-11 rounded-full shadow-lg lg:hidden"
         onClick={() => setMobileOpen((o) => !o)}
         aria-label={mobileOpen ? "Close menu" : "Open menu"}
       >

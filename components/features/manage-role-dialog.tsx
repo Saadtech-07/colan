@@ -228,7 +228,7 @@ export function ManageRoleDialog({ open, onOpenChange, editing, onSaved }: Props
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-5xl">
+      <DialogContent className="max-h-[92vh] w-[min(100vw-1.5rem,64rem)] overflow-hidden p-0 sm:max-w-5xl">
         <div className="flex max-h-[92vh] flex-col">
           <DialogHeader className="border-b border-border/70 px-6 py-5">
             <DialogTitle>{editing ? "Edit role" : "Create role"}</DialogTitle>

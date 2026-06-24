@@ -16,6 +16,7 @@ export const COLLECTIONS = {
   passwordResetTokens: "password_reset_tokens",
   conversations: "conversations",
   messages: "messages",
+  notifications: "notifications",
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];
