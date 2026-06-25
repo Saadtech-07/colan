@@ -72,6 +72,26 @@ export async function syncSystemRoleChatPermissions(
   }
 }
 
+/** Ensures system roles in MongoDB include notifications permissions from current seeds. */
+export async function syncSystemRoleNotificationPermissions(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+): Promise<void> {
+  const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
+  for (const seed of SYSTEM_ROLE_SEEDS) {
+    const notifications = seed.permissions.notifications;
+    if (!notifications) continue;
+    await col.updateOne(
+      { key: seed.key, isSystem: true },
+      {
+        $set: {
+          "permissions.notifications": notifications,
+          updatedAt: new Date(),
+        },
+      },
+    );
+  }
+}
+
 function adminPermissionsNeedRestore(
   current: ModulePermissionsMap,
   seed: ModulePermissionsMap,
@@ -154,6 +174,7 @@ export async function ensureRolesSeed(
   const count = await col.countDocuments();
   if (count > 0) {
     await syncSystemRoleChatPermissions(db);
+    await syncSystemRoleNotificationPermissions(db);
     await ensureAdminRoleFullAccess(db);
     return;
   }
@@ -195,6 +216,7 @@ export async function listWorkspaceRoles(): Promise<WorkspaceRole[]> {
   await ensureColanModelIndexes(db);
   await ensureRolesSeed(db);
   await syncSystemRoleChatPermissions(db);
+  await syncSystemRoleNotificationPermissions(db);
 
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
   const docs = await col.find({}).sort({ displayOrder: 1, name: 1 }).toArray();

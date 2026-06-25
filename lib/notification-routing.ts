@@ -1,6 +1,9 @@
 import type { NotificationDTO, NotificationType } from "@/models";
 
 export function notificationHref(notification: NotificationDTO): string | null {
+  if (notification.type === "message_received" && notification.conversationId) {
+    return `/chat?conversation=${encodeURIComponent(notification.conversationId)}`;
+  }
   if (notification.taskId) {
     return `/projects/tasks?task=${notification.taskId}`;
   }
@@ -25,6 +28,8 @@ export function notificationTypeLabel(type: NotificationType): string {
       return "Task completed";
     case "daily_update_submitted":
       return "Daily update";
+    case "message_received":
+      return "Message";
     default:
       return "Notification";
   }

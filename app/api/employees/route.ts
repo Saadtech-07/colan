@@ -6,6 +6,7 @@ import {
   createEmployee,
   listEmployees,
 } from "@/lib/data-service";
+import { DataBackendError } from "@/lib/data-backend";
 import {
   canAccessModuleAction,
   canAssignSeating,
@@ -20,8 +21,15 @@ export async function GET() {
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const employees = await listEmployees();
-  return NextResponse.json(employees);
+  try {
+    const employees = await listEmployees();
+    return NextResponse.json(employees);
+  } catch (e) {
+    if (e instanceof DataBackendError) {
+      return NextResponse.json({ error: e.message }, { status: 503 });
+    }
+    throw e;
+  }
 }
 
 export async function POST(req: Request) {

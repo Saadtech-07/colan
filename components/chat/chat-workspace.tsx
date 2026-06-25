@@ -72,7 +72,9 @@ export function ChatWorkspace() {
   const chat = useChatSafe();
   const searchParams = useSearchParams();
   const withEmployeeId = searchParams.get("with")?.trim() ?? "";
+  const conversationParam = searchParams.get("conversation")?.trim() ?? "";
   const deepLinkHandledRef = React.useRef<string | null>(null);
+  const conversationDeepLinkHandledRef = React.useRef<string | null>(null);
 
   const conversations = chat?.conversations ?? [];
   const loadingConversations = chat?.loadingConversations ?? false;
@@ -144,6 +146,17 @@ export function ChatWorkspace() {
     openConversation,
     withEmployeeId,
   ]);
+
+  React.useEffect(() => {
+    if (!openConversation || !conversationParam || loadingConversations) return;
+    if (conversationDeepLinkHandledRef.current === conversationParam) return;
+
+    const exists = conversations.some((conversation) => conversation.id === conversationParam);
+    if (!exists) return;
+
+    conversationDeepLinkHandledRef.current = conversationParam;
+    openConversation(conversationParam);
+  }, [conversationParam, conversations, loadingConversations, openConversation]);
 
   if (!chat) {
     return (

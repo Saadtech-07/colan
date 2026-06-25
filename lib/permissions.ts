@@ -154,6 +154,8 @@ const SQUAD_CONTRIBUTOR_ROLE_KEYS = new Set([
   "co-lead",
   "co_lead",
   "colead",
+  "intern",
+  "trainee",
 ]);
 
 /** Squad contributors need an employee ID and team assignment. */

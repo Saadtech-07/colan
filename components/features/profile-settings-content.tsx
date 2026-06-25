@@ -27,6 +27,12 @@ import { LoadingIndicator } from "@/components/ui/loading-indicator";
 import { formatWorkspaceDate, parseSeatAllocation } from "@/lib/employee-workspace-ui";
 import { profileNameInitial } from "@/lib/profile-image";
 import {
+  isMeaningfulTeamName,
+  resolveProfileRoleLabel,
+  roleEligibleForOfficeSeat,
+  roleShowsTeamOnProfile,
+} from "@/lib/workspace-identity";
+import {
   downloadResumeDocument,
   formatResumeUploadedAt,
   hasResumeDocument,
@@ -55,13 +61,6 @@ export const initialProfileSettingsForm: ProfileSettingsFormState = {
   currentPassword: "",
   newPassword: "",
   confirmNewPassword: "",
-};
-
-const APP_ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
-  manager: "Manager",
-  lead: "Team Lead",
-  employee: "Employee",
 };
 
 type ToastState = {
@@ -149,8 +148,10 @@ export function ProfileSettingsContent({
   const hasResume = hasResumeDocument({ resumeUrl: previewResumeUrl });
   const previewName = profile?.name || sessionEmail || "User";
   const seat = parseSeatAllocation(profile?.bayNumber);
-  const accessRole =
-    APP_ROLE_LABELS[profile?.appRole ?? ""] ?? profile?.appRole ?? "—";
+  const showTeamOnProfile =
+    roleShowsTeamOnProfile(profile?.appRole) && isMeaningfulTeamName(profile?.team);
+  const showOfficeSeat = roleEligibleForOfficeSeat(profile?.appRole);
+  const profileRoleLabel = resolveProfileRoleLabel(profile?.appRole, profile?.workspaceRole);
 
   return (
     <div className="space-y-6">
@@ -218,16 +219,11 @@ export function ProfileSettingsContent({
                     </h1>
                     <div className="flex flex-wrap gap-2">
                       <Badge variant="secondary" className="rounded-full px-2.5 py-0.5 text-xs">
-                        {accessRole}
+                        {profileRoleLabel}
                       </Badge>
-                      {profile?.workspaceRole ? (
+                      {showTeamOnProfile ? (
                         <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-xs">
-                          {profile.workspaceRole}
-                        </Badge>
-                      ) : null}
-                      {profile?.team ? (
-                        <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-xs">
-                          {profile.team}
+                          {profile?.team}
                         </Badge>
                       ) : null}
                     </div>
@@ -304,19 +300,19 @@ export function ProfileSettingsContent({
                       profile?.workEmail ? `mailto:${profile.workEmail}` : undefined
                     }
                   />
-                  <InfoRow label="Employee ID" value={displayValue(profile?.employeeId)} mono />
-                  <InfoRow label="Access role" value={accessRole} />
-                  <InfoRow
-                    label="Workspace role"
-                    value={displayValue(profile?.workspaceRole)}
-                  />
-                  <InfoRow label="Team" value={displayValue(profile?.team)} />
+                  <InfoRow label="User ID" value={displayValue(profile?.employeeId)} mono />
+                  <InfoRow label="Role" value={profileRoleLabel} />
+                  {showTeamOnProfile ? (
+                    <InfoRow label="Team" value={displayValue(profile?.team)} />
+                  ) : null}
                   <InfoRow label="Phone" value={displayValue(profile?.phone)} />
                   <InfoRow label="Joined date" value={formatWorkspaceDate(profile?.joinedDate)} />
-                  <InfoRow
-                    label="Office seat"
-                    value={seat.isAssigned ? seat.seatNumber : "Unassigned"}
-                  />
+                  {showOfficeSeat ? (
+                    <InfoRow
+                      label="Office seat"
+                      value={seat.isAssigned ? seat.seatNumber : "Unassigned"}
+                    />
+                  ) : null}
                   <InfoRow
                     label="Current address"
                     value={displayValue(profile?.currentAddress)}
@@ -555,8 +551,8 @@ export function ProfileSettingsContent({
                   Admin-managed fields
                 </p>
                 <p className="mt-1.5">
-                  Work email, employee ID, team, role, addresses, and seat assignment are updated
-                  in App Users by an administrator.
+                  Work email, employee ID, role, addresses, and seat assignment (for squad
+                  members) are updated in App Users by an administrator.
                 </p>
               </div>
             )}

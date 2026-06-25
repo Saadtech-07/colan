@@ -5,6 +5,11 @@ import {
   type Db,
 } from "mongodb";
 import { getDb } from "@/lib/mongodb";
+import {
+  allowInMemoryFallback,
+  isDemoSeedEnabled,
+  requireDb,
+} from "@/lib/data-backend";
 import { memoryStore } from "@/lib/memory-store";
 import {
   employeeSlugFromId,
@@ -37,8 +42,10 @@ import {
   type EmployeeDocument,
   type GalleryImageDocument,
   type ProjectDocument,
+  type AppUserDocument,
 } from "@/models";
 import { ensureAppUsersSeed, getAppUserPublicById } from "@/lib/app-users";
+import { collectLinkedEmployeeIds } from "@/lib/employee-app-user-link";
 import { isProjectManagerAppRole } from "@/lib/project-managers";
 import {
   MOCK_EMPLOYEES,
@@ -227,7 +234,7 @@ async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof get
   await ensureTeamsSeed(db);
   await ensureRolesSeed(db);
 
-  if ((await em.countDocuments()) === 0) {
+  if (isDemoSeedEnabled() && (await em.countDocuments()) === 0) {
     await safeSeedInsert(() =>
       em.insertMany(
         MOCK_EMPLOYEES.map(({ id: _id, ...rest }) => ({
@@ -238,7 +245,7 @@ async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof get
     );
   }
 
-  if ((await pr.countDocuments()) === 0) {
+  if (isDemoSeedEnabled() && (await pr.countDocuments()) === 0) {
     const employees = await em.find({}).toArray();
     const docs: ProjectDocument[] = MOCK_PROJECTS.map(
       ({ id: _id, memberIds: _m, teams, ...rest }) => {
@@ -255,7 +262,7 @@ async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof get
   }
 
   const ga = db.collection<GalleryImageDocument>(COLLECTIONS.gallery);
-  if ((await ga.countDocuments()) === 0) {
+  if (isDemoSeedEnabled() && (await ga.countDocuments()) === 0) {
     await safeSeedInsert(() =>
       ga.insertMany(
         MOCK_GALLERY.map(({ id: _id, ...rest }) => ({
@@ -273,7 +280,11 @@ async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof get
   await backfillEmployeeGender(db);
 
   const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
-  if ((await det.countDocuments()) === 0 && (await em.countDocuments()) > 0) {
+  if (
+    isDemoSeedEnabled() &&
+    (await det.countDocuments()) === 0 &&
+    (await em.countDocuments()) > 0
+  ) {
     const everyone = await em.find({}).toArray();
     await safeSeedInsert(() =>
       det.insertMany(
@@ -292,6 +303,7 @@ async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof get
   }
 
   await ensureColanModelIndexes(db);
+  await purgeOrphanEmployeeRecords(db);
 }
 
 /** Seed, backfill, and index setup — once per database per server process. */
@@ -364,26 +376,76 @@ function mergeEmployeeDirectory(
 }
 
 export async function listEmployees(): Promise<Employee[]> {
+  if (!allowInMemoryFallback()) {
+    const db = await requireDb();
+    await ensureMongoSeed(db);
+    return listEmployeesFromDb(db);
+  }
   const db = await getDb();
-  if (!db) return memoryStore.employees.map((e) => ({ ...e }));
-  await ensureMongoSeed(db);
+  if (!db) return [];
+  return listEmployeesFromDb(db);
+}
+
+async function purgeOrphanEmployeeRecords(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+) {
+  const em = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
+  const appUsers = await db
+    .collection<AppUserDocument>(COLLECTIONS.appUsers)
+    .find({})
+    .toArray();
+  const employees = await em.find({}).toArray();
+  if (employees.length === 0) return;
+
+  const detailRows = await det.find({}).toArray();
+  const detailsByRef = new Map(
+    detailRows.map((row) => [row.employeeRef.toHexString(), row]),
+  );
+  const linkedIds = collectLinkedEmployeeIds(employees, appUsers, detailsByRef);
+  const orphanIds = employees
+    .map((row) => row._id)
+    .filter((id) => !linkedIds.has(id.toHexString()));
+  if (orphanIds.length === 0) return;
+
+  const orphanHex = orphanIds.map((id) => id.toHexString());
+  await det.deleteMany({ employeeRef: { $in: orphanIds } });
+  await em.deleteMany({ _id: { $in: orphanIds } });
+  await db.collection<ProjectDocument>(COLLECTIONS.projects).updateMany(
+    { memberIds: { $in: orphanHex } },
+    {
+      $pull: { memberIds: { $in: orphanHex } },
+      $set: { updatedAt: new Date() },
+    },
+  );
+}
+
+async function listEmployeesFromDb(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+): Promise<Employee[]> {
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
-  const rows = await col.find({}).sort({ name: 1 }).toArray();
   const detCol = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
-  const refs = rows.map((r) => r._id);
+  const appUsers = await db
+    .collection<AppUserDocument>(COLLECTIONS.appUsers)
+    .find({})
+    .toArray();
+  const rows = await col.find({}).sort({ name: 1 }).toArray();
   const detailRows =
-    refs.length === 0
+    rows.length === 0
       ? []
-      : await detCol.find({ employeeRef: { $in: refs } }).toArray();
+      : await detCol.find({ employeeRef: { $in: rows.map((r) => r._id) } }).toArray();
   const byRef = new Map(
     detailRows.map((d) => [d.employeeRef.toHexString(), d]),
   );
-  return rows.map((d) => {
-    const base = employeeDocToDTO(d);
-    const doc = byRef.get(base.id);
-    const directory = mergeEmployeeDirectory(d, doc);
-    return directory ? { ...base, directory } : base;
-  });
+  const linkedIds = collectLinkedEmployeeIds(rows, appUsers, byRef);
+  return rows
+    .filter((row) => linkedIds.has(row._id.toHexString()))
+    .map((d) => {
+      const base = employeeDocToDTO(d);
+      const doc = byRef.get(base.id);
+      const directory = mergeEmployeeDirectory(d, doc);
+      return directory ? { ...base, directory } : base;
+    });
 }
 
 export async function getEmployeeDetailBySlugOrId(
@@ -406,24 +468,10 @@ export async function getEmployeeDetailBySlugOrId(
   };
 }
 
-export async function createEmployee(
+async function createEmployeeInDb(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   input: Omit<Employee, "id">,
 ): Promise<Employee> {
-  const db = await getDb();
-  if (!db) {
-    const list = memoryStore.employees;
-    const { isValidSeatId } = await import("@/lib/seating-layout");
-    if (input.bayNumber && isValidSeatId(input.bayNumber)) {
-      for (const e of list) {
-        if (e.bayNumber === input.bayNumber) e.bayNumber = "";
-      }
-    }
-    const id = `e-${Date.now()}`;
-    const row: Employee = { ...input, id };
-    list.push(row);
-    return row;
-  }
-  await ensureMongoSeed(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const { isValidSeatId } = await import("@/lib/seating-layout");
   if (input.bayNumber && isValidSeatId(input.bayNumber)) {
@@ -445,6 +493,35 @@ export async function createEmployee(
     ...employeeDocToDTO(doc),
     directory: detailsToDirectory(employeeDetailsDocToDTO(detailDoc)),
   };
+}
+
+export async function createEmployee(
+  input: Omit<Employee, "id">,
+): Promise<Employee> {
+  if (!allowInMemoryFallback()) {
+    const db = await requireDb();
+    await ensureMongoSeed(db);
+    return createEmployeeInDb(db, input);
+  }
+  const db = await getDb();
+  if (!db) {
+    if (!allowInMemoryFallback()) {
+      throw new Error("MongoDB is not available.");
+    }
+    const list = memoryStore.employees;
+    const { isValidSeatId } = await import("@/lib/seating-layout");
+    if (input.bayNumber && isValidSeatId(input.bayNumber)) {
+      for (const e of list) {
+        if (e.bayNumber === input.bayNumber) e.bayNumber = "";
+      }
+    }
+    const id = `e-${Date.now()}`;
+    const row: Employee = { ...input, id };
+    list.push(row);
+    return row;
+  }
+  await ensureMongoSeed(db);
+  return createEmployeeInDb(db, input);
 }
 
 async function upsertEmployeeDirectory(
@@ -547,6 +624,9 @@ export async function updateEmployee(
   }
 
   if (!db) {
+    if (!allowInMemoryFallback()) {
+      throw new Error("MongoDB is not available.");
+    }
     const list = memoryStore.employees;
     const idx = list.findIndex((e) => e.id === normalizedId);
     if (idx < 0) throw new Error("Employee not found");
@@ -581,32 +661,35 @@ export async function updateEmployee(
   }
 
   if (!ObjectId.isValid(normalizedId)) {
-    const list = memoryStore.employees;
-    const idx = list.findIndex((e) => e.id === normalizedId);
-    if (idx < 0) throw new Error("Invalid employee id");
-    const current = list[idx];
-    const nextDirectory = directoryPatch
-      ? { ...current.directory, ...directoryPatch }
-      : current.directory;
-    const next: Employee = {
-      ...current,
-      ...(employeePatch.employeeId !== undefined
-        ? { employeeId: employeePatch.employeeId }
-        : {}),
-      ...(employeePatch.name !== undefined ? { name: employeePatch.name } : {}),
-      ...(employeePatch.team !== undefined ? { team: employeePatch.team } : {}),
-      ...(employeePatch.role !== undefined ? { role: employeePatch.role } : {}),
-      ...(employeePatch.gender !== undefined ? { gender: employeePatch.gender } : {}),
-      ...(employeePatch.bayNumber !== undefined
-        ? { bayNumber: employeePatch.bayNumber }
-        : {}),
-      ...(employeePatch.imageUrl !== undefined
-        ? { imageUrl: employeePatch.imageUrl }
-        : {}),
-      ...(directoryPatch ? { directory: nextDirectory } : {}),
-    };
-    list[idx] = next;
-    return { ...next };
+    if (allowInMemoryFallback()) {
+      const list = memoryStore.employees;
+      const idx = list.findIndex((e) => e.id === normalizedId);
+      if (idx < 0) throw new Error("Employee not found");
+      const current = list[idx];
+      const nextDirectory = directoryPatch
+        ? { ...current.directory, ...directoryPatch }
+        : current.directory;
+      const next: Employee = {
+        ...current,
+        ...(employeePatch.employeeId !== undefined
+          ? { employeeId: employeePatch.employeeId }
+          : {}),
+        ...(employeePatch.name !== undefined ? { name: employeePatch.name } : {}),
+        ...(employeePatch.team !== undefined ? { team: employeePatch.team } : {}),
+        ...(employeePatch.role !== undefined ? { role: employeePatch.role } : {}),
+        ...(employeePatch.gender !== undefined ? { gender: employeePatch.gender } : {}),
+        ...(employeePatch.bayNumber !== undefined
+          ? { bayNumber: employeePatch.bayNumber }
+          : {}),
+        ...(employeePatch.imageUrl !== undefined
+          ? { imageUrl: employeePatch.imageUrl }
+          : {}),
+        ...(directoryPatch ? { directory: nextDirectory } : {}),
+      };
+      list[idx] = next;
+      return { ...next };
+    }
+    throw new Error("Invalid employee id");
   }
 
   await ensureMongoSeed(db);
@@ -670,25 +753,62 @@ export async function deleteEmployee(id: string): Promise<void> {
     throw new Error("Invalid employee id");
   }
   if (!db) {
+    if (!allowInMemoryFallback()) {
+      throw new Error("MongoDB is not available.");
+    }
     const list = memoryStore.employees;
     const idx = list.findIndex((e) => e.id === normalizedId);
     if (idx >= 0) list.splice(idx, 1);
     return;
   }
 
-  // If id is not a valid ObjectId, try the in-memory store as a fallback.
   if (!ObjectId.isValid(normalizedId)) {
-    const list = memoryStore.employees;
-    const idx = list.findIndex((e) => e.id === normalizedId);
-    if (idx >= 0) {
-      list.splice(idx, 1);
+    if (allowInMemoryFallback()) {
+      const list = memoryStore.employees;
+      const idx = list.findIndex((e) => e.id === normalizedId);
+      if (idx >= 0) list.splice(idx, 1);
       return;
     }
     throw new Error("Invalid employee id");
   }
 
+  const oid = new ObjectId(normalizedId);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
-  await col.deleteOne({ _id: new ObjectId(normalizedId) });
+  const emp = await col.findOne({ _id: oid });
+  if (!emp) throw new Error("Employee not found");
+
+  const detCol = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
+  const detail = await detCol.findOne({ employeeRef: oid });
+  const emails = new Set<string>();
+  for (const value of [
+    emp.email,
+    emp.directory?.workEmail,
+    emp.directory?.personalEmail,
+    detail?.workEmail,
+  ]) {
+    if (typeof value === "string" && value.trim()) {
+      emails.add(value.toLowerCase().trim());
+    }
+  }
+
+  await detCol.deleteMany({ employeeRef: oid });
+  await db.collection<ProjectDocument>(COLLECTIONS.projects).updateMany(
+    { memberIds: normalizedId },
+    { $pull: { memberIds: normalizedId }, $set: { updatedAt: new Date() } },
+  );
+
+  const appUserFilters: Record<string, unknown>[] = [];
+  if (emails.size > 0) {
+    appUserFilters.push({ email: { $in: [...emails] } });
+  }
+  if (emp.employeeId?.trim()) {
+    appUserFilters.push({ employeeId: emp.employeeId.trim() });
+  }
+  if (appUserFilters.length > 0) {
+    await db.collection(COLLECTIONS.appUsers).deleteMany({ $or: appUserFilters });
+  }
+
+  await col.deleteOne({ _id: oid });
 }
 
 export async function assignEmployeeToBay(
@@ -701,6 +821,9 @@ export async function assignEmployeeToBay(
   }
   const db = await getDb();
   if (!db) {
+    if (!allowInMemoryFallback()) {
+      throw new Error("MongoDB is not available.");
+    }
     const list = memoryStore.employees;
     for (const e of list) {
       if (e.bayNumber === bayId) e.bayNumber = "";
@@ -736,9 +859,19 @@ export async function assignEmployeeToBay(
 }
 
 export async function listProjects(): Promise<Project[]> {
+  if (!allowInMemoryFallback()) {
+    const db = await requireDb();
+    await ensureMongoSeed(db);
+    return listProjectsFromDb(db);
+  }
   const db = await getDb();
-  if (!db) return memoryStore.projects.map((p) => ({ ...p }));
-  await ensureMongoSeed(db);
+  if (!db) return [];
+  return listProjectsFromDb(db);
+}
+
+async function listProjectsFromDb(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+): Promise<Project[]> {
   const catalog = await listTeams();
   const rows = await db
     .collection<ProjectDocument>(COLLECTIONS.projects)
@@ -756,11 +889,22 @@ export async function listProjects(): Promise<Project[]> {
 }
 
 export async function getProjectBySlug(slug: string): Promise<Project | null> {
+  if (!allowInMemoryFallback()) {
+    const db = await requireDb();
+    await ensureMongoSeed(db);
+    return getProjectBySlugFromDb(db, slug);
+  }
   const db = await getDb();
   if (!db) {
     return memoryStore.projects.find((p) => p.slug === slug) ?? null;
   }
-  await ensureMongoSeed(db);
+  return getProjectBySlugFromDb(db, slug);
+}
+
+async function getProjectBySlugFromDb(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  slug: string,
+): Promise<Project | null> {
   const catalog = await listTeams();
   const doc = await db
     .collection<ProjectDocument>(COLLECTIONS.projects)
@@ -807,6 +951,9 @@ export async function createProject(
   const memberIds = input.memberIds ?? [];
   const db = await getDb();
   if (!db) {
+    if (!allowInMemoryFallback()) {
+      throw new Error("MongoDB is not available.");
+    }
     const existing = memoryStore.projects.map((p) => p.slug);
     const slug =
       input.slug ?? uniqueProjectSlug(input.name, existing);
@@ -895,6 +1042,9 @@ export async function updateProjectBySlug(
 ): Promise<Project | null> {
   const db = await getDb();
   if (!db) {
+    if (!allowInMemoryFallback()) {
+      throw new Error("MongoDB is not available.");
+    }
     const idx = memoryStore.projects.findIndex((p) => p.slug === slug);
     if (idx < 0) return null;
     const current = memoryStore.projects[idx];
@@ -947,11 +1097,22 @@ export async function updateProjectBySlug(
 
 export async function getProjectById(id: string): Promise<Project | null> {
   if (!ObjectId.isValid(id)) return null;
+  if (!allowInMemoryFallback()) {
+    const db = await requireDb();
+    await ensureMongoSeed(db);
+    return getProjectByIdFromDb(db, id);
+  }
   const db = await getDb();
   if (!db) {
     return memoryStore.projects.find((project) => project.id === id) ?? null;
   }
-  await ensureMongoSeed(db);
+  return getProjectByIdFromDb(db, id);
+}
+
+async function getProjectByIdFromDb(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  id: string,
+): Promise<Project | null> {
   const catalog = await listTeams();
   const doc = await db.collection<ProjectDocument>(COLLECTIONS.projects).findOne({
     _id: new ObjectId(id),
@@ -1033,9 +1194,19 @@ export async function setEmployeeProjects(
 }
 
 export async function listGallery(): Promise<GalleryImage[]> {
+  if (!allowInMemoryFallback()) {
+    const db = await requireDb();
+    await ensureMongoSeed(db);
+    return listGalleryFromDb(db);
+  }
   const db = await getDb();
-  if (!db) return memoryStore.gallery.map((g) => ({ ...g }));
-  await ensureMongoSeed(db);
+  if (!db) return [];
+  return listGalleryFromDb(db);
+}
+
+async function listGalleryFromDb(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+): Promise<GalleryImage[]> {
   const rows = await db
     .collection<GalleryImageDocument>(COLLECTIONS.gallery)
     .find({})
@@ -1049,6 +1220,9 @@ export async function createGalleryItem(
 ): Promise<GalleryImage> {
   const db = await getDb();
   if (!db) {
+    if (!allowInMemoryFallback()) {
+      throw new Error("MongoDB is not available.");
+    }
     const row: GalleryImage = { ...input, id: `g-${Date.now()}` };
     memoryStore.gallery.unshift(row);
     return row;
@@ -1069,6 +1243,9 @@ export async function updateGalleryItem(
 
   const db = await getDb();
   if (!db) {
+    if (!allowInMemoryFallback()) {
+      throw new Error("MongoDB is not available.");
+    }
     const idx = memoryStore.gallery.findIndex((item) => item.id === normalizedId);
     if (idx < 0) throw new Error("Gallery item not found");
     const current = memoryStore.gallery[idx];
@@ -1108,6 +1285,9 @@ export async function deleteGalleryItem(id: string): Promise<void> {
 
   const db = await getDb();
   if (!db) {
+    if (!allowInMemoryFallback()) {
+      throw new Error("MongoDB is not available.");
+    }
     const idx = memoryStore.gallery.findIndex((item) => item.id === normalizedId);
     if (idx < 0) throw new Error("Gallery item not found");
     memoryStore.gallery.splice(idx, 1);

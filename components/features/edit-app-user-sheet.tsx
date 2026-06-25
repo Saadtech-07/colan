@@ -56,9 +56,9 @@ function validateEditAccountStep(values: AppUserAccountFormValues): string | nul
   if (!values.email || !values.name.trim()) {
     return "Email and name are required.";
   }
-  if (roleNeedsEmployeeIdentity(values.appRole)) {
-    if (!values.employeeId.trim()) return "Employee ID is required for this role.";
-    if (!values.team.trim()) return "Team is required for this role.";
+  if (!values.employeeId.trim()) return "User ID is required.";
+  if (roleNeedsEmployeeIdentity(values.appRole) && !values.team.trim()) {
+    return "Team is required for this role.";
   }
   if (values.password.trim() && values.password.trim().length < 6) {
     return "Password must be at least 6 characters.";

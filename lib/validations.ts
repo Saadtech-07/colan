@@ -205,15 +205,15 @@ export const appUserCreateSchema = z
     gender: genderSchema.optional(),
   })
   .superRefine((value, ctx) => {
-    if (!roleNeedsEmployeeIdentity(value.appRole)) return;
-
     if (!value.employeeId?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["employeeId"],
-        message: "Employee ID is required for this role.",
+        message: "User ID is required.",
       });
     }
+
+    if (!roleNeedsEmployeeIdentity(value.appRole)) return;
 
     if (!value.team?.trim()) {
       ctx.addIssue({

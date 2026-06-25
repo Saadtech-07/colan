@@ -1,6 +1,7 @@
 import { ALL_SEAT_IDS, isValidSeatId } from "@/lib/seating-layout";
 import { employeeMatchesRoleFilter } from "@/lib/team-members-ui";
 import { teamTabLabel } from "@/lib/team-utils";
+import { employeeEligibleForSeating } from "@/lib/workspace-identity";
 import type { WorkspaceRole } from "@/models";
 import type { Employee, Gender, TeamName } from "@/types";
 
@@ -29,6 +30,7 @@ export function teamColorClasses(team: TeamName) {
 export function seatOccupancyMap(employees: Employee[]): Map<string, Employee> {
   const map = new Map<string, Employee>();
   for (const emp of employees) {
+    if (!employeeEligibleForSeating(emp)) continue;
     if (emp.bayNumber && isValidSeatId(emp.bayNumber) && !map.has(emp.bayNumber)) {
       map.set(emp.bayNumber, emp);
     }
@@ -46,7 +48,8 @@ export type SeatingStats = {
 export function computeSeatingStats(employees: Employee[]): SeatingStats {
   const map = seatOccupancyMap(employees);
   const legacyUnassigned = employees.filter(
-    (e) => e.bayNumber && !isValidSeatId(e.bayNumber),
+    (e) =>
+      employeeEligibleForSeating(e) && e.bayNumber && !isValidSeatId(e.bayNumber),
   ).length;
   return {
     total: ALL_SEAT_IDS.length,
@@ -79,6 +82,7 @@ export function highlightedSeatIds(
   }
   const ids = new Set<string>();
   for (const emp of employees) {
+    if (!employeeEligibleForSeating(emp)) continue;
     if (!emp.bayNumber || !isValidSeatId(emp.bayNumber)) continue;
     if (team && team !== "All" && emp.team !== team) continue;
     if (hasRoleFilter && !employeeMatchesRoleFilter(emp, role, workspaceRoles)) continue;

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { SectionTitle } from "@/components/ui/page-typography";
+import { DailyUpdateAttendancePanel } from "@/components/features/daily-updates/daily-update-attendance-panel";
 import { isProjectManagerAppRole } from "@/lib/project-managers";
 import { teamTabLabel } from "@/lib/team-utils";
 import { cn } from "@/lib/utils";
@@ -155,7 +156,7 @@ export function DailyUpdatesModule() {
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search updates..."
+              placeholder="Search by employee name…"
               className="h-9 rounded-xl pl-9"
             />
           </div>
@@ -286,7 +287,12 @@ export function DailyUpdatesModule() {
 
   return (
     <div className="flex h-[calc(100dvh-4.25rem-2rem)] max-h-[calc(100dvh-4.25rem-2rem)] flex-col gap-4 overflow-hidden sm:h-[calc(100dvh-4.25rem-3rem)] sm:max-h-[calc(100dvh-4.25rem-3rem)] lg:h-[calc(100dvh-4.25rem-4rem)] lg:max-h-[calc(100dvh-4.25rem-4rem)]">
-      <div className="shrink-0">{globalFilterBar}</div>
+      <div className="shrink-0 space-y-4">
+        {globalFilterBar}
+        {oversightViewer && filterDate ? (
+          <DailyUpdateAttendancePanel date={filterDate} search={search} />
+        ) : null}
+      </div>
 
       <div
         className={cn(

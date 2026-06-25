@@ -46,7 +46,7 @@ export function validateCreateAppUserAccountStep(
 ): string | null {
   const personalEmail = account.personalEmail.trim().toLowerCase();
   const needsIdentity = roleNeedsEmployeeIdentity(account.appRole);
-  const employeeId = account.employeeId.trim();
+  const userId = account.employeeId.trim();
 
   if (!personalEmail) return "Personal email is required.";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personalEmail)) {
@@ -55,17 +55,16 @@ export function validateCreateAppUserAccountStep(
 
   if (!account.name.trim()) return "Full name is required.";
 
-  if (needsIdentity) {
-    if (!employeeId) return "Employee ID is required.";
-    const employeeIdLower = employeeId.toLowerCase();
-    if (
-      users.some((user) => user.employeeId?.trim().toLowerCase() === employeeIdLower) ||
-      employees.some((employee) => employee.employeeId.trim().toLowerCase() === employeeIdLower)
-    ) {
-      return "This employee ID is already in use.";
-    }
-    if (!account.team.trim()) return "Team is required.";
+  if (!userId) return "User ID is required.";
+  const userIdLower = userId.toLowerCase();
+  if (
+    users.some((user) => user.employeeId?.trim().toLowerCase() === userIdLower) ||
+    employees.some((employee) => employee.employeeId.trim().toLowerCase() === userIdLower)
+  ) {
+    return "This user ID is already in use.";
   }
+
+  if (needsIdentity && !account.team.trim()) return "Team is required.";
 
   if (!account.appRole.trim()) return "Role is required.";
   if (!account.password.trim()) return "Password is required.";

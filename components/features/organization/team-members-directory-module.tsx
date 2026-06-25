@@ -46,6 +46,11 @@ import {
 import { formatProjectDate } from "@/lib/project-ui";
 import { profileNameInitial } from "@/lib/profile-image";
 import {
+  employeeEligibleForSeating,
+  employeeShowsInTeamMembersDirectory,
+  isMeaningfulTeamName,
+} from "@/lib/workspace-identity";
+import {
   GRID_DIRECTORY_PAGE_SIZE,
   useClientPagination,
 } from "@/lib/client-pagination";
@@ -94,6 +99,10 @@ export function TeamMembersDirectoryModule() {
     const query = filters.search.trim().toLowerCase();
 
     return employees.filter((employee) => {
+      if (!employeeShowsInTeamMembersDirectory(employee)) {
+        return false;
+      }
+
       const matchesTeam =
         filters.team === ALL_TEAMS || employee.team === filters.team;
 
@@ -360,13 +369,17 @@ export function TeamMembersDirectoryModule() {
                           <p className="truncate text-base font-semibold text-foreground">
                             {employee.name}
                           </p>
-                          <p className="text-xs text-muted-foreground">{employee.employeeId}</p>
+                          <p className="text-xs text-muted-foreground">
+                            User ID · {employee.employeeId}
+                          </p>
                         </div>
 
                         <div className="flex flex-wrap gap-1.5">
-                          <Badge variant="secondary" className="font-normal">
-                            {employee.team}
-                          </Badge>
+                          {isMeaningfulTeamName(employee.team) ? (
+                            <Badge variant="secondary" className="font-normal">
+                              {employee.team}
+                            </Badge>
+                          ) : null}
                           <Badge variant="outline">{employee.role}</Badge>
                         </div>
                       </div>
@@ -422,7 +435,9 @@ export function TeamMembersDirectoryModule() {
                     </MemberInfoSection>
 
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <SeatAssignmentBlock workspace={workspace} />
+                      {employeeEligibleForSeating(employee) ? (
+                        <SeatAssignmentBlock workspace={workspace} />
+                      ) : null}
                       <MemberInfoSection title="Join date" icon={CalendarClock}>
                         <p className="text-sm font-semibold text-foreground">
                           {formatProjectDate(employee.directory?.joinedDate ?? "", {

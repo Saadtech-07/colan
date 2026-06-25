@@ -3,12 +3,14 @@ import { auth } from "@/auth";
 import {
   countAllNotifications,
   countNotificationsForUser,
+  filterNotificationsForViewer,
   getUnreadNotificationCount,
   listAllNotifications,
   listNotificationsForUser,
 } from "@/lib/notifications-data";
 import { requireNotificationActor } from "@/lib/notification-api";
-import { canManageModule, canViewModule } from "@/lib/permissions";
+import { canManageModule } from "@/lib/permissions";
+import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import type { AppRole } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +25,11 @@ export async function GET(req: Request) {
   const actor = await requireNotificationActor();
   if (actor instanceof NextResponse) return actor;
 
+  await ensureRoleRegistry();
   const session = await auth();
   const role = session?.user?.appRole as AppRole | undefined;
-  if (!role || !canViewModule(role, "notifications")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!role) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { searchParams } = new URL(req.url);
@@ -35,10 +38,16 @@ export async function GET(req: Request) {
   const unreadOnly = searchParams.get("unreadOnly") === "true";
   const canViewAll = canManageModule(role, "notifications");
 
-  const notifications =
+  if (scopeAll && !canViewAll) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const rawNotifications =
     scopeAll && canViewAll
       ? await listAllNotifications(limit, unreadOnly)
       : await listNotificationsForUser(actor.id, limit, unreadOnly);
+
+  const notifications = filterNotificationsForViewer(rawNotifications, actor.id);
 
   const totalCount =
     scopeAll && canViewAll

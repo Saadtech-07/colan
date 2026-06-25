@@ -546,6 +546,16 @@ export async function sendChatMessage(args: {
     },
   );
 
+  const sender = await getChatActorById(args.senderId);
+  const { notifyMessageReceived } = await import("@/lib/notifications-data");
+  await notifyMessageReceived({
+    conversationId: args.conversationId,
+    senderUserId: args.senderId,
+    senderName: sender?.name ?? "Someone",
+    recipientUserId: receiverId.toHexString(),
+    text: trimmed,
+  });
+
   return {
     message: messageDocToDTO(messageDoc),
     conversation: {

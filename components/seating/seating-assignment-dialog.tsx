@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ALL_SEAT_IDS } from "@/lib/seating-layout";
 import { employeeMatchesSearch, seatOccupancyMap } from "@/lib/seating-utils";
 import { teamTabLabel } from "@/lib/team-utils";
+import { employeeEligibleForSeating } from "@/lib/workspace-identity";
 import type { Employee } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +56,7 @@ export function SeatingAssignmentDialog({
 
   const assignableEmployees = React.useMemo(() => {
     return employees.filter((e) => {
+      if (!employeeEligibleForSeating(e)) return false;
       if (occupant && e.id === occupant.id) return false;
       if (!employeeMatchesSearch(e, query)) return false;
       return true;

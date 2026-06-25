@@ -18,6 +18,7 @@ import { addressesFromDirectory, directoryPatchFromAddresses } from "@/lib/emplo
 import { seatOccupancyMap } from "@/lib/seating-utils";
 import { generateTemporaryPassword } from "@/lib/password-utils";
 import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
+import { roleShowsTeamOnProfile } from "@/lib/workspace-identity";
 import type { AppRole, Employee, Gender, TeamName } from "@/types";
 import type { WorkspaceRole } from "@/models";
 
@@ -69,12 +70,10 @@ export function applyAppUserRole(
   if (!roleNeedsEmployeeIdentity(appRole)) {
     return {
       appRole,
-      employeeId: "",
-      team: defaultTeam,
       bayNumber: UNASSIGNED_SEAT,
     };
   }
-  return { appRole };
+  return { appRole, team: prev.team || defaultTeam };
 }
 
 export function buildFormFromAppUserRecord(args: {
@@ -160,7 +159,8 @@ export function AppUserAccountDetailsStep({
   defaultTeam,
   disabled,
 }: StepProps) {
-  const showEmployeeIdentityFields = roleNeedsEmployeeIdentity(values.appRole);
+  const showTeamFields = roleShowsTeamOnProfile(values.appRole);
+  const showWorkspaceIdentityFields = roleNeedsEmployeeIdentity(values.appRole);
 
   return (
     <section className="space-y-4">
@@ -225,20 +225,18 @@ export function AppUserAccountDetailsStep({
 
         <div className="space-y-2">
           <Label htmlFor="account-employee-id">
-            Employee ID
-            {showEmployeeIdentityFields ? (
-              <span className="ml-0.5 text-destructive" aria-hidden="true">
-                *
-              </span>
-            ) : null}
+            User ID
+            <span className="ml-0.5 text-destructive" aria-hidden="true">
+              *
+            </span>
           </Label>
           <Input
             id="account-employee-id"
             value={values.employeeId}
             onChange={(e) => onChange({ employeeId: e.target.value })}
-            disabled={disabled || !showEmployeeIdentityFields}
-            placeholder={showEmployeeIdentityFields ? "COL-1001" : "Not required for this role"}
-            className="h-11 rounded-2xl border-border/70 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={disabled}
+            placeholder="COL-1001"
+            className="h-11 rounded-2xl border-border/70"
           />
         </div>
 
@@ -272,34 +270,32 @@ export function AppUserAccountDetailsStep({
           </Select>
         </div>
 
-        <div className="space-y-2 sm:col-span-2">
-          <Label>
-            Team
-            {showEmployeeIdentityFields ? (
+        {showTeamFields ? (
+          <div className="space-y-2 sm:col-span-2">
+            <Label>
+              Team
               <span className="ml-0.5 text-destructive" aria-hidden="true">
                 *
               </span>
-            ) : null}
-          </Label>
-          <Select
-            value={values.team}
-            onValueChange={(value) => onChange({ team: value as TeamName })}
-            disabled={disabled || !showEmployeeIdentityFields}
-          >
-            <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85 disabled:cursor-not-allowed disabled:opacity-60">
-              <SelectValue>
-                {showEmployeeIdentityFields ? values.team : "Not required for this role"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent className="rounded-2xl border-border/60">
-              {teamNames.map((team) => (
-                <SelectItem key={team} value={team}>
-                  {team}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+            </Label>
+            <Select
+              value={values.team}
+              onValueChange={(value) => onChange({ team: value as TeamName })}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-11 rounded-2xl border-border/70 bg-background/85">
+                <SelectValue placeholder="Select a team" />
+              </SelectTrigger>
+              <SelectContent className="rounded-2xl border-border/60">
+                {teamNames.map((team) => (
+                  <SelectItem key={team} value={team}>
+                    {team}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
       </div>
 
       <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/15 p-4">
@@ -355,7 +351,7 @@ export function AppUserWorkspaceDetailsStep({
   editingEmployeeId,
   disabled,
 }: StepProps) {
-  const showEmployeeIdentityFields = roleNeedsEmployeeIdentity(values.appRole);
+  const showWorkspaceIdentityFields = roleNeedsEmployeeIdentity(values.appRole);
   const occupancy = React.useMemo(() => seatOccupancyMap(employees), [employees]);
   const vacantSeats = React.useMemo(() => {
     const currentSeat = values.bayNumber;
@@ -480,7 +476,7 @@ export function AppUserWorkspaceDetailsStep({
             />
           </div>
 
-          {showEmployeeIdentityFields ? (
+          {showWorkspaceIdentityFields ? (
             <div className="space-y-2">
               <Label>Gender</Label>
               <Select
@@ -500,7 +496,7 @@ export function AppUserWorkspaceDetailsStep({
             </div>
           ) : null}
 
-          {showEmployeeIdentityFields ? (
+          {showWorkspaceIdentityFields ? (
             <div className="space-y-2 sm:col-span-2">
               <Label>Office seat</Label>
               <Select

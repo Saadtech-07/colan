@@ -34,6 +34,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { profileNameInitial } from "@/lib/profile-image";
+import {
+  isMeaningfulTeamName,
+  roleShowsTeamOnProfile,
+} from "@/lib/workspace-identity";
 import { useClientPagination } from "@/lib/client-pagination";
 import { ListPagination } from "@/components/ui/list-pagination";
 import { PageLoadingShell } from "@/components/ui/page-loading-shell";
@@ -108,12 +112,21 @@ export default function AppUsersPage() {
   );
 
   const availableTeamFilters = React.useMemo(() => {
-    const items = new Set<string>(teamNames);
-    if (users.some((item) => !item.team)) {
+    const items = new Set<string>();
+    for (const user of users) {
+      if (roleShowsTeamOnProfile(user.appRole) && isMeaningfulTeamName(user.team)) {
+        items.add(user.team!);
+      }
+    }
+    if (
+      users.some(
+        (item) => roleShowsTeamOnProfile(item.appRole) && !isMeaningfulTeamName(item.team),
+      )
+    ) {
       items.add("Unassigned");
     }
     return [...items];
-  }, [teamNames, users]);
+  }, [users]);
 
   const filteredUsers = React.useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -123,9 +136,13 @@ export default function AppUsersPage() {
         return false;
       }
 
-      const recordTeam = record.team ?? "Unassigned";
-      if (teamFilter !== "all" && recordTeam !== teamFilter) {
-        return false;
+      const recordTeam = roleShowsTeamOnProfile(record.appRole)
+        ? record.team ?? "Unassigned"
+        : null;
+      if (teamFilter !== "all") {
+        if (!recordTeam || recordTeam !== teamFilter) {
+          return false;
+        }
       }
 
       if (!query) {
@@ -137,7 +154,7 @@ export default function AppUsersPage() {
         record.name,
         record.employeeId,
         getRoleLabel(record.appRole),
-        record.team ?? "Unassigned",
+        recordTeam ?? "",
       ]
         .join(" ")
         .toLowerCase()
@@ -513,12 +530,15 @@ export default function AppUsersPage() {
                               <Mail className="h-4 w-4" />
                               {record.email}
                             </span>
-                            <span className="inline-flex items-center gap-1.5">
-                              <Building2 className="h-4 w-4" />
-                              {record.team ?? "Unassigned"}
-                            </span>
+                            {roleShowsTeamOnProfile(record.appRole) &&
+                            isMeaningfulTeamName(record.team) ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                <Building2 className="h-4 w-4" />
+                                {record.team}
+                              </span>
+                            ) : null}
                             <span className="inline-flex items-center gap-1.5 font-mono text-xs">
-                              ID: {record.employeeId}
+                              User ID: {record.employeeId?.trim() || "—"}
                             </span>
                           </div>
 

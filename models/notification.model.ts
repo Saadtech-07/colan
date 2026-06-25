@@ -8,7 +8,8 @@ export type NotificationType =
   | "task_assigned"
   | "task_status_changed"
   | "task_completed"
-  | "daily_update_submitted";
+  | "daily_update_submitted"
+  | "message_received";
 
 export type NotificationDocument = {
   _id: ObjectId;
@@ -21,6 +22,7 @@ export type NotificationDocument = {
   projectName?: string;
   taskId?: string;
   taskTitle?: string;
+  conversationId?: string;
   actorUserId?: string;
   actorName?: string;
   readAt?: Date | null;
@@ -37,6 +39,8 @@ export type NotificationDTO = {
   projectName?: string;
   taskId?: string;
   taskTitle?: string;
+  conversationId?: string;
+  actorUserId?: string;
   actorName?: string;
   recipientUserId?: string;
   recipientName?: string;
@@ -55,6 +59,8 @@ export function notificationDocToDTO(doc: NotificationDocument): NotificationDTO
     projectName: doc.projectName,
     taskId: doc.taskId,
     taskTitle: doc.taskTitle,
+    conversationId: doc.conversationId,
+    actorUserId: doc.actorUserId,
     actorName: doc.actorName,
     readAt: doc.readAt ? doc.readAt.toISOString() : null,
     createdAt: doc.createdAt.toISOString(),

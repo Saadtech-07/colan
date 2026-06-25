@@ -30,9 +30,9 @@ export function buildCreateAppUserBody(account: AccountSetupForm) {
     personalEmail,
     name: account.name.trim(),
     appRole: account.appRole,
+    employeeId: account.employeeId.trim(),
     ...(roleNeedsEmployeeIdentity(account.appRole)
       ? {
-          employeeId: account.employeeId.trim(),
           team: account.team,
         }
       : {}),

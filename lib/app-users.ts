@@ -19,6 +19,10 @@ import {
 import type { ProjectManagerSummary } from "@/types";
 import { addressesFromDirectory, directoryPatchFromAddresses } from "@/lib/employee-address";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
+import {
+  roleEligibleForOfficeSeat,
+  roleShowsTeamOnProfile,
+} from "@/lib/workspace-identity";
 
 export type VerifiedAppUser = {
   email: string;
@@ -370,42 +374,30 @@ export async function createAppUser(
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   const email = input.email.toLowerCase().trim();
   const needsEmployeeIdentity = roleNeedsEmployeeIdentity(input.appRole);
-  const employeeId = needsEmployeeIdentity ? input.employeeId?.trim() ?? "" : "";
+  const userId = input.employeeId?.trim() ?? "";
   const team = needsEmployeeIdentity ? input.team : undefined;
 
-  if (needsEmployeeIdentity) {
-    if (!employeeId) throw new Error("Employee ID is required for this role.");
-    if (!team) throw new Error("Team is required for this role.");
-  }
+  if (!userId) throw new Error("User ID is required.");
+  if (needsEmployeeIdentity && !team) throw new Error("Team is required for this role.");
 
   const existing = await col.findOne({ email });
   if (existing) throw new Error("An account with this email already exists.");
 
   const employeeCol = db.collection(COLLECTIONS.employees);
 
-  if (needsEmployeeIdentity) {
-    const employeeIdTaken = await employeeCol.findOne({
-      employeeId: {
-        $regex: new RegExp(
-          `^${employeeId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-          "i",
-        ),
-      },
-    });
-    if (employeeIdTaken) {
-      throw new Error("An employee with this ID already exists.");
-    }
+  const userIdPattern = new RegExp(
+    `^${userId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+    "i",
+  );
+  const appUserIdTaken = await col.findOne({ employeeId: { $regex: userIdPattern } });
+  if (appUserIdTaken) {
+    throw new Error("An account with this user ID already exists.");
+  }
 
-    const appUserIdTaken = await col.findOne({
-      employeeId: {
-        $regex: new RegExp(
-          `^${employeeId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-          "i",
-        ),
-      },
-    });
-    if (appUserIdTaken) {
-      throw new Error("An account with this employee ID already exists.");
+  if (needsEmployeeIdentity) {
+    const employeeIdTaken = await employeeCol.findOne({ employeeId: { $regex: userIdPattern } });
+    if (employeeIdTaken) {
+      throw new Error("An employee with this user ID already exists.");
     }
   }
 
@@ -454,7 +446,7 @@ export async function createAppUser(
     name: input.name.trim(),
     appRole: input.appRole,
     ...(team ? { team } : {}),
-    employeeId,
+    employeeId: userId,
     imageUrl: input.imageUrl?.trim() ?? "",
     isProfileCompleted: false,
     createdAt: new Date(),
@@ -475,7 +467,7 @@ export async function createAppUser(
   const nextGender = input.gender ?? "male";
   await employeeCol.insertOne({
     _id: employeeObjectId,
-    employeeId,
+    employeeId: userId,
     email: loginEmail,
     name: input.name.trim(),
     role: employeeRole,
@@ -547,11 +539,23 @@ export async function updateAppUser(
     if (input.team !== undefined) updates.team = input.team;
   } else {
     unset.team = "";
-    updates.employeeId = "";
   }
 
-  if (roleNeedsEmployeeIdentity(nextRole) && input.employeeId !== undefined) {
-    updates.employeeId = input.employeeId.trim();
+  if (input.employeeId !== undefined) {
+    const trimmedUserId = input.employeeId.trim();
+    if (!trimmedUserId) throw new Error("User ID is required.");
+    const userIdPattern = new RegExp(
+      `^${trimmedUserId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+      "i",
+    );
+    const duplicateUserId = await col.findOne({
+      employeeId: { $regex: userIdPattern },
+      _id: { $ne: new ObjectId(id) },
+    });
+    if (duplicateUserId) {
+      throw new Error("An account with this user ID already exists.");
+    }
+    updates.employeeId = trimmedUserId;
   }
 
   const updateDoc: { $set: Partial<AppUserDocument>; $unset?: Record<string, ""> } = {
@@ -781,10 +785,36 @@ export async function deleteAppUser(id: string) {
 
   await suppressSeedUser(db, user.email);
 
-  // Delete linked team member record when present.
-  await db.collection("employees").deleteOne({
-    $or: [{ email: user.email }, { "directory.workEmail": user.email }],
-  });
+  const employeeCol = db.collection(COLLECTIONS.employees);
+  const detailsCol = db.collection(COLLECTIONS.employeeDetails);
+  const normalizedEmail = user.email.toLowerCase().trim();
+
+  const employeeFilters: Record<string, unknown>[] = [
+    { email: normalizedEmail },
+    { "directory.workEmail": normalizedEmail },
+    { "directory.personalEmail": normalizedEmail },
+  ];
+  if (user.employeeId?.trim()) {
+    employeeFilters.push({ employeeId: user.employeeId.trim() });
+  }
+
+  const detailMatches = await detailsCol
+    .find({ workEmail: normalizedEmail })
+    .toArray();
+  for (const detail of detailMatches) {
+    employeeFilters.push({ _id: detail.employeeRef });
+  }
+
+  const linkedEmployees = await employeeCol
+    .find({ $or: employeeFilters })
+    .project({ _id: 1 })
+    .toArray();
+
+  if (linkedEmployees.length > 0) {
+    const refs = linkedEmployees.map((row) => row._id);
+    await detailsCol.deleteMany({ employeeRef: { $in: refs } });
+    await employeeCol.deleteMany({ _id: { $in: refs } });
+  }
 
   return user;
 }
@@ -934,6 +964,12 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
 
   if (!employee) {
     profile.workEmail = doc.email;
+    if (!roleShowsTeamOnProfile(doc.appRole)) {
+      profile.team = undefined;
+    }
+    if (!roleEligibleForOfficeSeat(doc.appRole)) {
+      profile.bayNumber = undefined;
+    }
     return profile;
   }
 
@@ -1005,6 +1041,13 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
     profile.resumeUploadedAt = resumeSource.resumeUploadedAt?.trim() || undefined;
   } else {
     profile.resumeUrl = "";
+  }
+
+  if (!roleShowsTeamOnProfile(doc.appRole)) {
+    profile.team = undefined;
+  }
+  if (!roleEligibleForOfficeSeat(doc.appRole)) {
+    profile.bayNumber = undefined;
   }
 
   return profile;

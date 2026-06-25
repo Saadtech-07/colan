@@ -6,6 +6,7 @@ import {
   CalendarClock,
   CheckSquare,
   ClipboardList,
+  MessageCircle,
   type LucideIcon,
 } from "lucide-react";
 import { formatChatTime } from "@/lib/chat-client";
@@ -19,6 +20,7 @@ const TYPE_ICONS: Record<NotificationType, LucideIcon> = {
   task_status_changed: ClipboardList,
   task_completed: CheckSquare,
   daily_update_submitted: CalendarClock,
+  message_received: MessageCircle,
 };
 
 type Props = {
@@ -28,6 +30,28 @@ type Props = {
   className?: string;
   variant?: "full" | "compact";
 };
+
+function formatNotificationStamp(iso: string): { date: string; time: string } {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return { date: "", time: "" };
+
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  return {
+    date: sameDay
+      ? "Today"
+      : date.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+        }),
+    time: date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
+  };
+}
 
 export function NotificationListItem({
   notification,
@@ -108,6 +132,8 @@ export function NotificationListItem({
     );
   }
 
+  const stamp = formatNotificationStamp(notification.createdAt);
+
   const content = (
     <>
       <div
@@ -118,26 +144,41 @@ export function NotificationListItem({
       >
         <Icon className="h-4 w-4" />
       </div>
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 space-y-1">
-            <p className="text-sm font-medium leading-snug text-foreground">{notification.title}</p>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
-              {typeLabel}
-            </p>
-          </div>
-          {!notification.readAt ? (
-            <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
-          ) : null}
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="space-y-1">
+          <p className="text-sm font-medium leading-snug text-foreground">{notification.title}</p>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
+            {typeLabel}
+          </p>
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">{notification.message}</p>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground/80">
-          <span>{formatChatTime(notification.createdAt)}</span>
-          {notification.actorName ? <span>· {notification.actorName}</span> : null}
-          {showRecipient && notification.recipientName ? (
-            <span>· For {notification.recipientName}</span>
-          ) : null}
-        </div>
+        {notification.actorName || (showRecipient && notification.recipientName) ? (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground/80">
+            {notification.actorName ? <span>{notification.actorName}</span> : null}
+            {showRecipient && notification.recipientName ? (
+              <span>· For {notification.recipientName}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-2 pl-3 sm:min-w-[4.5rem] sm:pl-4">
+        {stamp.date || stamp.time ? (
+          <div className="text-right leading-tight">
+            {stamp.date ? (
+              <p className="whitespace-nowrap text-[11px] font-medium tabular-nums text-muted-foreground">
+                {stamp.date}
+              </p>
+            ) : null}
+            {stamp.time ? (
+              <p className="mt-0.5 whitespace-nowrap text-[10px] tabular-nums text-muted-foreground/75">
+                {stamp.time}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {!notification.readAt ? (
+          <span className="h-2 w-2 shrink-0 rounded-full bg-primary" aria-hidden />
+        ) : null}
       </div>
     </>
   );
@@ -147,7 +188,7 @@ export function NotificationListItem({
       <button
         type="button"
         className={cn(
-          "flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-muted/50",
+          "flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-muted/50 sm:px-5",
           !notification.readAt && "bg-primary/5",
           className,
         )}
@@ -162,7 +203,7 @@ export function NotificationListItem({
     <Link
       href={href}
       className={cn(
-        "flex w-full items-start gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-muted/50",
+        "flex w-full items-start gap-3 px-4 py-4 transition-colors hover:bg-muted/50 sm:px-5",
         !notification.readAt && "bg-primary/5",
         className,
       )}

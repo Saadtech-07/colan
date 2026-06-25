@@ -107,7 +107,7 @@ export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
                     {employee.name}
                   </h1>
                   <p className="mt-1 font-mono text-sm text-muted-foreground">
-                    Employee ID · {employee.employeeId}
+                    User ID · {employee.employeeId}
                   </p>
                 </div>
 
@@ -211,7 +211,7 @@ export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
         >
           <InfoGrid>
             <InfoRow label="Full name" value={employee.name} />
-            <InfoRow label="Employee ID" value={employee.employeeId} mono />
+            <InfoRow label="User ID" value={employee.employeeId} mono />
             <InfoRow label="Role" value={employee.role} />
             <InfoRow label="Team" value={employee.team} />
             <InfoRow label="Joined date" value={joinedDate} last />

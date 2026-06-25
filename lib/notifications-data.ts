@@ -42,6 +42,21 @@ function sortNotifications(docs: NotificationDocument[]): NotificationDTO[] {
     .map(notificationDocToDTO);
 }
 
+/** Hide outbound chat alerts — only show messages received from other people. */
+export function filterNotificationsForViewer(
+  notifications: NotificationDTO[],
+  viewerUserId: string,
+): NotificationDTO[] {
+  const viewerId = viewerUserId.trim();
+  if (!viewerId) return notifications;
+
+  return notifications.filter((notification) => {
+    if (notification.type !== "message_received") return true;
+    if (!notification.actorUserId) return true;
+    return notification.actorUserId !== viewerId;
+  });
+}
+
 export async function listNotificationsForUser(
   recipientUserId: string,
   limit = 50,
@@ -454,4 +469,35 @@ export async function notifyDailyUpdateSubmitted(input: {
       actorName: submitter,
     });
   }
+}
+
+function previewMessageText(text: string, maxLength = 120): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength - 1)}…`;
+}
+
+export async function notifyMessageReceived(input: {
+  conversationId: string;
+  senderUserId: string;
+  senderName: string;
+  recipientUserId: string;
+  text: string;
+}): Promise<void> {
+  const recipientUserId = input.recipientUserId.trim();
+  const senderUserId = input.senderUserId.trim();
+  if (!recipientUserId || recipientUserId === senderUserId) return;
+
+  const senderName = input.senderName.trim() || "Someone";
+  const preview = previewMessageText(input.text);
+
+  await createNotification({
+    recipientUserId,
+    type: "message_received",
+    title: "New message",
+    message: preview ? `${senderName}: ${preview}` : `${senderName} sent you a message.`,
+    conversationId: input.conversationId,
+    actorUserId: senderUserId,
+    actorName: senderName,
+  });
 }

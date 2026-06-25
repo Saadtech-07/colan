@@ -13,10 +13,10 @@ export function buildUpdateAppUserBody(values: AppUserAccountFormValues) {
   return {
     name: values.name.trim(),
     appRole: values.appRole,
+    employeeId: values.employeeId.trim(),
     ...(showEmployeeIdentity
       ? {
           team: values.team,
-          employeeId: values.employeeId.trim(),
           bayNumber:
             values.bayNumber && values.bayNumber !== UNASSIGNED_SEAT
               ? values.bayNumber
