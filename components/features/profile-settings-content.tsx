@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingIndicator } from "@/components/ui/loading-indicator";
 import { formatWorkspaceDate, parseSeatAllocation } from "@/lib/employee-workspace-ui";
+import { normalizeAppRole } from "@/lib/app-role";
 import { profileNameInitial } from "@/lib/profile-image";
 import {
   isMeaningfulTeamName,
@@ -152,6 +153,7 @@ export function ProfileSettingsContent({
     roleShowsTeamOnProfile(profile?.appRole) && isMeaningfulTeamName(profile?.team);
   const showOfficeSeat = roleEligibleForOfficeSeat(profile?.appRole);
   const profileRoleLabel = resolveProfileRoleLabel(profile?.appRole, profile?.workspaceRole);
+  const showResumeDownload = normalizeAppRole(profile?.appRole).toLowerCase() !== "employee";
 
   return (
     <div className="space-y-6">
@@ -364,22 +366,24 @@ export function ProfileSettingsContent({
                               <Eye className="h-4 w-4" />
                               View
                             </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="gap-2 rounded-xl"
-                              onClick={() =>
-                                downloadResumeDocument(
-                                  previewResumeUrl,
-                                  previewResumeFileName,
-                                )
-                              }
-                              disabled={saving}
-                            >
-                              <Download className="h-4 w-4" />
-                              Download
-                            </Button>
+                            {showResumeDownload ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-2 rounded-xl"
+                                onClick={() =>
+                                  downloadResumeDocument(
+                                    previewResumeUrl,
+                                    previewResumeFileName,
+                                  )
+                                }
+                                disabled={saving}
+                              >
+                                <Download className="h-4 w-4" />
+                                Download
+                              </Button>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -434,16 +438,20 @@ export function ProfileSettingsContent({
                   title="Security"
                   description={
                     isOnboarding
-                      ? "Replace your temporary password to finish setup"
+                      ? "Optional — keep your welcome email password or set a new one"
                       : "Change your login password"
                   }
                   icon={KeyRound}
                 >
                   <div className="grid gap-4 px-5 py-5 md:grid-cols-2">
+                    {isOnboarding ? (
+                      <p className="text-xs text-muted-foreground md:col-span-2">
+                        Leave the password fields blank to continue with the password your
+                        administrator created. Fill them in only if you want to change it.
+                      </p>
+                    ) : null}
                     <div className="space-y-2 md:col-span-2">
-                      <Label htmlFor="current-password">
-                        {isOnboarding ? "Temporary password" : "Current password"}
-                      </Label>
+                      <Label htmlFor="current-password">Current password</Label>
                       <Input
                         id="current-password"
                         type="password"
@@ -454,16 +462,14 @@ export function ProfileSettingsContent({
                         disabled={saving}
                         placeholder={
                           isOnboarding
-                            ? "Password from your welcome email"
+                            ? "Only needed if changing password"
                             : "Required when changing password"
                         }
                         className="h-11 rounded-xl"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="new-password">
-                        {isOnboarding ? "New password" : "New password (optional)"}
-                      </Label>
+                      <Label htmlFor="new-password">New password (optional)</Label>
                       <Input
                         id="new-password"
                         type="password"
@@ -471,7 +477,9 @@ export function ProfileSettingsContent({
                         onChange={(event) => onFormChange({ newPassword: event.target.value })}
                         disabled={saving}
                         placeholder={
-                          isOnboarding ? "Create your new password" : "Leave blank to keep current"
+                          isOnboarding
+                            ? "Leave blank to keep current password"
+                            : "Leave blank to keep current"
                         }
                         className="h-11 rounded-xl"
                       />
@@ -567,7 +575,7 @@ export function ProfileSettingsContent({
                 done={!isOnboarding}
                 label={
                   isOnboarding
-                    ? "Set a new password before continuing."
+                    ? "Change your password (optional)."
                     : "Password is up to date."
                 }
               />

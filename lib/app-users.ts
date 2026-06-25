@@ -1153,13 +1153,7 @@ export async function completeCurrentAppUserProfile(
   if (!current) throw new Error("User not found.");
 
   const nextImageUrl = input.imageUrl?.trim() ?? "";
-  const wantsPasswordChange = Boolean(input.newPassword);
-
-  const isFirstLoginSetup = !normalizeProfileCompleted(current.isProfileCompleted);
-
-  if (isFirstLoginSetup && !wantsPasswordChange) {
-    throw new Error("Set a new password to complete your first login setup.");
-  }
+  const wantsPasswordChange = Boolean(input.newPassword?.trim());
 
   if (wantsPasswordChange) {
     const currentPassword = input.currentPassword?.trim() ?? "";

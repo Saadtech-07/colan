@@ -185,13 +185,6 @@ export default function ProfileSettingsPage() {
     event.preventDefault();
     if (!profile) return;
 
-    const isOnboarding = profile.isProfileCompleted === false;
-
-    if (isOnboarding && !form.newPassword.trim()) {
-      setError("Set a new password to complete your first login setup.");
-      return;
-    }
-
     if (form.newPassword.trim() && form.confirmNewPassword.trim() !== form.newPassword.trim()) {
       setError("Confirm password must match the new password.");
       return;

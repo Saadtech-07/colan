@@ -31,8 +31,10 @@ import {
   stashCreateAccountToast,
 } from "@/lib/create-app-user-client";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
+import { useTransientMessage } from "@/lib/use-transient-message";
 import { useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
+import { TransientWarningToast } from "@/components/ui/transient-warning-toast";
 import type { TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
 
@@ -53,7 +55,7 @@ export function CreateAppUserSheet({ open, onOpenChange }: Props) {
   const submitting = isLoadingKey("app-users-submit");
 
   const [users, setUsers] = React.useState<AppUserPublicDTO[]>([]);
-  const [error, setError] = React.useState<string | null>(null);
+  const { message: warning, showMessage, dismiss: dismissWarning } = useTransientMessage(2000);
   const [step, setStep] = React.useState<AppUserFormStep>("account");
   const [account, setAccount] = React.useState<AppUserAccountFormValues>(() =>
     buildDefaultAppUserForm(defaultTeam),
@@ -81,10 +83,10 @@ export function CreateAppUserSheet({ open, onOpenChange }: Props) {
   }, [open]);
 
   const resetForm = React.useCallback(() => {
-    setError(null);
+    dismissWarning();
     setStep("account");
     setAccount(buildDefaultAppUserForm(defaultTeam));
-  }, [defaultTeam]);
+  }, [defaultTeam, dismissWarning]);
 
   React.useEffect(() => {
     if (!open) resetForm();
@@ -102,27 +104,27 @@ export function CreateAppUserSheet({ open, onOpenChange }: Props) {
   };
 
   const continueToWorkspace = () => {
-    setError(null);
+    dismissWarning();
     const validationError = validateCreateAppUserAccountStep(account, users, employees);
     if (validationError) {
-      setError(validationError);
+      showMessage(validationError);
       return;
     }
     setStep("workspace");
   };
 
   const handleCreate = async () => {
-    setError(null);
+    dismissWarning();
     const accountError = validateCreateAppUserAccountStep(account, users, employees);
     if (accountError) {
-      setError(accountError);
+      showMessage(accountError);
       setStep("account");
       return;
     }
 
     const workEmailError = validateCreateAppUserWorkEmailStep(account, users);
     if (workEmailError) {
-      setError(workEmailError);
+      showMessage(workEmailError);
       setStep("workspace");
       return;
     }
@@ -144,7 +146,7 @@ export function CreateAppUserSheet({ open, onOpenChange }: Props) {
         router.push("/app-users");
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to create account.");
+      showMessage(e instanceof Error ? e.message : "Unable to create account.");
     }
   };
 
@@ -172,12 +174,11 @@ export function CreateAppUserSheet({ open, onOpenChange }: Props) {
         </SheetHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          {error ? (
-            <div className="mb-4 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {error}
-            </div>
-          ) : null}
-
+          <TransientWarningToast
+            variant="inline"
+            message={warning}
+            onDismiss={dismissWarning}
+          />
           {step === "account" ? (
             <AppUserAccountDetailsStep
               values={account}
@@ -217,7 +218,7 @@ export function CreateAppUserSheet({ open, onOpenChange }: Props) {
               onClick={() => {
                 if (step === "workspace") {
                   setStep("account");
-                  setError(null);
+                  dismissWarning();
                   return;
                 }
                 handleOpenChange(false);
