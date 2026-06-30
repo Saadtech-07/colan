@@ -23,7 +23,7 @@ export async function GET() {
   }
   try {
     const employees = await listEmployees();
-    return NextResponse.json(employees);
+    return NextResponse.json(employees);  
   } catch (e) {
     if (e instanceof DataBackendError) {
       return NextResponse.json({ error: e.message }, { status: 503 });
