@@ -21,7 +21,7 @@ export async function POST(req: Request) {
         error:
           "No AI provider configured. Add OPENROUTER_API_KEY to .env.local (recommended), save, and restart the dev server.",
       },
-      { status: 503 },
+      { status: 503 }, 
     );
   }
 

@@ -156,11 +156,29 @@ const SQUAD_CONTRIBUTOR_ROLE_KEYS = new Set([
   "colead",
   "intern",
   "trainee",
+  "pc",
+  "project-coordinator",
+  "project_coordinator",
+  "projectcoordinator",
+  "project-lead",
+  "project_lead",
+  "projectlead",
 ]);
 
-/** Squad contributors need an employee ID and team assignment. */
+/** Squad / small roles need an employee record, team, and can be assigned a bay. */
 export function roleNeedsEmployeeIdentity(roleKey: AppRole): boolean {
-  return SQUAD_CONTRIBUTOR_ROLE_KEYS.has(normalizeAppRole(roleKey).toLowerCase());
+  const key = normalizeAppRole(roleKey).toLowerCase();
+  if (SQUAD_CONTRIBUTOR_ROLE_KEYS.has(key)) return true;
+  // Custom small roles (not admin / manager / PM / CEO) still get identity + seating.
+  if (
+    key.includes("coordinator") ||
+    key.includes("trainee") ||
+    key.includes("intern") ||
+    (key.includes("lead") && !key.includes("project-manager") && !key.includes("project_manager"))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function roleNeedsTeam(roleKey: AppRole): boolean {

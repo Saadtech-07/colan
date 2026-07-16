@@ -472,10 +472,10 @@ export default function SeatingPage() {
               size="sm"
               className={cn(
                 "h-9 shrink-0 gap-1.5 rounded-lg border-0 px-3.5 text-xs font-semibold shadow-sm transition-colors",
-                "bg-sky-500 text-white hover:bg-sky-600 hover:shadow-md",
-                "focus-visible:ring-2 focus-visible:ring-sky-400/60 focus-visible:ring-offset-2",
-                "dark:bg-sky-500 dark:text-white dark:hover:bg-sky-400",
-                aiPanelOpen && "bg-sky-600 hover:bg-sky-700 dark:bg-sky-600 dark:hover:bg-sky-500",
+                "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md",
+                "focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2",
+                "dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500",
+                aiPanelOpen && "bg-blue-700 hover:bg-blue-800 dark:bg-blue-700 dark:hover:bg-blue-600",
               )}
               onClick={() => setAiPanelOpen((open) => !open)}
             >

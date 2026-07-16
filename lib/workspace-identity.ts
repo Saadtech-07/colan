@@ -20,26 +20,42 @@ const TEAM_DIRECTORY_ROLE_ALLOWLIST = [
   /^team lead$/i,
   /^project lead$/i,
   /^co-?lead$/i,
+  /^pc$/i,
+  /^project coordinator$/i,
 ];
 
-/** Squad members who belong to a team and may have an office seat. */
-export function roleShowsTeamOnProfile(appRole?: AppRole | string | null): boolean {
-  if (!appRole) return false;
-  return roleNeedsTeam(appRole as AppRole);
-}
-
-export function roleEligibleForOfficeSeat(appRole?: AppRole | string | null): boolean {
-  return roleShowsTeamOnProfile(appRole);
+/** Squad / small roles that are never treated as executive portfolio. */
+function isSquadOrContributorRoleName(roleName: string): boolean {
+  const lower = roleName.trim().toLowerCase();
+  if (!lower) return false;
+  return (
+    /project lead|team lead|co-?lead/.test(lower) ||
+    /project coordinator|^pc$/.test(lower) ||
+    /^(employee|intern|trainee)$/.test(lower)
+  );
 }
 
 function roleNameIsPortfolio(roleName: string): boolean {
   const lower = roleName.trim().toLowerCase();
   if (!lower) return false;
-  if (/project lead|team lead/.test(lower)) return false;
-  if (/^(admin|manager|ceo|cfo|super\s*admin|superadmin|project manager)$/i.test(lower)) {
+  // Keep lead / PC / coordinator on the floor — never treat as executives.
+  if (isSquadOrContributorRoleName(lower)) return false;
+  if (/^(admin|manager|ceo|cfo|super\s*admin|superadmin)$/i.test(lower)) {
     return true;
   }
   return lower.includes("project manager");
+}
+
+/** Squad members who belong to a team. */
+export function roleShowsTeamOnProfile(appRole?: AppRole | string | null): boolean {
+  if (!appRole) return false;
+  return roleNeedsTeam(appRole as AppRole);
+}
+
+/** Office seat on profile / create form — everyone except executives. */
+export function roleEligibleForOfficeSeat(appRole?: AppRole | string | null): boolean {
+  if (!appRole) return false;
+  return !roleIsPortfolioLevel(appRole);
 }
 
 /** Admin, manager, project manager, CEO, CFO, and other non-squad roles. */
@@ -90,17 +106,15 @@ export function resolveProfileRoleLabel(
   return "—";
 }
 
-const SEATING_ELIGIBLE_COMPANY_ROLE = /^(employee|team lead|intern|trainee|co-?lead)$/i;
-
-/** Whether an employee record may appear on the seating floor plan or be assigned a bay. */
+/**
+ * Whether an employee record may appear on the seating floor plan or be assigned a bay.
+ * Admin can seat lead, employee, trainee, PC, and other small roles —
+ * not manager, project manager, CEO, or other executives.
+ */
 export function employeeEligibleForSeating(employee: Pick<Employee, "role">): boolean {
   const role = employee.role?.trim() ?? "";
-  if (!role) return false;
-  const lower = role.toLowerCase();
-  if (lower === "admin" || lower === "manager") return false;
-  if (lower.includes("project manager")) return false;
-  if (SEATING_ELIGIBLE_COMPANY_ROLE.test(role)) return true;
-  return lower.includes("lead") && !lower.includes("project");
+  if (!role) return true;
+  return !roleNameIsPortfolio(role);
 }
 
 export function filterEmployeesEligibleForSeating(employees: Employee[]): Employee[] {

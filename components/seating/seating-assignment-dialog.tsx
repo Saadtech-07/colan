@@ -76,7 +76,7 @@ export function SeatingAssignmentDialog({
           <DialogDescription>
             {occupant
               ? "View assignment, move to another seat, or remove."
-              : "Search and assign an employee to this seat."}
+              : "Search and assign a team member to this seat."}
           </DialogDescription>
         </DialogHeader>
 
@@ -143,7 +143,7 @@ export function SeatingAssignmentDialog({
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Search employees…"
+                  placeholder="Search by name, user ID, or team…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   className="pl-9"
@@ -153,7 +153,7 @@ export function SeatingAssignmentDialog({
                 <ul className="p-2">
                   {assignableEmployees.length === 0 ? (
                     <li className="px-2 py-6 text-center text-sm text-muted-foreground">
-                      No employees match your search.
+                      No team members match your search.
                     </li>
                   ) : (
                     assignableEmployees.map((emp) => (
