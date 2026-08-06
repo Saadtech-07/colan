@@ -5,7 +5,12 @@ import { COLLECTIONS } from "./collections";
 
 export const FLOOR_PLAN_COLLECTION = COLLECTIONS.floorPlans;
 
-export type FloorPlanSlug = "chennai" | "pernambut" | "bangalore" | string;
+export type FloorPlanSlug =
+  | "chennai"
+  | "chennai-block-b"
+  | "pernambut"
+  | "bangalore"
+  | string;
 
 export type FloorPlanDocument = {
   _id: ObjectId;

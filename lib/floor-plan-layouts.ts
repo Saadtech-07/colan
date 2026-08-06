@@ -8,10 +8,17 @@ import { DEFAULT_SIDE_CABINS } from "@/lib/seating-layout-editor-snapshot";
 import type { FloorPlanDocument } from "@/models/floor-plan.model";
 
 export const DEFAULT_OFFICE_SLUG = "chennai";
+export const CHENNAI_BLOCK_A_SLUG = "chennai";
+export const CHENNAI_BLOCK_B_SLUG = "chennai-block-b";
 
 export function normalizeOfficeSlug(slug?: string | null): string {
   const value = (slug ?? "").trim().toLowerCase();
   return value || DEFAULT_OFFICE_SLUG;
+}
+
+export function isChennaiOfficeSlug(slug?: string | null): boolean {
+  const value = normalizeOfficeSlug(slug);
+  return value === CHENNAI_BLOCK_A_SLUG || value === CHENNAI_BLOCK_B_SLUG;
 }
 
 function seatIds(prefix: string, from: number, to: number, step = 1): FloorCell[] {
@@ -143,6 +150,29 @@ const CHENNAI_CABINS = {
   sideCabins: { ...DEFAULT_SIDE_CABINS },
 };
 
+function cloneChennaiCabins(prefix: string) {
+  return {
+    beforeA: CABINS_BEFORE_A_ROW.map((c) => ({
+      ...c,
+      id: `${prefix}-${c.id}`,
+    })),
+    afterG: CABINS_AFTER_G_ROW.map((c) => ({
+      ...c,
+      id: `${prefix}-${c.id}`,
+    })),
+    sideCabins: { ...DEFAULT_SIDE_CABINS },
+  };
+}
+
+function cloneChennaiRows() {
+  return SEATING_ROWS.map((row) => ({
+    ...row,
+    floorKey: row.key === "G" ? "3" : ["A", "B", "C"].includes(row.key) ? "2" : "1",
+    top: [...row.top],
+    bottom: [...row.bottom],
+  }));
+}
+
 const SIMPLE_CABINS = (prefix: string): {
   beforeA: SeatingCabin[];
   afterG: SeatingCabin[];
@@ -161,12 +191,8 @@ const SIMPLE_CABINS = (prefix: string): {
 export type FloorPlanSeed = Omit<FloorPlanDocument, "_id">;
 
 export function buildFloorPlanSeeds(): FloorPlanSeed[] {
-  const chennaiRows = SEATING_ROWS.map((row) => ({
-    ...row,
-    floorKey: row.key === "G" ? "3" : ["A", "B", "C"].includes(row.key) ? "2" : "1",
-    top: [...row.top],
-    bottom: [...row.bottom],
-  }));
+  const chennaiBlockARows = cloneChennaiRows();
+  const chennaiBlockBRows = cloneChennaiRows();
   const pernambutRows = PERNAMBUT_ROWS.map((row) => ({
     ...row,
     top: [...row.top],
@@ -178,19 +204,21 @@ export function buildFloorPlanSeeds(): FloorPlanSeed[] {
     bottom: [...row.bottom],
   }));
 
+  const chennaiFloors = [
+    { key: "1", label: "Floor 1" },
+    { key: "2", label: "Floor 2" },
+    { key: "3", label: "Floor 3" },
+  ];
+
   return [
     {
-      slug: "chennai",
-      name: "Chennai (Colan HQ)",
+      slug: CHENNAI_BLOCK_A_SLUG,
+      name: "Chennai · Block A",
       city: "Chennai",
-      building: "Building A",
-      floors: [
-        { key: "1", label: "Floor 1" },
-        { key: "2", label: "Floor 2" },
-        { key: "3", label: "Floor 3" },
-      ],
-      rows: chennaiRows,
-      seatIds: seatIdsFromRows(chennaiRows),
+      building: "Block A",
+      floors: chennaiFloors,
+      rows: chennaiBlockARows,
+      seatIds: seatIdsFromRows(chennaiBlockARows),
       cabins: CHENNAI_CABINS,
       isActive: true,
       sortOrder: 0,
@@ -199,14 +227,14 @@ export function buildFloorPlanSeeds(): FloorPlanSeed[] {
       updatedAt: new Date(),
     },
     {
-      slug: "pernambut",
-      name: "Pernambut",
-      city: "Pernambut",
+      slug: CHENNAI_BLOCK_B_SLUG,
+      name: "Chennai · Block B",
+      city: "Chennai",
       building: "Block B",
-      floors: [{ key: "1", label: "Ground Floor" }],
-      rows: pernambutRows,
-      seatIds: seatIdsFromRows(pernambutRows),
-      cabins: SIMPLE_CABINS("pernambut"),
+      floors: chennaiFloors.map((f) => ({ ...f })),
+      rows: chennaiBlockBRows,
+      seatIds: seatIdsFromRows(chennaiBlockBRows),
+      cabins: cloneChennaiCabins("chennai-b"),
       isActive: true,
       sortOrder: 1,
       source: "seed",
@@ -214,10 +242,25 @@ export function buildFloorPlanSeeds(): FloorPlanSeed[] {
       updatedAt: new Date(),
     },
     {
+      slug: "pernambut",
+      name: "Pernambut · Block A",
+      city: "Pernambut",
+      building: "Block A",
+      floors: [{ key: "1", label: "Ground Floor" }],
+      rows: pernambutRows,
+      seatIds: seatIdsFromRows(pernambutRows),
+      cabins: SIMPLE_CABINS("pernambut"),
+      isActive: true,
+      sortOrder: 2,
+      source: "seed",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    {
       slug: "bangalore",
-      name: "Bangalore",
+      name: "Bangalore · Block A",
       city: "Bangalore",
-      building: "Tech Park 1",
+      building: "Block A",
       floors: [
         { key: "1", label: "Floor 1" },
         { key: "2", label: "Floor 2" },
@@ -226,7 +269,7 @@ export function buildFloorPlanSeeds(): FloorPlanSeed[] {
       seatIds: seatIdsFromRows(bangaloreRows),
       cabins: SIMPLE_CABINS("bangalore"),
       isActive: true,
-      sortOrder: 2,
+      sortOrder: 3,
       source: "seed",
       createdAt: new Date(),
       updatedAt: new Date(),

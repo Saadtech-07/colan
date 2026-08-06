@@ -2,7 +2,10 @@ import { ObjectId, type Db } from "mongodb";
 import { allowInMemoryFallback } from "@/lib/data-backend";
 import {
   buildFloorPlanSeeds,
+  CHENNAI_BLOCK_A_SLUG,
+  CHENNAI_BLOCK_B_SLUG,
   DEFAULT_OFFICE_SLUG,
+  isChennaiOfficeSlug,
   normalizeOfficeSlug,
   seatIdsFromRows,
 } from "@/lib/floor-plan-layouts";
@@ -45,13 +48,32 @@ function seedToDto(seed: ReturnType<typeof buildFloorPlanSeeds>[number]): FloorP
 }
 
 function ensureMemorySeeds() {
-  if (memoryFloorPlans.length > 0) return;
-  for (const seed of buildFloorPlanSeeds()) {
-    memoryFloorPlans.push({
+  const seeds = buildFloorPlanSeeds();
+  for (const seed of seeds) {
+    const idx = memoryFloorPlans.findIndex((p) => p.slug === seed.slug);
+    const dto = {
       ...seedToDto(seed),
       createdAt: seed.createdAt,
       updatedAt: seed.updatedAt,
-    });
+    };
+    if (idx === -1) {
+      memoryFloorPlans.push(dto);
+      continue;
+    }
+    // Align labels for in-memory catalog; keep rows if already present.
+    const current = memoryFloorPlans[idx];
+    memoryFloorPlans[idx] = {
+      ...current,
+      name: seed.name,
+      city: seed.city,
+      building: seed.building,
+      floors: seed.floors,
+      sortOrder: seed.sortOrder,
+      isActive: seed.isActive,
+      rows: current.rows?.length ? current.rows : seed.rows,
+      seatIds: current.seatIds?.length ? current.seatIds : seed.seatIds,
+      cabins: current.cabins ?? seed.cabins,
+    };
   }
 }
 
@@ -59,11 +81,41 @@ async function ensureFloorPlanSeeds(db: Db): Promise<void> {
   const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
   for (const seed of buildFloorPlanSeeds()) {
     const existing = await col.findOne({ slug: seed.slug });
-    if (existing) continue;
-    await col.insertOne({
-      _id: new ObjectId(),
-      ...seed,
-    });
+    if (!existing) {
+      await col.insertOne({
+        _id: new ObjectId(),
+        ...seed,
+      });
+      continue;
+    }
+
+    // Keep catalog labels in sync (Block A / Block B naming) for seeded offices.
+    // Do not overwrite custom Excel/manual row geometry unless the doc has no rows.
+    const isCatalogSeed = !existing.source || existing.source === "seed";
+    if (!isCatalogSeed) continue;
+
+    await col.updateOne(
+      { _id: existing._id },
+      {
+        $set: {
+          name: seed.name,
+          city: seed.city,
+          building: seed.building,
+          floors: seed.floors,
+          sortOrder: seed.sortOrder,
+          isActive: seed.isActive,
+          updatedAt: new Date(),
+          ...(!existing.rows?.length
+            ? {
+                rows: seed.rows,
+                seatIds: seed.seatIds,
+                cabins: seed.cabins,
+                source: seed.source,
+              }
+            : {}),
+        },
+      },
+    );
   }
 }
 
@@ -287,5 +339,11 @@ export function isSeatOnPlan(bayId: string, plan: FloorPlanDTO): boolean {
   return plan.seatIds.includes(bayId);
 }
 
-export { DEFAULT_OFFICE_SLUG, normalizeOfficeSlug };
+export {
+  DEFAULT_OFFICE_SLUG,
+  CHENNAI_BLOCK_A_SLUG,
+  CHENNAI_BLOCK_B_SLUG,
+  isChennaiOfficeSlug,
+  normalizeOfficeSlug,
+};
 

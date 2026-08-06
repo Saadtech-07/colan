@@ -28,6 +28,9 @@ type Props = {
   employees: Employee[];
   canAssign: boolean;
   saving: boolean;
+  /** Floor plan office — required when Block A/B share seat ids. */
+  officeSlug?: string;
+  seatIds?: string[];
   onClose: () => void;
   onAssign: (employeeId: string) => void;
   onRemove: () => void;
@@ -40,13 +43,18 @@ export function SeatingAssignmentDialog({
   employees,
   canAssign,
   saving,
+  officeSlug,
+  seatIds,
   onClose,
   onAssign,
   onRemove,
   onReassign,
 }: Props) {
   const [query, setQuery] = React.useState("");
-  const occupancy = React.useMemo(() => seatOccupancyMap(employees), [employees]);
+  const occupancy = React.useMemo(
+    () => seatOccupancyMap(employees, { officeSlug, seatIds }),
+    [employees, officeSlug, seatIds],
+  );
 
   React.useEffect(() => {
     if (open) setQuery("");
@@ -63,10 +71,10 @@ export function SeatingAssignmentDialog({
     });
   }, [employees, occupant, query]);
 
-  const vacantForReassign = React.useMemo(
-    () => ALL_SEAT_IDS.filter((id) => id !== seatId && !occupancy.has(id)),
-    [occupancy, seatId],
-  );
+  const vacantForReassign = React.useMemo(() => {
+    const ids = seatIds?.length ? seatIds : ALL_SEAT_IDS;
+    return ids.filter((id) => id !== seatId && !occupancy.has(id));
+  }, [occupancy, seatId, seatIds]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>

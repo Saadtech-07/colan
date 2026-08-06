@@ -13,15 +13,21 @@ import type { GeneratedSeatingLayout } from "@/lib/seating-layout-types";
 import type { SeatingAiZone } from "@/lib/seating-ai-types";
 import type { Employee } from "@/types";
 
-type Props = {
-  open: boolean;
-  onClose: () => void;
-  title: string;
-  subtitle: string;
+export type SeatingFullscreenBlock = {
+  key: string;
+  label: string;
+  officeSlug: string;
   occupancy: Map<string, Employee>;
+  rows: SeatingRowConfig[];
+  showCabins?: boolean;
+  cabinsBeforeA?: SeatingCabin[];
+  cabinsAfterG?: SeatingCabin[];
+  sideCabins?: SideCabinsConfig;
+};
+
+type SharedFloorProps = {
   selectedSeat: string | null;
   highlightSeats: Set<string> | null;
-  rows?: SeatingRowConfig[];
   layoutMode?: boolean;
   generatedLayout?: GeneratedSeatingLayout | null;
   layoutSeats?: Set<string> | null;
@@ -31,29 +37,45 @@ type Props = {
   search: string;
   viewMode: "all" | "occupied" | "available";
   canAssign: boolean;
-  zoom: number;
-  showCabins?: boolean;
-  cabinsBeforeA?: SeatingCabin[];
-  cabinsAfterG?: SeatingCabin[];
-  sideCabins?: SideCabinsConfig;
-  onZoomChange: (zoom: number) => void;
-  onSeatClick: (seatId: string) => void;
-  onAssignSeat: (seatId: string, employeeId: string) => void;
+  onSeatClick: (seatId: string, officeSlug: string) => void;
+  onAssignSeat: (seatId: string, employeeId: string, officeSlug: string) => void;
 };
 
-const MIN_ZOOM = 0.45;
-const MAX_ZOOM = 1.6;
+type Props = SharedFloorProps & {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  subtitle: string;
+  /** One or more floor blocks (Chennai View shows Block A + Block B). */
+  blocks: SeatingFullscreenBlock[];
+};
+
+const MIN_ZOOM = 0.55;
+const MAX_ZOOM = 1;
+const ZOOM_STEP = 0.08;
 
 export function SeatingFloorPlanFullscreen({
   open,
   onClose,
   title,
   subtitle,
-  zoom,
-  onZoomChange,
-  ...floorPlanProps
+  blocks,
+  selectedSeat,
+  highlightSeats,
+  layoutMode = false,
+  generatedLayout = null,
+  layoutSeats = null,
+  layoutZones = [],
+  zoneBySeat = new Map(),
+  teamFilter,
+  search,
+  viewMode,
+  canAssign,
+  onSeatClick,
+  onAssignSeat,
 }: Props) {
   const [mounted, setMounted] = React.useState(false);
+  const [zoom, setZoom] = React.useState(1);
 
   React.useEffect(() => {
     setMounted(true);
@@ -61,6 +83,7 @@ export function SeatingFloorPlanFullscreen({
 
   React.useEffect(() => {
     if (!open) return;
+    setZoom(1);
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
@@ -77,7 +100,7 @@ export function SeatingFloorPlanFullscreen({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
-  if (!open || !mounted) return null;
+  if (!open || !mounted || blocks.length === 0) return null;
 
   return createPortal(
     <div className="fixed inset-0 z-[100] flex h-dvh max-h-dvh flex-col bg-background">
@@ -105,7 +128,7 @@ export function SeatingFloorPlanFullscreen({
             variant="outline"
             size="icon"
             className="h-8 w-8 rounded-full border-border/70"
-            onClick={() => onZoomChange(Math.max(MIN_ZOOM, zoom - 0.08))}
+            onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
             aria-label="Zoom out"
           >
             <ZoomOut className="h-4 w-4" />
@@ -118,7 +141,7 @@ export function SeatingFloorPlanFullscreen({
             variant="outline"
             size="icon"
             className="h-8 w-8 rounded-full border-border/70"
-            onClick={() => onZoomChange(Math.min(MAX_ZOOM, zoom + 0.08))}
+            onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
             aria-label="Zoom in"
           >
             <ZoomIn className="h-4 w-4" />
@@ -128,9 +151,50 @@ export function SeatingFloorPlanFullscreen({
 
       <SeatingScrollViewport
         autoFocus
+        fitWidth
+        paddingClassName="p-3 sm:p-5"
         className="bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)]"
       >
-        <SeatingFloorPlan zoom={zoom} {...floorPlanProps} />
+        <div className="flex w-max flex-col gap-10">
+          {blocks.map((block) => (
+            <section key={block.key} className="w-max">
+              {blocks.length > 1 && (
+                <div className="mb-4 flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-foreground sm:text-base">
+                    {block.label}
+                  </h3>
+                  <span className="rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {block.occupancy.size} occupied
+                  </span>
+                </div>
+              )}
+              <SeatingFloorPlan
+                zoom={zoom}
+                occupancy={block.occupancy}
+                selectedSeat={selectedSeat}
+                highlightSeats={highlightSeats}
+                layoutMode={layoutMode}
+                rows={block.rows}
+                generatedLayout={generatedLayout}
+                layoutSeats={layoutSeats}
+                layoutZones={layoutZones}
+                zoneBySeat={zoneBySeat}
+                teamFilter={teamFilter}
+                search={search}
+                viewMode={viewMode}
+                canAssign={canAssign}
+                showCabins={block.showCabins ?? true}
+                cabinsBeforeA={block.cabinsBeforeA}
+                cabinsAfterG={block.cabinsAfterG}
+                sideCabins={block.sideCabins}
+                onSeatClick={(seatId) => onSeatClick(seatId, block.officeSlug)}
+                onAssignSeat={(seatId, employeeId) =>
+                  onAssignSeat(seatId, employeeId, block.officeSlug)
+                }
+              />
+            </section>
+          ))}
+        </div>
       </SeatingScrollViewport>
     </div>,
     document.body,

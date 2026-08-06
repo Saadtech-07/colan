@@ -10,14 +10,17 @@ import {
   SeatingFloorPlan,
   type SeatingFloorPlanHandle,
 } from "@/components/seating/seating-floor-plan";
-import { SeatingFloorPlanFullscreen } from "@/components/seating/seating-floor-plan-fullscreen";
+import {
+  SeatingFloorPlanFullscreen,
+  type SeatingFullscreenBlock,
+} from "@/components/seating/seating-floor-plan-fullscreen";
 import { SeatingScrollViewport } from "@/components/seating/seating-scroll-viewport";
 import {
   requestSeatingAiGeneration,
   SeatingAiPanel,
 } from "@/components/seating/seating-ai-panel";
 import { SeatingToolbar, SeatingZoomControls } from "@/components/seating/seating-toolbar";
-import { SectionTitle } from "@/components/ui/page-typography";
+import { SeatingOfficeSelect } from "@/components/seating/seating-office-select";
 import type { SeatingAiSuggestion } from "@/lib/seating-ai-types";
 import type { Employee } from "@/types";
 import { layoutSeatSet, zoneLabelBySeat } from "@/lib/seating-ai-layout-builder";
@@ -27,13 +30,18 @@ import {
   isAiLayoutMode,
 } from "@/lib/seating-ai-preview";
 import { ALL_SEAT_IDS, SEATING_ROWS, type SeatingRowConfig } from "@/lib/seating-layout";
-import { DEFAULT_OFFICE_SLUG } from "@/lib/floor-plan-layouts";
+import {
+  CHENNAI_BLOCK_A_SLUG,
+  CHENNAI_BLOCK_B_SLUG,
+  DEFAULT_OFFICE_SLUG,
+  isChennaiOfficeSlug,
+} from "@/lib/floor-plan-layouts";
 import {
   fetchFloorPlanDetail,
   fetchFloorPlanSummaries,
+  invalidateFloorPlanClientCache,
 } from "@/lib/floor-plans-client";
 import type { FloorPlanDTO, FloorPlanSummary } from "@/models/floor-plan.model";
-import { SeatingOfficeSelect } from "@/components/seating/seating-office-select";
 import { applyOccupancySwaps } from "@/lib/seating-layout-prompt";
 import {
   CABINS_AFTER_G_ROW,
@@ -66,7 +74,7 @@ export default function SeatingPage() {
   const [roleFilter, setRoleFilter] = React.useState("all");
   const [genderFilter, setGenderFilter] = React.useState("all");
   const [viewMode, setViewMode] = React.useState<"all" | "occupied" | "available">("all");
-  const [zoom, setZoom] = React.useState(0.75);
+  const [zoom, setZoom] = React.useState(1);
   const [fullscreenOpen, setFullscreenOpen] = React.useState(false);
   const floorPlanRef = React.useRef<SeatingFloorPlanHandle>(null);
   const [selectedSeat, setSelectedSeat] = React.useState<string | null>(null);
@@ -87,7 +95,9 @@ export default function SeatingPage() {
   const [officeSlug, setOfficeSlug] = React.useState(DEFAULT_OFFICE_SLUG);
   const [officePlans, setOfficePlans] = React.useState<FloorPlanSummary[]>([]);
   const [activePlan, setActivePlan] = React.useState<FloorPlanDTO | null>(null);
+  const [companionPlan, setCompanionPlan] = React.useState<FloorPlanDTO | null>(null);
   const [planLoading, setPlanLoading] = React.useState(true);
+  const [dialogOfficeSlug, setDialogOfficeSlug] = React.useState(DEFAULT_OFFICE_SLUG);
 
   const saving = isLoadingKey("seating-assign");
   const aiGenerating = isLoadingKey("seating-ai-generate");
@@ -131,7 +141,8 @@ export default function SeatingPage() {
     let cancelled = false;
     (async () => {
       try {
-        const plans = await fetchFloorPlanSummaries();
+        invalidateFloorPlanClientCache();
+        const plans = await fetchFloorPlanSummaries({ force: true });
         if (cancelled) return;
         setOfficePlans(plans);
         if (plans.length > 0 && !plans.some((p) => p.slug === officeSlug)) {
@@ -152,13 +163,15 @@ export default function SeatingPage() {
     (async () => {
       setPlanLoading(true);
       try {
-        const plan = await fetchFloorPlanDetail(officeSlug);
+        const plan = await fetchFloorPlanDetail(officeSlug, { force: true });
         if (cancelled) return;
         if (!plan) {
           setActivePlan(null);
+          setCompanionPlan(null);
           return;
         }
         setActivePlan(plan);
+        setDialogOfficeSlug(officeSlug);
         setSelectedSeat(null);
         setDialogSeat(null);
         setAiSuggestion(null);
@@ -170,8 +183,22 @@ export default function SeatingPage() {
         setPromptSummary(null);
         setPromptWarnings([]);
         setPromptOccupancySwaps([]);
+
+        if (isChennaiOfficeSlug(officeSlug)) {
+          const siblingSlug =
+            officeSlug === CHENNAI_BLOCK_A_SLUG
+              ? CHENNAI_BLOCK_B_SLUG
+              : CHENNAI_BLOCK_A_SLUG;
+          const sibling = await fetchFloorPlanDetail(siblingSlug, { force: true });
+          if (!cancelled) setCompanionPlan(sibling);
+        } else if (!cancelled) {
+          setCompanionPlan(null);
+        }
       } catch {
-        if (!cancelled) setActivePlan(null);
+        if (!cancelled) {
+          setActivePlan(null);
+          setCompanionPlan(null);
+        }
       } finally {
         if (!cancelled) setPlanLoading(false);
       }
@@ -338,12 +365,16 @@ export default function SeatingPage() {
     clearAiLayout();
     setColanOccupancySnapshot(null);
     resetPromptLayout();
-    setZoom(0.75);
+    setZoom(1);
   };
 
-  const runAssign = async (seatId: string, employeeId: string | null) => {
+  const runAssign = async (
+    seatId: string,
+    employeeId: string | null,
+    targetOfficeSlug = officeSlug,
+  ) => {
     await withLoading("seating-assign", LOADING_PRESETS.assigningBay, async () => {
-      await assignEmployeeToBay(seatId, employeeId, officeSlug);
+      await assignEmployeeToBay(seatId, employeeId, targetOfficeSlug);
       setDialogSeat(null);
       setSelectedSeat(employeeId ? seatId : null);
       if (!layoutMode) {
@@ -382,12 +413,92 @@ export default function SeatingPage() {
     [buildColanLayoutState, setViewMode, withLoading],
   );
 
-  const handleSeatClick = (seatId: string) => {
+  const handleSeatClick = (seatId: string, targetOfficeSlug = officeSlug) => {
     if (layoutMode && layoutSeats && !layoutSeats.has(seatId)) return;
     if (promptLayoutActive) return;
     setSelectedSeat(seatId);
+    setDialogOfficeSlug(targetOfficeSlug);
     if (canAssign) setDialogSeat(seatId);
   };
+
+  const fullscreenBlocks = React.useMemo((): SeatingFullscreenBlock[] => {
+    if (layoutMode) {
+      return [
+        {
+          key: "layout",
+          label: "Layout canvas",
+          officeSlug,
+          occupancy: displayOccupancy,
+          rows: activeRows,
+          showCabins: false,
+        },
+      ];
+    }
+
+    const toBlock = (plan: FloorPlanDTO, slug: string): SeatingFullscreenBlock => ({
+      key: slug,
+      label: `${plan.city ?? "Office"} · ${plan.building ?? plan.name}`,
+      officeSlug: slug,
+      occupancy: seatOccupancyMap(employees, {
+        officeSlug: slug,
+        seatIds: plan.seatIds,
+      }),
+      rows: plan.rows,
+      showCabins: true,
+      cabinsBeforeA: plan.cabins?.beforeA ?? CABINS_BEFORE_A_ROW,
+      cabinsAfterG: plan.cabins?.afterG ?? CABINS_AFTER_G_ROW,
+      sideCabins: plan.cabins?.sideCabins ?? DEFAULT_SIDE_CABINS,
+    });
+
+    if (isChennaiOfficeSlug(officeSlug) && activePlan && companionPlan) {
+      const blockA =
+        officeSlug === CHENNAI_BLOCK_A_SLUG
+          ? toBlock(activePlan, CHENNAI_BLOCK_A_SLUG)
+          : toBlock(companionPlan, CHENNAI_BLOCK_A_SLUG);
+      const blockB =
+        officeSlug === CHENNAI_BLOCK_B_SLUG
+          ? toBlock(activePlan, CHENNAI_BLOCK_B_SLUG)
+          : toBlock(companionPlan, CHENNAI_BLOCK_B_SLUG);
+      return [
+        { ...blockA, label: "Chennai · Block A" },
+        { ...blockB, label: "Chennai · Block B" },
+      ];
+    }
+
+    if (activePlan) {
+      return [
+        toBlock(
+          activePlan,
+          officeSlug,
+        ),
+      ];
+    }
+
+    return [
+      {
+        key: officeSlug,
+        label: "Floor layout",
+        officeSlug,
+        occupancy: displayOccupancy,
+        rows: activeRows,
+        showCabins: !layoutMode,
+        cabinsBeforeA: activeCabinsBeforeA,
+        cabinsAfterG: activeCabinsAfterG,
+        sideCabins: activeSideCabins,
+      },
+    ];
+  }, [
+    layoutMode,
+    officeSlug,
+    displayOccupancy,
+    activeRows,
+    activePlan,
+    companionPlan,
+    employees,
+    activeCabinsBeforeA,
+    activeCabinsAfterG,
+    activeSideCabins,
+  ]);
 
   const handleGenerateText = async (prompt: string) => {
     await withLoading("seating-ai-generate", LOADING_PRESETS.seatingAiGenerate, async () => {
@@ -546,17 +657,15 @@ export default function SeatingPage() {
     ? "New layout canvas"
     : promptLayoutActive
       ? `Edited ${activePlan?.name ?? "office"} layout`
-      : activePlan?.name
-        ? `${activePlan.name} floor layout`
-        : "Floor layout";
+      : null;
 
   return (
     <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-          <SectionTitle as="h2" className="font-semibold text-muted-foreground">
-            {floorSectionTitle}
-          </SectionTitle>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 flex-col gap-2">
+          {floorSectionTitle ? (
+            <p className="text-sm font-semibold text-muted-foreground">{floorSectionTitle}</p>
+          ) : null}
           <SeatingOfficeSelect
             plans={officePlans}
             value={officeSlug}
@@ -566,7 +675,7 @@ export default function SeatingPage() {
         </div>
 
         {canAssign && (
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2 lg:pt-1">
             {promptLayoutActive && (
               <Button
                 type="button"
@@ -704,7 +813,8 @@ export default function SeatingPage() {
         )}
 
         <SeatingScrollViewport
-          paddingClassName="p-4 sm:p-6"
+          fitWidth
+          paddingClassName="p-3 sm:p-5"
           className="bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)]"
         >
           <SeatingFloorPlan
@@ -742,19 +852,28 @@ export default function SeatingPage() {
       <SeatingFloorPlanFullscreen
         open={fullscreenOpen}
         onClose={() => setFullscreenOpen(false)}
-        title={layoutMode ? "New layout canvas" : "Floor layout"}
+        title={
+          layoutMode
+            ? "New layout canvas"
+            : isChennaiOfficeSlug(officeSlug)
+              ? "Chennai · Block A & Block B"
+              : activePlan?.building
+                ? `${activePlan.city ?? "Office"} · ${activePlan.building}`
+                : activePlan?.name ?? "Floor layout"
+        }
         subtitle={
           layoutMode
             ? "Desks from your AI prompt — assignments save immediately."
             : colanFrozen
               ? "Frozen Colan view from before the layout planner."
-              : "Click a seat to view or assign · drag employees when permitted"
+              : isChennaiOfficeSlug(officeSlug)
+                ? "Both Chennai blocks · fitted to your screen · scroll down"
+                : "Full layout fitted to your screen · scroll down for more rows"
         }
-        occupancy={displayOccupancy}
+        blocks={fullscreenBlocks}
         selectedSeat={selectedSeat}
         highlightSeats={highlights}
         layoutMode={layoutMode}
-        rows={activeRows}
         generatedLayout={aiSuggestion?.layout ?? null}
         layoutSeats={layoutSeats}
         layoutZones={layoutZones}
@@ -763,14 +882,8 @@ export default function SeatingPage() {
         search={search}
         viewMode={viewMode}
         canAssign={canAssign && !promptLayoutActive}
-        zoom={zoom}
-        showCabins={!layoutMode}
-        cabinsBeforeA={activeCabinsBeforeA}
-        cabinsAfterG={activeCabinsAfterG}
-        sideCabins={activeSideCabins}
-        onZoomChange={setZoom}
         onSeatClick={handleSeatClick}
-        onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}
+        onAssignSeat={(seatId, employeeId, slug) => void runAssign(seatId, employeeId, slug)}
       />
 
       <SeatingAssignmentDialog
@@ -779,21 +892,32 @@ export default function SeatingPage() {
         employees={employees}
         canAssign={canAssign}
         saving={saving}
+        officeSlug={dialogOfficeSlug}
+        seatIds={
+          dialogOfficeSlug === officeSlug
+            ? planSeatIds
+            : companionPlan?.seatIds ?? planSeatIds
+        }
         onClose={() => setDialogSeat(null)}
         onAssign={(employeeId) => {
           if (!dialogSeat) return;
-          void runAssign(dialogSeat, employeeId);
+          void runAssign(dialogSeat, employeeId, dialogOfficeSlug);
         }}
         onRemove={() => {
           if (!dialogSeat) return;
-          void runAssign(dialogSeat, null);
+          void runAssign(dialogSeat, null, dialogOfficeSlug);
         }}
         onReassign={(targetSeatId) => {
-          const emp = dialogSeat
-            ? displayOccupancy.get(dialogSeat) ?? savedOccupancy.get(dialogSeat)
-            : null;
+          const map = seatOccupancyMap(employees, {
+            officeSlug: dialogOfficeSlug,
+            seatIds:
+              dialogOfficeSlug === officeSlug
+                ? planSeatIds
+                : companionPlan?.seatIds ?? planSeatIds,
+          });
+          const emp = dialogSeat ? map.get(dialogSeat) ?? null : null;
           if (!emp) return;
-          void runAssign(targetSeatId, emp.id);
+          void runAssign(targetSeatId, emp.id, dialogOfficeSlug);
         }}
       />
     </div>
