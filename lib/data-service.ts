@@ -230,9 +230,11 @@ async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof get
 
   const { ensureTeamsSeed } = await import("@/lib/teams-data");
   const { ensureRolesSeed } = await import("@/lib/roles-data");
+  const { listFloorPlans } = await import("@/lib/floor-plans");
   await ensureAppUsersSeed(db);
   await ensureTeamsSeed(db);
   await ensureRolesSeed(db);
+  await listFloorPlans();
 
   if (isDemoSeedEnabled() && (await em.countDocuments()) === 0) {
     await safeSeedInsert(() =>
@@ -814,11 +816,24 @@ export async function deleteEmployee(id: string): Promise<void> {
 export async function assignEmployeeToBay(
   bayId: string,
   employeeId: string | null,
+  officeSlug?: string | null,
 ): Promise<Employee[]> {
-  const { isValidSeatId } = await import("@/lib/seating-layout");
-  if (!isValidSeatId(bayId)) {
-    throw new Error(`Invalid seat "${bayId}". Use a seat from the office floor plan (e.g. A1, B14).`);
+  const { getFloorPlanBySlug, isSeatOnPlan, normalizeOfficeSlug } = await import(
+    "@/lib/floor-plans"
+  );
+  const office = normalizeOfficeSlug(officeSlug);
+  const plan = await getFloorPlanBySlug(office);
+  if (!plan || !plan.isActive) {
+    throw new Error(`Unknown office floor plan "${office}".`);
   }
+  if (!isSeatOnPlan(bayId, plan)) {
+    throw new Error(
+      `Invalid seat "${bayId}" for ${plan.name}. Pick a seat from that office floor plan.`,
+    );
+  }
+
+  const matchesOffice = (slug?: string | null) => normalizeOfficeSlug(slug) === office;
+
   const db = await getDb();
   if (!db) {
     if (!allowInMemoryFallback()) {
@@ -826,33 +841,45 @@ export async function assignEmployeeToBay(
     }
     const list = memoryStore.employees;
     for (const e of list) {
-      if (e.bayNumber === bayId) e.bayNumber = "";
+      if (e.bayNumber === bayId && matchesOffice(e.officeSlug)) {
+        e.bayNumber = "";
+        e.officeSlug = undefined;
+      }
     }
     if (employeeId) {
       const emp = list.find((e) => e.id === employeeId);
       if (emp) {
         emp.bayNumber = bayId;
-      }
-      for (const e of list) {
-        if (e.id !== employeeId && e.bayNumber === bayId) e.bayNumber = "";
+        emp.officeSlug = office;
       }
     }
     return list.map((e) => ({ ...e }));
   }
   await ensureMongoSeed(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
-  await col.updateMany({ bayNumber: bayId }, { $set: { bayNumber: "" } });
+
+  // Clear current occupants of this seat on this office (legacy null slug = chennai).
+  const occupants = await col
+    .find({ bayNumber: bayId })
+    .project({ _id: 1, officeSlug: 1 })
+    .toArray();
+  const clearIds = occupants
+    .filter((row) => matchesOffice(row.officeSlug))
+    .map((row) => row._id);
+  if (clearIds.length > 0) {
+    await col.updateMany(
+      { _id: { $in: clearIds } },
+      { $set: { bayNumber: "", officeSlug: null, updatedAt: new Date() } },
+    );
+  }
+
   if (employeeId) {
     if (!ObjectId.isValid(employeeId)) {
       throw new Error("Invalid employee id");
     }
-    await col.updateMany(
+    await col.updateOne(
       { _id: new ObjectId(employeeId) },
-      { $set: { bayNumber: bayId } },
-    );
-    await col.updateMany(
-      { bayNumber: bayId, _id: { $ne: new ObjectId(employeeId) } },
-      { $set: { bayNumber: "" } },
+      { $set: { bayNumber: bayId, officeSlug: office, updatedAt: new Date() } },
     );
   }
   return listEmployees();

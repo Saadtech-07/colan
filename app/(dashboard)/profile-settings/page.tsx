@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/components/providers/auth-session-provider";
 import {
   ProfileSettingsContent,
   initialProfileSettingsForm,
@@ -10,6 +10,10 @@ import {
 import type { AppUserProfileDTO } from "@/lib/app-users";
 import { parseApiError, useAppState } from "@/providers/app-state";
 import { loggedFetch } from "@/lib/logged-fetch";
+import {
+  fetchProfileSettings,
+  invalidateProfileSettingsCache,
+} from "@/lib/profile-settings-client";
 import {
   readResumeAsDataUrl,
   sanitizeResumeFileName,
@@ -87,13 +91,7 @@ export default function ProfileSettingsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await loggedFetch("/api/profile-settings", {
-        credentials: "include",
-        cache: "no-store",
-        source: "ProfileSettingsPage.loadProfile",
-      });
-      if (!res.ok) throw new Error(await parseApiError(res));
-      const nextProfile = (await res.json()) as AppUserProfileDTO;
+      const nextProfile = (await fetchProfileSettings(email)) as AppUserProfileDTO;
       setProfile(nextProfile);
       syncFormFromProfile(nextProfile, true);
       loadedForEmailRef.current = email;
@@ -212,6 +210,7 @@ export default function ProfileSettingsPage() {
       if (!res.ok) throw new Error(await parseApiError(res));
 
       const updated = (await res.json()) as AppUserProfileDTO;
+      invalidateProfileSettingsCache();
       const wasOnboarding = profile.isProfileCompleted === false;
       setProfile(updated);
       setForm({

@@ -85,14 +85,14 @@ export async function PATCH(req: Request) {
       { status: 400 },
     );
   }
-  const { bayId, employeeId } = parsed.data;
+  const { bayId, employeeId, officeSlug } = parsed.data;
   if (employeeId) {
     if (!ObjectId.isValid(employeeId)) {
       return NextResponse.json({ error: "Invalid employee id" }, { status: 400 });
     }
   }
   try {
-    await assignEmployeeToBay(bayId, employeeId);
+    await assignEmployeeToBay(bayId, employeeId, officeSlug);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Assign failed";
     return NextResponse.json({ error: msg }, { status: 400 });

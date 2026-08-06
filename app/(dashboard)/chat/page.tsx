@@ -10,9 +10,9 @@ import { LoadingIndicator } from "@/components/ui/loading-indicator";
 
 export default function ChatPage() {
   const router = useRouter();
-  const { access, sessionStatus, dataLoading } = useAppState();
+  const { access, sessionStatus } = useAppState();
   const canChat = !!access && canAccessChat(access.role);
-  const ready = sessionStatus !== "loading" && !(sessionStatus === "authenticated" && dataLoading);
+  const ready = sessionStatus !== "loading" && (sessionStatus !== "authenticated" || !!access);
 
   React.useEffect(() => {
     if (!ready) return;

@@ -412,14 +412,74 @@ export const galleryCreateSchema = z.object({
 
 
 export const bayAssignSchema = z.object({
-
   bayId: z.string().min(1),
-
   employeeId: z.string().min(1).nullable(),
-
+  officeSlug: z.string().trim().min(1).max(64).optional(),
 });
 
+const floorCellSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("label"), text: z.string() }),
+  z.object({ kind: z.literal("seat"), id: z.string().min(1) }),
+  z.object({ kind: z.literal("pillar") }),
+  z.object({ kind: z.literal("entrance"), text: z.string() }),
+  z.object({ kind: z.literal("gap") }),
+]);
 
+const seatingRowSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  seatCount: z.number().int().nonnegative(),
+  floorKey: z.string().optional(),
+  top: z.array(floorCellSchema),
+  bottom: z.array(floorCellSchema),
+});
+
+const seatingCabinSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  placement: z.enum(["before-A", "after-G"]),
+});
+
+export const floorPlanCreateSchema = z.object({
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(64)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug must be lowercase kebab-case"),
+  name: z.string().trim().min(2).max(120),
+  city: z.string().trim().max(80).optional(),
+  building: z.string().trim().max(120).optional(),
+  floors: z
+    .array(z.object({ key: z.string().min(1), label: z.string().min(1) }))
+    .optional(),
+  rows: z.array(seatingRowSchema).min(1),
+  cabins: z
+    .object({
+      beforeA: z.array(seatingCabinSchema).default([]),
+      afterG: z.array(seatingCabinSchema).default([]),
+      sideCabins: z
+        .object({
+          hrManager: z.string(),
+          manager: z.string(),
+        })
+        .optional(),
+    })
+    .optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export const floorPlanUpdateSchema = floorPlanCreateSchema
+  .omit({ slug: true })
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  });
+
+export const floorPlanImportSchema = z.object({
+  plans: z.array(floorPlanCreateSchema).min(1).max(50),
+});
 
 export const seatingAiGenerateSchema = z.discriminatedUnion("mode", [
   z.object({

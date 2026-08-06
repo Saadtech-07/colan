@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { fetchTeamAssignableAccounts } from "@/lib/team-assignable-accounts-client";
 import type { TeamAssignableAccount } from "@/lib/team-assignees";
 
 export function useTeamAssignableAccounts(enabled: boolean) {
@@ -16,15 +17,7 @@ export function useTeamAssignableAccounts(enabled: boolean) {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/teams/assignable-accounts", {
-          credentials: "include",
-        });
-        if (!res.ok) {
-          const message =
-            (await res.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(message?.error ?? "Could not load team accounts");
-        }
-        const data = (await res.json()) as TeamAssignableAccount[];
+        const data = await fetchTeamAssignableAccounts();
         if (!cancelled) setAccounts(data);
       } catch (e) {
         if (!cancelled) {

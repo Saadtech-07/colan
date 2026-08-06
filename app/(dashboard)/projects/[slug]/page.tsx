@@ -32,6 +32,7 @@ import {
   projectProgressPercent,
   relativeProjectDeadline,
 } from "@/lib/project-ui";
+import { fetchProjectBySlugOnce } from "@/lib/workspace-api-client";
 import { useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
 import { canManageProject } from "@/lib/permissions";
@@ -43,6 +44,8 @@ export default function ProjectDetailPage() {
   const slug = String(params.slug ?? "");
   const { access, user, employees, refreshData } = useAppState();
   const { withLoading } = useGlobalLoading();
+  const withLoadingRef = React.useRef(withLoading);
+  withLoadingRef.current = withLoading;
   const [project, setProject] = React.useState<ProjectDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -55,15 +58,14 @@ export default function ProjectDetailPage() {
       setLoading(true);
       setError(null);
       try {
-        await withLoading("project-detail", LOADING_PRESETS.loadingProject, async () => {
-          const res = await fetch(`/api/projects/${slug}`, { credentials: "include" });
-          if (cancelled) return;
-          if (!res.ok) {
-            const j = (await res.json()) as { error?: string };
-            throw new Error(j.error ?? res.statusText);
-          }
-          setProject((await res.json()) as ProjectDetail);
-        });
+        await withLoadingRef.current(
+          "project-detail",
+          LOADING_PRESETS.loadingProject,
+          async () => {
+            const detail = await fetchProjectBySlugOnce<ProjectDetail>(slug);
+            if (!cancelled) setProject(detail);
+          },
+        );
       } catch (e) {
         if (cancelled) return;
         setProject(null);
@@ -75,7 +77,7 @@ export default function ProjectDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [slug, withLoading]);
+  }, [slug]);
 
   const canEdit =
     !!access &&
@@ -86,9 +88,10 @@ export default function ProjectDetailPage() {
   const reloadProject = React.useCallback(async () => {
     if (!slug) return;
     try {
-      const res = await fetch(`/api/projects/${slug}`, { credentials: "include" });
-      if (!res.ok) return;
-      setProject((await res.json()) as ProjectDetail);
+      const detail = await fetchProjectBySlugOnce<ProjectDetail>(slug, {
+        force: true,
+      });
+      setProject(detail);
     } catch {
       // Keep current project snapshot if refresh fails.
     }

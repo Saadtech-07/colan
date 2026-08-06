@@ -14,6 +14,8 @@ export type SeatingRowConfig = {
   key: string;
   label: string;
   seatCount: number;
+  /** Optional floor within a multi-floor office plan. */
+  floorKey?: string;
   top: FloorCell[];
   bottom: FloorCell[];
 };

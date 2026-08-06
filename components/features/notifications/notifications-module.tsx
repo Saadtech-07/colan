@@ -92,9 +92,9 @@ const VIEW_OPTIONS: Array<{ id: NotificationView; label: string; adminOnly?: boo
 ];
 
 export function NotificationsModule() {
-  const { access } = useAppState();
+  const { access, sessionStatus } = useAppState();
   const canViewAll = access?.canManage("notifications") ?? false;
-  const [view, setView] = React.useState<NotificationView>(canViewAll ? "all" : "mine");
+  const [view, setView] = React.useState<NotificationView | null>(null);
   const [employeeSearch, setEmployeeSearch] = React.useState("");
   const [filterDate, setFilterDate] = React.useState("");
   const [notifications, setNotifications] = React.useState<NotificationDTO[]>([]);
@@ -103,7 +103,15 @@ export function NotificationsModule() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
+  // Wait for access before choosing default view — avoids an extra fetch when
+  // roles hydrate and canViewAll flips from false → true.
+  React.useEffect(() => {
+    if (sessionStatus === "loading" || !access) return;
+    setView((prev) => prev ?? (canViewAll ? "all" : "mine"));
+  }, [access, canViewAll, sessionStatus]);
+
   const loadNotifications = React.useCallback(async () => {
+    if (!view) return;
     setLoading(true);
     setError(null);
     try {
@@ -127,8 +135,9 @@ export function NotificationsModule() {
   }, [canViewAll, view]);
 
   React.useEffect(() => {
+    if (!view) return;
     void loadNotifications();
-  }, [loadNotifications]);
+  }, [loadNotifications, view]);
 
   const markRead = async (notification: NotificationDTO) => {
     if (notification.readAt) return;
@@ -158,6 +167,7 @@ export function NotificationsModule() {
   };
 
   const filteredNotifications = React.useMemo(() => {
+    if (!view) return [];
     return notifications.filter((notification) =>
       notificationMatchesFilters(notification, view, employeeSearch, filterDate),
     );
@@ -168,13 +178,24 @@ export function NotificationsModule() {
   const showRecipient = view === "all" || (view === "messages" && canViewAll);
 
   const viewDescription =
-    view === "all"
+    !view
+      ? "Loading your notification inbox…"
+      : view === "all"
       ? "Activity alerts across all workspace users."
       : view === "messages"
         ? canViewAll
           ? "Direct messages received across the workspace."
           : "Messages sent to you by teammates."
         : "Your personal alerts from projects, tasks, and daily updates.";
+
+  if (!view) {
+    return (
+      <div className="flex min-h-[240px] items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading notifications…
+      </div>
+    );
+  }
 
   const resetFilters = () => {
     setEmployeeSearch("");

@@ -114,22 +114,16 @@ function GlobalLoadingProviderInner({ children }: { children: React.ReactNode })
 }
 
 function WorkspaceSyncBridge() {
-  const { dataLoading, employees, projects, workspaceTeams } = useAppState();
+  const { dataLoading } = useAppState();
   const { showLoading, hideLoading } = useGlobalLoading();
 
-  const isInitialSync =
-    dataLoading &&
-    employees.length === 0 &&
-    projects.length === 0 &&
-    workspaceTeams.length === 0;
-
   React.useEffect(() => {
-    if (isInitialSync) {
+    if (dataLoading) {
       showLoading("workspace-sync", LOADING_PRESETS.syncWorkspace);
     } else {
       hideLoading("workspace-sync");
     }
-  }, [isInitialSync, hideLoading, showLoading]);
+  }, [dataLoading, hideLoading, showLoading]);
 
   return null;
 }

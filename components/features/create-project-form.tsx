@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { fetchProjectManagersOnce } from "@/lib/workspace-api-client";
 import type { Project, ProjectManagerSummary, ProjectStatus, TeamName } from "@/types";
 
 type Props = {
@@ -63,11 +64,7 @@ export function CreateProjectForm({ onCreate, teamOptions, lockedTeam, onCancel 
     void (async () => {
       setLoadingProjectManagers(true);
       try {
-        const res = await fetch("/api/projects/project-managers", {
-          credentials: "include",
-        });
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as ProjectManagerSummary[];
+        const data = await fetchProjectManagersOnce<ProjectManagerSummary[]>();
         if (!cancelled) setProjectManagers(data);
       } finally {
         if (!cancelled) setLoadingProjectManagers(false);

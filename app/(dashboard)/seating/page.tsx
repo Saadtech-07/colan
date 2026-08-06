@@ -27,6 +27,13 @@ import {
   isAiLayoutMode,
 } from "@/lib/seating-ai-preview";
 import { ALL_SEAT_IDS, SEATING_ROWS, type SeatingRowConfig } from "@/lib/seating-layout";
+import { DEFAULT_OFFICE_SLUG } from "@/lib/floor-plan-layouts";
+import {
+  fetchFloorPlanDetail,
+  fetchFloorPlanSummaries,
+} from "@/lib/floor-plans-client";
+import type { FloorPlanDTO, FloorPlanSummary } from "@/models/floor-plan.model";
+import { SeatingOfficeSelect } from "@/components/seating/seating-office-select";
 import { applyOccupancySwaps } from "@/lib/seating-layout-prompt";
 import {
   CABINS_AFTER_G_ROW,
@@ -77,11 +84,23 @@ export default function SeatingPage() {
   const [promptCabinsBeforeA, setPromptCabinsBeforeA] = React.useState<SeatingCabin[] | null>(null);
   const [promptCabinsAfterG, setPromptCabinsAfterG] = React.useState<SeatingCabin[] | null>(null);
   const [promptSideCabins, setPromptSideCabins] = React.useState<SideCabinsConfig | null>(null);
+  const [officeSlug, setOfficeSlug] = React.useState(DEFAULT_OFFICE_SLUG);
+  const [officePlans, setOfficePlans] = React.useState<FloorPlanSummary[]>([]);
+  const [activePlan, setActivePlan] = React.useState<FloorPlanDTO | null>(null);
+  const [planLoading, setPlanLoading] = React.useState(true);
 
   const saving = isLoadingKey("seating-assign");
   const aiGenerating = isLoadingKey("seating-ai-generate");
   const layoutEditing = isLoadingKey("seating-layout-edit");
-  const savedOccupancy = React.useMemo(() => seatOccupancyMap(employees), [employees]);
+  const planSeatIds = activePlan?.seatIds ?? ALL_SEAT_IDS;
+  const savedOccupancy = React.useMemo(
+    () =>
+      seatOccupancyMap(employees, {
+        officeSlug,
+        seatIds: planSeatIds,
+      }),
+    [employees, officeSlug, planSeatIds],
+  );
   const layoutMode = isAiLayoutMode(aiSuggestion);
   const layoutSeats = React.useMemo(() => layoutSeatSet(aiSuggestion), [aiSuggestion]);
   const zoneBySeat = React.useMemo(() => zoneLabelBySeat(aiSuggestion), [aiSuggestion]);
@@ -100,19 +119,76 @@ export default function SeatingPage() {
 
   const colanFrozen = !layoutMode && colanOccupancySnapshot !== null;
   const promptLayoutActive = !layoutMode && promptRows !== null;
-  const activeRows = promptRows ?? SEATING_ROWS;
-  const activeCabinsBeforeA = promptCabinsBeforeA ?? CABINS_BEFORE_A_ROW;
-  const activeCabinsAfterG = promptCabinsAfterG ?? CABINS_AFTER_G_ROW;
-  const activeSideCabins = promptSideCabins ?? DEFAULT_SIDE_CABINS;
+  const activeRows = promptRows ?? activePlan?.rows ?? SEATING_ROWS;
+  const activeCabinsBeforeA =
+    promptCabinsBeforeA ?? activePlan?.cabins?.beforeA ?? CABINS_BEFORE_A_ROW;
+  const activeCabinsAfterG =
+    promptCabinsAfterG ?? activePlan?.cabins?.afterG ?? CABINS_AFTER_G_ROW;
+  const activeSideCabins =
+    promptSideCabins ?? activePlan?.cabins?.sideCabins ?? DEFAULT_SIDE_CABINS;
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const plans = await fetchFloorPlanSummaries();
+        if (cancelled) return;
+        setOfficePlans(plans);
+        if (plans.length > 0 && !plans.some((p) => p.slug === officeSlug)) {
+          setOfficeSlug(plans[0].slug);
+        }
+      } catch {
+        /* keep default Colan layout */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setPlanLoading(true);
+      try {
+        const plan = await fetchFloorPlanDetail(officeSlug);
+        if (cancelled) return;
+        if (!plan) {
+          setActivePlan(null);
+          return;
+        }
+        setActivePlan(plan);
+        setSelectedSeat(null);
+        setDialogSeat(null);
+        setAiSuggestion(null);
+        setColanOccupancySnapshot(null);
+        setPromptRows(null);
+        setPromptCabinsBeforeA(null);
+        setPromptCabinsAfterG(null);
+        setPromptSideCabins(null);
+        setPromptSummary(null);
+        setPromptWarnings([]);
+        setPromptOccupancySwaps([]);
+      } catch {
+        if (!cancelled) setActivePlan(null);
+      } finally {
+        if (!cancelled) setPlanLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [officeSlug]);
 
   const buildColanLayoutState = React.useCallback(
     () => ({
-      rows: promptRows ?? SEATING_ROWS,
+      rows: promptRows ?? activePlan?.rows ?? SEATING_ROWS,
       cabinsBeforeA: activeCabinsBeforeA.map((cabin) => ({ ...cabin })),
       cabinsAfterG: activeCabinsAfterG.map((cabin) => ({ ...cabin })),
       sideCabins: { ...activeSideCabins },
     }),
-    [activeCabinsAfterG, activeCabinsBeforeA, activeSideCabins, promptRows],
+    [activeCabinsAfterG, activeCabinsBeforeA, activeSideCabins, activePlan, promptRows],
   );
 
   const activeSeatIds = React.useMemo(() => {
@@ -170,14 +246,28 @@ export default function SeatingPage() {
     }
     if (colanFrozen && colanOccupancySnapshot) {
       return {
-        total: ALL_SEAT_IDS.length,
+        total: planSeatIds.length,
         occupied: colanOccupancySnapshot.size,
-        empty: ALL_SEAT_IDS.length - colanOccupancySnapshot.size,
+        empty: planSeatIds.length - colanOccupancySnapshot.size,
         legacyUnassigned: 0,
       };
     }
-    return computeSeatingStats(employees);
-  }, [layoutMode, layoutSeats, colanFrozen, colanOccupancySnapshot, displayOccupancy, employees]);
+    return computeSeatingStats(employees, {
+      officeSlug,
+      seatIds: planSeatIds,
+    });
+  }, [
+    layoutMode,
+    layoutSeats,
+    colanFrozen,
+    colanOccupancySnapshot,
+    displayOccupancy,
+    employees,
+    promptLayoutActive,
+    activeSeatIds,
+    officeSlug,
+    planSeatIds,
+  ]);
 
   const roleFilterOptions = React.useMemo(
     () => buildTeamMemberRoleFilterOptions(workspaceRoles),
@@ -197,10 +287,27 @@ export default function SeatingPage() {
         ? null
         : highlightedSeatIds(
             employees,
-            { team: teamFilter, search, role: roleFilter, gender: genderFilter },
+            {
+              team: teamFilter,
+              search,
+              role: roleFilter,
+              gender: genderFilter,
+              officeSlug,
+              seatIds: planSeatIds,
+            },
             workspaceRoles,
           ),
-    [employees, teamFilter, search, roleFilter, genderFilter, workspaceRoles, layoutMode],
+    [
+      employees,
+      teamFilter,
+      search,
+      roleFilter,
+      genderFilter,
+      workspaceRoles,
+      layoutMode,
+      officeSlug,
+      planSeatIds,
+    ],
   );
 
   const clearAiLayout = React.useCallback(() => {
@@ -236,7 +343,7 @@ export default function SeatingPage() {
 
   const runAssign = async (seatId: string, employeeId: string | null) => {
     await withLoading("seating-assign", LOADING_PRESETS.assigningBay, async () => {
-      await assignEmployeeToBay(seatId, employeeId);
+      await assignEmployeeToBay(seatId, employeeId, officeSlug);
       setDialogSeat(null);
       setSelectedSeat(employeeId ? seatId : null);
       if (!layoutMode) {
@@ -307,15 +414,22 @@ export default function SeatingPage() {
     });
   };
 
-  const liveStats = React.useMemo(() => computeSeatingStats(employees), [employees]);
+  const liveStats = React.useMemo(
+    () =>
+      computeSeatingStats(employees, {
+        officeSlug,
+        seatIds: planSeatIds,
+      }),
+    [employees, officeSlug, planSeatIds],
+  );
   const headerStats = layoutMode || colanFrozen ? stats : liveStats;
 
   const exportSeatIds = React.useMemo(() => {
     if (layoutMode && layoutSeats) return Array.from(layoutSeats);
-    if (colanFrozen) return ALL_SEAT_IDS;
+    if (colanFrozen) return planSeatIds;
     if (promptLayoutActive) return activeSeatIds;
-    return ALL_SEAT_IDS;
-  }, [layoutMode, layoutSeats, colanFrozen, promptLayoutActive, activeSeatIds]);
+    return planSeatIds;
+  }, [layoutMode, layoutSeats, colanFrozen, promptLayoutActive, activeSeatIds, planSeatIds]);
 
   const exportRows = React.useMemo(() => {
     return exportSeatIds
@@ -431,15 +545,25 @@ export default function SeatingPage() {
   const floorSectionTitle = layoutMode
     ? "New layout canvas"
     : promptLayoutActive
-      ? "Edited Colan layout"
-      : "Floor layout";
+      ? `Edited ${activePlan?.name ?? "office"} layout`
+      : activePlan?.name
+        ? `${activePlan.name} floor layout`
+        : "Floor layout";
 
   return (
     <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <SectionTitle as="h2" className="font-semibold text-muted-foreground">
-          {floorSectionTitle}
-        </SectionTitle>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <SectionTitle as="h2" className="font-semibold text-muted-foreground">
+            {floorSectionTitle}
+          </SectionTitle>
+          <SeatingOfficeSelect
+            plans={officePlans}
+            value={officeSlug}
+            onChange={setOfficeSlug}
+            disabled={planLoading || layoutMode || promptLayoutActive}
+          />
+        </div>
 
         {canAssign && (
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -452,7 +576,7 @@ export default function SeatingPage() {
                 onClick={resetPromptLayout}
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
-                Back to Colan
+                Back to office
               </Button>
             )}
             {layoutMode && (
@@ -464,7 +588,7 @@ export default function SeatingPage() {
                 onClick={clearAiLayout}
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
-                Back to Colan
+                Back to office
               </Button>
             )}
             <Button

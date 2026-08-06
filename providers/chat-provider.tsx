@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useSession } from "next-auth/react";
+import { usePathname } from "next/navigation";
+import { useSession } from "@/components/providers/auth-session-provider";
 import { io, type Socket } from "socket.io-client";
 import { canAccessChat } from "@/lib/chat-access";
 import {
@@ -9,6 +10,8 @@ import {
   mergeConversationPreview,
   sortConversations,
 } from "@/lib/chat-client";
+import { dedupeAsync } from "@/lib/dedupe-async";
+import { isChatRoute } from "@/lib/workspace-route-data";
 import { useAppState } from "@/providers/app-state";
 import type { MessageDTO } from "@/models";
 import type { ChatConversationSummary } from "@/types/chat";
@@ -33,6 +36,8 @@ type ChatContextValue = {
 const ChatContext = React.createContext<ChatContextValue | null>(null);
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const onChatPage = isChatRoute(pathname);
   const { data: session, status } = useSession();
   const { access } = useAppState();
   const canUseChat = !!access && canAccessChat(access.role);
@@ -50,6 +55,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const activeIdRef = React.useRef<string | null>(null);
   const currentUserIdRef = React.useRef<string | null>(null);
   const chatBootstrappedRef = React.useRef(false);
+  const conversationsBootstrappedRef = React.useRef(false);
 
   React.useEffect(() => {
     activeIdRef.current = activeConversationId;
@@ -62,9 +68,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const refreshUnread = React.useCallback(async () => {
     if (!canUseChat) return;
     try {
-      const res = await fetch("/api/chat/unread", { credentials: "include" });
-      if (!res.ok) return;
-      const data = (await res.json()) as { count: number };
+      const data = await dedupeAsync(
+        "chat:unread",
+        async () => {
+          const res = await fetch("/api/chat/unread", { credentials: "include" });
+          if (!res.ok) return { count: 0 };
+          return (await res.json()) as { count: number };
+        },
+        { ttlMs: 5_000 },
+      );
       setUnreadTotal(data.count);
     } catch {
       /* ignore */
@@ -78,16 +90,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setLoadingConversations(true);
     setLoadError(null);
     try {
-      const res = await fetch("/api/chat/conversations", { credentials: "include" });
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { error?: string };
-        setLoadError(err.error ?? `Could not load conversations (${res.status})`);
-        return;
-      }
-      const data = (await res.json()) as {
-        conversations: ChatConversationSummary[];
-        currentUserId: string;
-      };
+      const data = await dedupeAsync("chat:conversations", async () => {
+        const res = await fetch("/api/chat/conversations", { credentials: "include" });
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(err.error ?? `Could not load conversations (${res.status})`);
+        }
+        return (await res.json()) as {
+          conversations: ChatConversationSummary[];
+          currentUserId: string;
+        };
+      });
       setIsAdmin(true);
       setCurrentUserId(data.currentUserId);
       const sorted = sortConversations(data.conversations);
@@ -95,6 +108,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (!activeIdRef.current && sorted.length > 0) {
         setActiveConversationId(sorted[0].id);
       }
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Could not load conversations");
     } finally {
       setLoadingConversations(false);
     }
@@ -131,23 +146,38 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [socket]);
 
   React.useEffect(() => {
-    if (!activeConversationId) {
+    if (status !== "authenticated" || !canUseChat) {
+      chatBootstrappedRef.current = false;
+      conversationsBootstrappedRef.current = false;
+      return;
+    }
+    // Global chrome: unread badge only
+    if (!chatBootstrappedRef.current) {
+      chatBootstrappedRef.current = true;
+      void refreshUnreadRef.current();
+    }
+    // Full inbox only on the chat page
+    if (onChatPage && !conversationsBootstrappedRef.current) {
+      conversationsBootstrappedRef.current = true;
+      void refreshConversationsRef.current();
+    }
+  }, [status, canUseChat, onChatPage]);
+
+  React.useEffect(() => {
+    if (!onChatPage) {
+      setActiveConversationId(null);
+      setMessages([]);
+    }
+  }, [onChatPage]);
+
+  React.useEffect(() => {
+    if (!onChatPage || !activeConversationId) {
+      if (!onChatPage) return;
       setMessages([]);
       return;
     }
     void loadMessages(activeConversationId);
-  }, [activeConversationId, loadMessages]);
-
-  React.useEffect(() => {
-    if (status !== "authenticated" || !canUseChat) {
-      chatBootstrappedRef.current = false;
-      return;
-    }
-    if (chatBootstrappedRef.current) return;
-    chatBootstrappedRef.current = true;
-    void refreshConversationsRef.current();
-    void refreshUnreadRef.current();
-  }, [status, canUseChat]);
+  }, [activeConversationId, loadMessages, onChatPage]);
 
   React.useEffect(() => {
     if (status !== "authenticated" || !canUseChat || !session?.user) return;

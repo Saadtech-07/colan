@@ -48,7 +48,7 @@ import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
 import { consumeCreateAccountToast } from "@/lib/create-app-user-client";
 import { consumeEditAccountSuccess } from "@/lib/edit-app-user-client";
-import { getCachedAppUsers, setCachedAppUsers } from "@/lib/app-users-page-cache";
+import { fetchAppUsersList, getCachedAppUsers } from "@/lib/app-users-client";
 import { resolveAppUserFromQuery } from "@/lib/app-user-navigation";
 import type { AppRole, TeamName } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
@@ -181,22 +181,15 @@ export default function AppUsersPage() {
     [workspaceRoles],
   );
 
-  const fetchUsers = React.useCallback(async (options?: { silent?: boolean }) => {
+  const fetchUsers = React.useCallback(async (options?: { silent?: boolean; force?: boolean }) => {
     const hasCachedData = getCachedAppUsers() !== null;
     if (!options?.silent && !hasCachedData) {
       setLoading(true);
     }
     setError(null);
     try {
-      const res = await fetch("/api/app-users", {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        throw new Error(await parseApiError(res));
-      }
-      const data = (await res.json()) as AppUserPublicDTO[];
+      const data = await fetchAppUsersList({ force: options?.force });
       setUsers(data);
-      setCachedAppUsers(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load accounts.");
     } finally {
@@ -234,14 +227,14 @@ export default function AppUsersPage() {
     const pending = consumeCreateAccountToast();
     if (pending) {
       showToast(pending);
-      void fetchUsers({ silent: true });
+      void fetchUsers({ silent: true, force: true });
       return;
     }
 
     const editSuccess = consumeEditAccountSuccess();
     if (editSuccess) {
       showSuccessMessage(editSuccess);
-      void fetchUsers({ silent: true });
+      void fetchUsers({ silent: true, force: true });
     }
   }, [fetchUsers, showSuccessMessage, showToast]);
 
@@ -282,7 +275,7 @@ export default function AppUsersPage() {
         if (!res.ok) {
           throw new Error(await parseApiError(res));
         }
-        await fetchUsers({ silent: true });
+        await fetchUsers({ silent: true, force: true });
         await refreshData();
         showSuccessMessage("Account removed.");
         setDeleteTarget(null);

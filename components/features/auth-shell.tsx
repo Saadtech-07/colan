@@ -6,8 +6,6 @@ import { ArrowLeft, ArrowRight } from "lucide-react";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import colanlogo2 from "@/app/image/colanlogo2.png";
 
 export function AuthShell({

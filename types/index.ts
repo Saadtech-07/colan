@@ -58,6 +58,8 @@ export interface Employee {
   role: CompanyRole;
   gender: Gender;
   bayNumber: string;
+  /** Office branch floor plan (chennai | pernambut | bangalore). */
+  officeSlug?: string;
   imageUrl: string;
   /** Login email from the linked app user account. */
   email?: string;

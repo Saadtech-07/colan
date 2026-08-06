@@ -7,7 +7,7 @@ export async function GET() {
   const session = await auth();
   const access = await sessionAccessAsync(session);
   if (!access) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized analytics data is not available" }, { status: 401 });
   }
 
   const analytics = await getProjectAnalytics(access.role, access.team);

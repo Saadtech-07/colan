@@ -1,6 +1,7 @@
 import type { Server as HttpServer } from "http";
 import { Server } from "socket.io";
-import { getToken } from "next-auth/jwt";
+import { readTokenFromCookieHeader } from "@/lib/auth/cookies";
+import { verifyAuthToken } from "@/lib/auth/jwt";
 import {
   getChatActorByEmail,
   getConversationById,
@@ -41,19 +42,18 @@ export function initSocketServer(httpServer: HttpServer): Server {
   io = new Server(httpServer, {
     path: "/api/socket/io",
     cors: {
-      origin: process.env.NEXTAUTH_URL ?? "http://localhost:3000",
+      origin: process.env.AUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
       credentials: true,
     },
   });
 
   io.use(async (socket, next) => {
     try {
-      const token = await getToken({
-        req: socket.request as Parameters<typeof getToken>[0]["req"],
-        secret:
-          process.env.AUTH_SECRET ??
-          "dev-colan-auth-secret-minimum-32-characters-long",
-      });
+      const cookieHeader = socket.request.headers.cookie;
+      const raw = readTokenFromCookieHeader(
+        typeof cookieHeader === "string" ? cookieHeader : null,
+      );
+      const token = raw ? await verifyAuthToken(raw) : null;
       const email = typeof token?.email === "string" ? token.email : "";
       if (!email) {
         return next(new Error("Unauthorized"));

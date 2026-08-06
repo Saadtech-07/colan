@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signIn, useSession } from "next-auth/react";
+import { useAuth } from "@/components/providers/auth-session-provider";
 import { ArrowRight, Eye, EyeOff, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,50 +24,49 @@ function LoginSuccessBanner() {
 
 function LoginPageContent() {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { data: session, status, refresh } = useAuth();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
+
   React.useEffect(() => {
     if (status === "authenticated") {
-      router.replace(session?.user?.isProfileCompleted === false ? "/profile-settings" : "/dashboard");
+      router.replace(
+        session?.user?.isProfileCompleted === false ? "/profile-settings" : "/dashboard",
+      );
     }
   }, [router, session?.user?.isProfileCompleted, status]);
 
-  const handleSubmit = async (
-    e: React.FormEvent
-  ) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     setError(null);
-
     setPending(true);
 
     try {
-      const result = await signIn("credentials", {
-        redirect: false,
-        email,
-        password,
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
       });
 
-      if (result?.error) {
-        setError(
-          "Could not sign in. Please verify your details."
-        );
-
+      if (!res.ok) {
+        setError("Could not sign in. Please verify your details.");
         return;
       }
 
-      const sessionRes = await fetch("/api/auth/session");
-      const nextSession = sessionRes.ok ? ((await sessionRes.json()) as { user?: { isProfileCompleted?: boolean } }) : null;
+      const json = (await res.json()) as {
+        user?: { isProfileCompleted?: boolean };
+      };
+
+      await refresh();
+
       const nextPath =
-        nextSession?.user?.isProfileCompleted === false ? "/profile-settings" : "/dashboard";
-
+        json.user?.isProfileCompleted === false ? "/profile-settings" : "/dashboard";
       router.refresh();
-
       router.push(nextPath);
     } finally {
       setPending(false);

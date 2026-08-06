@@ -33,6 +33,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { formatProjectDate } from "@/lib/project-ui";
 import { cn } from "@/lib/utils";
+import { fetchProjectManagersOnce } from "@/lib/workspace-api-client";
 import { useAppState } from "@/providers/app-state";
 import type { Employee, ProjectDetail, ProjectManagerSummary, ProjectStatus, TeamName } from "@/types";
 
@@ -80,11 +81,7 @@ export function ProjectDetailEditor({
     void (async () => {
       setLoadingProjectManagers(true);
       try {
-        const res = await fetch("/api/projects/project-managers", {
-          credentials: "include",
-        });
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as ProjectManagerSummary[];
+        const data = await fetchProjectManagersOnce<ProjectManagerSummary[]>();
         if (!cancelled) setProjectManagers(data);
       } finally {
         if (!cancelled) setLoadingProjectManagers(false);

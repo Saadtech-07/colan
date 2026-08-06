@@ -12,6 +12,7 @@ const COLLECTION_LABELS = {
   [COLLECTIONS.companyRoles]: "Company roles",
   [COLLECTIONS.seatingBays]: "Seating bays",
   [COLLECTIONS.seatingAssignments]: "Seating assignments",
+  [COLLECTIONS.floorPlans]: "Floor plans",
   [COLLECTIONS.teamMembers]: "Team members",
   [COLLECTIONS.projects]: "Projects",
   [COLLECTIONS.gallery]: "Gallery",

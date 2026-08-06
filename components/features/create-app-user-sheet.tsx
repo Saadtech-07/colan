@@ -31,6 +31,7 @@ import {
   stashCreateAccountToast,
 } from "@/lib/create-app-user-client";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
+import { fetchAppUsersList } from "@/lib/app-users-client";
 import { useTransientMessage } from "@/lib/use-transient-message";
 import { useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
@@ -65,11 +66,7 @@ export function CreateAppUserSheet({ open, onOpenChange }: Props) {
     if (!open) return;
     let cancelled = false;
 
-    void fetch("/api/app-users", { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) return [];
-        return (await res.json()) as AppUserPublicDTO[];
-      })
+    void fetchAppUsersList()
       .then((data) => {
         if (!cancelled) setUsers(data);
       })

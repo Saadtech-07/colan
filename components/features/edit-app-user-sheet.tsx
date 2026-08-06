@@ -24,6 +24,7 @@ import {
   stashEditAccountSuccess,
   updateAppUserAccount,
 } from "@/lib/edit-app-user-client";
+import { fetchAppUsersList } from "@/lib/app-users-client";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
 import { parseApiError, useAppState } from "@/providers/app-state";
@@ -99,13 +100,7 @@ export function EditAppUserSheet({ userId, open, onOpenChange }: Props) {
     setError(null);
     setStep("account");
 
-    void fetch("/api/app-users", { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error(await parseApiError(res));
-        }
-        return (await res.json()) as AppUserPublicDTO[];
-      })
+    void fetchAppUsersList()
       .then((users) => {
         if (cancelled) return;
         const userRecord = users.find((user) => user.id === userId);

@@ -1,4 +1,5 @@
 import { ALL_SEAT_IDS, isValidSeatId } from "@/lib/seating-layout";
+import { normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
 import { employeeMatchesRoleFilter } from "@/lib/team-members-ui";
 import { teamTabLabel } from "@/lib/team-utils";
 import { employeeEligibleForSeating } from "@/lib/workspace-identity";
@@ -27,11 +28,23 @@ export function teamColorClasses(team: TeamName) {
   return TEAM_PALETTE[Math.abs(hash) % TEAM_PALETTE.length];
 }
 
-export function seatOccupancyMap(employees: Employee[]): Map<string, Employee> {
+export function seatOccupancyMap(
+  employees: Employee[],
+  opts?: { officeSlug?: string; seatIds?: string[] },
+): Map<string, Employee> {
+  const office = normalizeOfficeSlug(opts?.officeSlug);
+  const seatSet = opts?.seatIds ? new Set(opts.seatIds) : null;
   const map = new Map<string, Employee>();
   for (const emp of employees) {
     if (!employeeEligibleForSeating(emp)) continue;
-    if (emp.bayNumber && isValidSeatId(emp.bayNumber) && !map.has(emp.bayNumber)) {
+    if (!emp.bayNumber) continue;
+    if (normalizeOfficeSlug(emp.officeSlug) !== office) continue;
+    if (seatSet) {
+      if (!seatSet.has(emp.bayNumber)) continue;
+    } else if (!isValidSeatId(emp.bayNumber)) {
+      continue;
+    }
+    if (!map.has(emp.bayNumber)) {
       map.set(emp.bayNumber, emp);
     }
   }
@@ -45,16 +58,25 @@ export type SeatingStats = {
   legacyUnassigned: number;
 };
 
-export function computeSeatingStats(employees: Employee[]): SeatingStats {
-  const map = seatOccupancyMap(employees);
-  const legacyUnassigned = employees.filter(
-    (e) =>
-      employeeEligibleForSeating(e) && e.bayNumber && !isValidSeatId(e.bayNumber),
-  ).length;
+export function computeSeatingStats(
+  employees: Employee[],
+  opts?: { officeSlug?: string; seatIds?: string[] },
+): SeatingStats {
+  const seatIds = opts?.seatIds ?? ALL_SEAT_IDS;
+  const map = seatOccupancyMap(employees, {
+    officeSlug: opts?.officeSlug,
+    seatIds,
+  });
+  const office = normalizeOfficeSlug(opts?.officeSlug);
+  const legacyUnassigned = employees.filter((e) => {
+    if (!employeeEligibleForSeating(e) || !e.bayNumber) return false;
+    if (normalizeOfficeSlug(e.officeSlug) !== office) return false;
+    return !seatIds.includes(e.bayNumber);
+  }).length;
   return {
-    total: ALL_SEAT_IDS.length,
+    total: seatIds.length,
     occupied: map.size,
-    empty: ALL_SEAT_IDS.length - map.size,
+    empty: seatIds.length - map.size,
     legacyUnassigned,
   };
 }
@@ -71,19 +93,41 @@ export function employeeMatchesSearch(emp: Employee, query: string): boolean {
 
 export function highlightedSeatIds(
   employees: Employee[],
-  opts: { team?: string; search?: string; role?: string; gender?: string },
+  opts: {
+    team?: string;
+    search?: string;
+    role?: string;
+    gender?: string;
+    officeSlug?: string;
+    seatIds?: string[];
+  },
   workspaceRoles: WorkspaceRole[] = [],
 ): Set<string> | null {
-  const { team, search = "", role = "all", gender = "all" } = opts;
+  const {
+    team,
+    search = "",
+    role = "all",
+    gender = "all",
+    officeSlug,
+    seatIds,
+  } = opts;
   const hasRoleFilter = role !== "all";
   const hasGenderFilter = gender !== "all";
   if (!search.trim() && (!team || team === "All") && !hasRoleFilter && !hasGenderFilter) {
     return null;
   }
+  const office = normalizeOfficeSlug(officeSlug);
+  const seatSet = seatIds ? new Set(seatIds) : null;
   const ids = new Set<string>();
   for (const emp of employees) {
     if (!employeeEligibleForSeating(emp)) continue;
-    if (!emp.bayNumber || !isValidSeatId(emp.bayNumber)) continue;
+    if (!emp.bayNumber) continue;
+    if (normalizeOfficeSlug(emp.officeSlug) !== office) continue;
+    if (seatSet) {
+      if (!seatSet.has(emp.bayNumber)) continue;
+    } else if (!isValidSeatId(emp.bayNumber)) {
+      continue;
+    }
     if (team && team !== "All" && emp.team !== team) continue;
     if (hasRoleFilter && !employeeMatchesRoleFilter(emp, role, workspaceRoles)) continue;
     if (!employeeMatchesGenderFilter(emp, gender)) continue;

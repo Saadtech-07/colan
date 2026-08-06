@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "@/components/providers/auth-session-provider";
 import {
   buildAccessContext,
   normalizeAppRole,
@@ -12,7 +12,17 @@ import {
 import { hydrateRoleRegistry } from "@/lib/role-registry";
 import { resolveProfileImageSrc } from "@/lib/profile-image";
 import { sanitizeSessionImageUrl } from "@/lib/session-token";
-import { loggedFetch } from "@/lib/logged-fetch";
+import { workspaceSlicesForPath } from "@/lib/workspace-route-data";
+import type { WorkspaceSlice } from "@/lib/workspace-slices";
+import { fetchProfileSettings } from "@/lib/profile-settings-client";
+import {
+  fetchDbStatusOnce,
+  fetchEmployeesOnce,
+  fetchGalleryOnce,
+  fetchProjectsOnce,
+  fetchRolesOnce,
+  fetchTeamsOnce,
+} from "@/lib/workspace-api-client";
 import type { TeamDTO, TeamUpsertInput, WorkspaceRole } from "@/models";
 import type { AuthUser, Employee, GalleryImage, Project } from "@/types";
 import type { DataLayerSummary } from "@/types/data-layer";
@@ -38,6 +48,8 @@ type AppStateContextValue = {
   /** Where workspace data is stored (MongoDB vs in-memory) and Atlas ping result. */
   dataSummary: DataLayerSummary | null;
   refreshData: () => Promise<void>;
+  /** Ensure specific workspace slices are loaded (deduped / cached per session). */
+  ensureWorkspaceData: (slices: WorkspaceSlice[]) => Promise<void>;
   /** Apply profile fields already loaded elsewhere (no network). */
   applyProfileSnapshot: (profile: ProfileSessionSync & { imageUrl?: string }) => Promise<void>;
   /** Load profile image from the server (session omits large data URLs). */
@@ -48,7 +60,11 @@ type AppStateContextValue = {
   updateWorkspaceTeam: (id: string, input: TeamUpsertInput) => Promise<TeamDTO>;
   deleteWorkspaceTeam: (id: string) => Promise<void>;
   addGalleryItem: (input: Omit<GalleryImage, "id">) => Promise<void>;
-  assignEmployeeToBay: (bayId: string, employeeId: string | null) => Promise<void>;
+  assignEmployeeToBay: (
+    bayId: string,
+    employeeId: string | null,
+    officeSlug?: string,
+  ) => Promise<void>;
 };
 
 const AppStateContext = React.createContext<AppStateContextValue | null>(null);
@@ -82,8 +98,12 @@ type ProfileSessionSync = {
   isProfileCompleted: boolean;
 };
 
+type SliceLoadedMap = Partial<Record<WorkspaceSlice, string>>;
+
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
-  const { data: session, status: sessionStatus, update: updateSession } = useSession();
+  const pathname = usePathname();
+  const { data: session, status: sessionStatus, update: updateSession, signOut } =
+    useSession();
 
   const [employees, setEmployees] = React.useState<Employee[]>([]);
   const [projects, setProjects] = React.useState<Project[]>([]);
@@ -94,14 +114,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [dataError, setDataError] = React.useState<string | null>(null);
   const [dataSummary, setDataSummary] = React.useState<DataLayerSummary | null>(null);
   const [profileAvatarUrl, setProfileAvatarUrl] = React.useState<string | undefined>();
-  const hydratedForEmailRef = React.useRef<string | null>(null);
-  const workspaceLoadIdRef = React.useRef(0);
+
+  const sliceLoadedRef = React.useRef<SliceLoadedMap>({});
+  const sliceInFlightRef = React.useRef<Partial<Record<WorkspaceSlice, Promise<void>>>>({});
+  const pendingRouteLoadsRef = React.useRef(0);
   const lastKnownUserRef = React.useRef<AuthUser | null>(null);
   const sessionUserRef = React.useRef(session?.user);
+  const sessionEmailRef = React.useRef("");
   const profileRefreshInFlightRef = React.useRef(false);
   const lastSessionSyncKeyRef = React.useRef<string | null>(null);
+  const loadedSlicesForRefreshRef = React.useRef<Set<WorkspaceSlice>>(new Set());
 
   sessionUserRef.current = session?.user;
+  sessionEmailRef.current = session?.user?.email?.trim().toLowerCase() ?? "";
 
   const sessionTeamForRole = React.useCallback(
     (appRole: string, team?: string | null) =>
@@ -166,21 +191,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
     if (profileRefreshInFlightRef.current) return;
 
+    const email = sessionEmailRef.current;
+    if (!email) return;
+
     profileRefreshInFlightRef.current = true;
     try {
-      const res = await loggedFetch(
-        "/api/profile-settings",
-        {
-          credentials: "include",
-          cache: "no-store",
-          source: "AppStateProvider.refreshProfileAvatar (explicit)",
-        },
-      );
-      if (!res.ok) {
-        setProfileAvatarUrl(undefined);
-        return;
-      }
-      const profile = (await res.json()) as ProfileSessionSync & { imageUrl?: string };
+      const profile = await fetchProfileSettings(email);
       await applyProfileSnapshot(profile);
     } catch {
       setProfileAvatarUrl(undefined);
@@ -249,102 +265,141 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [workspaceTeams],
   );
 
-  const applyWorkspacePayload = React.useCallback(
-    (
-      em: Employee[],
-      pr: Project[],
-      ga: GalleryImage[],
-      te: TeamDTO[],
-      ro: WorkspaceRole[],
-      email: string,
-    ) => {
-      setEmployees(em);
-      setProjects(pr);
-      setGallery(ga);
-      setWorkspaceTeams(te);
-      setWorkspaceRoles(ro);
-      hydrateRoleRegistry(ro);
-      hydratedForEmailRef.current = email;
-      setDataLoading(false);
+  const markSliceLoaded = React.useCallback((slice: WorkspaceSlice, email: string) => {
+    sliceLoadedRef.current[slice] = email;
+    loadedSlicesForRefreshRef.current.add(slice);
+  }, []);
+
+  const loadSlice = React.useCallback(
+    async (slice: WorkspaceSlice, email: string, force = false) => {
+      if (!force && sliceLoadedRef.current[slice] === email) return;
+
+      const existing = sliceInFlightRef.current[slice];
+      if (existing && !force) {
+        await existing;
+        return;
+      }
+
+      const run = (async () => {
+        switch (slice) {
+          case "roles": {
+            const ro = await fetchRolesOnce({ force });
+            setWorkspaceRoles(ro);
+            break;
+          }
+          case "employees": {
+            setEmployees(await fetchEmployeesOnce({ force }));
+            break;
+          }
+          case "projects": {
+            let pr = await fetchProjectsOnce({ force });
+            if (
+              pr.length === 0 &&
+              normalizeAppRole(sessionUserRef.current?.appRole).toLowerCase() === "admin"
+            ) {
+              // Intentional second attempt after empty result (seed race), not a duplicate init.
+              const retryRes = await fetch("/api/projects", {
+                credentials: "include",
+              });
+              if (retryRes.ok) {
+                const retryProjects = (await retryRes.json()) as Project[];
+                if (retryProjects.length > 0) pr = retryProjects;
+              }
+            }
+            setProjects(pr);
+            break;
+          }
+          case "gallery": {
+            setGallery(await fetchGalleryOnce({ force }));
+            break;
+          }
+          case "teams": {
+            setWorkspaceTeams(await fetchTeamsOnce({ force }));
+            break;
+          }
+          case "dbStatus": {
+            setDataSummary(await fetchDbStatusOnce({ force }));
+            break;
+          }
+          default:
+            break;
+        }
+        markSliceLoaded(slice, email);
+      })();
+
+      sliceInFlightRef.current[slice] = run;
+      try {
+        await run;
+      } finally {
+        if (sliceInFlightRef.current[slice] === run) {
+          delete sliceInFlightRef.current[slice];
+        }
+      }
     },
-    [],
+    [markSliceLoaded],
   );
 
-  const fetchWorkspaceData = React.useCallback(async () => {
-    // Load roles before projects so server permission checks are not racing
-    // with /api/roles clearing the in-memory role registry.
-    const roRes = await fetch("/api/roles", { credentials: "include", cache: "no-store" });
-    let ro: WorkspaceRole[] = [];
-    if (roRes.ok) {
-      ro = (await roRes.json()) as WorkspaceRole[];
-      hydrateRoleRegistry(ro);
-    } else if (roRes.status !== 403) {
-      throw new Error(await parseApiError(roRes));
-    }
+  const ensureWorkspaceData = React.useCallback(
+    async (slices: WorkspaceSlice[], opts?: { force?: boolean }) => {
+      if (sessionStatus !== "authenticated") return;
+      const email = sessionEmailRef.current;
+      if (!email) return;
 
-    const [emRes, prRes, gaRes, teRes, sumRes] = await Promise.all([
-      fetch("/api/employees", { credentials: "include" }),
-      fetch("/api/projects", { credentials: "include" }),
-      fetch("/api/gallery", { credentials: "include" }),
-      fetch("/api/teams", { credentials: "include" }),
-      fetch("/api/db-status", { credentials: "include" }),
-    ]);
+      const unique = Array.from(new Set(slices));
+      const needed = opts?.force
+        ? unique
+        : unique.filter((slice) => sliceLoadedRef.current[slice] !== email);
 
-    if (sumRes.ok) {
-      setDataSummary((await sumRes.json()) as DataLayerSummary);
-    } else {
-      setDataSummary(null);
-    }
-    if (!emRes.ok) throw new Error(await parseApiError(emRes));
-    if (!prRes.ok) throw new Error(await parseApiError(prRes));
-    if (!gaRes.ok) throw new Error(await parseApiError(gaRes));
-    if (!teRes.ok) throw new Error(await parseApiError(teRes));
+      if (needed.length === 0) return;
 
-    const [em, pr, ga, te] = await Promise.all([
-      emRes.json() as Promise<Employee[]>,
-      prRes.json() as Promise<Project[]>,
-      gaRes.json() as Promise<GalleryImage[]>,
-      teRes.json() as Promise<TeamDTO[]>,
-    ]);
-    return { em, pr, ga, te, ro };
-  }, []);
+      const ordered: WorkspaceSlice[] = needed.includes("roles")
+        ? ["roles", ...needed.filter((s) => s !== "roles")]
+        : needed;
+
+      pendingRouteLoadsRef.current += 1;
+      setDataLoading(true);
+      setDataError(null);
+      try {
+        for (const slice of ordered.filter((s) => s === "roles")) {
+          await loadSlice(slice, email, opts?.force);
+        }
+        await Promise.all(
+          ordered.filter((s) => s !== "roles").map((slice) => loadSlice(slice, email, opts?.force)),
+        );
+      } catch (e) {
+        setDataError(e instanceof Error ? e.message : "Failed to load data");
+      } finally {
+        pendingRouteLoadsRef.current = Math.max(0, pendingRouteLoadsRef.current - 1);
+        if (pendingRouteLoadsRef.current === 0) {
+          setDataLoading(false);
+        }
+      }
+    },
+    [loadSlice, sessionStatus],
+  );
 
   const refreshData = React.useCallback(async () => {
     if (sessionStatus !== "authenticated") return;
-    const email = session?.user?.email?.trim().toLowerCase() ?? "";
+    const email = sessionEmailRef.current;
     if (!email) return;
 
-    const isInitialHydration = hydratedForEmailRef.current !== email;
-    const loadId = ++workspaceLoadIdRef.current;
-    if (isInitialHydration) {
-      setDataLoading(true);
-    }
-    setDataError(null);
-    try {
-      const { em, pr, ga, te, ro } = await fetchWorkspaceData();
-      if (workspaceLoadIdRef.current !== loadId) return;
-      applyWorkspacePayload(em, pr, ga, te, ro, email);
-    } catch (e) {
-      if (workspaceLoadIdRef.current !== loadId) return;
-      setDataError(e instanceof Error ? e.message : "Failed to load data");
-    } finally {
-      if (workspaceLoadIdRef.current === loadId && isInitialHydration) {
-        setDataLoading(false);
-      }
-    }
-  }, [
-    applyWorkspacePayload,
-    fetchWorkspaceData,
-    session?.user?.email,
-    sessionStatus,
-  ]);
+    const routeSlices = workspaceSlicesForPath(pathname);
+    const loaded = Array.from(loadedSlicesForRefreshRef.current);
+    const slices = Array.from(new Set([...routeSlices, ...loaded]));
+    await ensureWorkspaceData(slices, { force: true });
+  }, [ensureWorkspaceData, pathname, sessionStatus]);
 
-  const sessionEmail = session?.user?.email?.trim().toLowerCase() ?? "";
+  const sessionEmail = sessionEmailRef.current;
 
   React.useEffect(() => {
-    if (!sessionEmail) {
-      workspaceLoadIdRef.current += 1;
-      hydratedForEmailRef.current = null;
+    const email = session?.user?.email?.trim().toLowerCase() ?? "";
+    sessionEmailRef.current = email;
+
+    if (!email) {
+      sliceLoadedRef.current = {};
+      sliceInFlightRef.current = {};
+      loadedSlicesForRefreshRef.current = new Set();
+      pendingRouteLoadsRef.current = 0;
       setEmployees([]);
       setProjects([]);
       setGallery([]);
@@ -355,66 +410,34 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setDataLoading(false);
       return;
     }
-    if (hydratedForEmailRef.current === sessionEmail) return;
 
-    const loadId = ++workspaceLoadIdRef.current;
-    setDataLoading(true);
-    setDataError(null);
-    void (async () => {
-      try {
-        const { em, pr, ga, te, ro } = await fetchWorkspaceData();
-        if (workspaceLoadIdRef.current !== loadId) return;
-        applyWorkspacePayload(em, pr, ga, te, ro, sessionEmail);
-        if (
-          pr.length === 0 &&
-          normalizeAppRole(sessionUserRef.current?.appRole).toLowerCase() === "admin"
-        ) {
-          const retryRes = await fetch("/api/projects", { credentials: "include" });
-          if (retryRes.ok && workspaceLoadIdRef.current === loadId) {
-            const retryProjects = (await retryRes.json()) as Project[];
-            if (retryProjects.length > 0) {
-              setProjects(retryProjects);
-            }
-          }
-        }
-      } catch (e) {
-        if (workspaceLoadIdRef.current !== loadId) return;
-        setDataError(e instanceof Error ? e.message : "Failed to load data");
-      } finally {
-        if (workspaceLoadIdRef.current === loadId) {
-          setDataLoading(false);
-        }
-      }
-    })();
-  }, [applyWorkspacePayload, fetchWorkspaceData, sessionEmail]);
+    const slices = workspaceSlicesForPath(pathname);
+    void ensureWorkspaceData(slices);
+  }, [ensureWorkspaceData, pathname, session?.user?.email]);
 
   const logout = React.useCallback(async () => {
     await signOut({ callbackUrl: "/login" });
-  }, []);
+  }, [signOut]);
 
-  const addEmployee = React.useCallback(
-    async (input: Omit<Employee, "id">) => {
-      const res = await fetch("/api/employees", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      });
-      if (!res.ok) throw new Error(await parseApiError(res));
-      const created = (await res.json()) as Employee;
-      setEmployees((prev) => [...prev, created]);
-    },
-    [],
-  );
+  const addEmployee = React.useCallback(async (input: Omit<Employee, "id">) => {
+    const res = await fetch("/api/employees", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error(await parseApiError(res));
+    const created = (await res.json()) as Employee;
+    setEmployees((prev) => [...prev, created]);
+  }, []);
 
   const refreshWorkspaceRoles = React.useCallback(async () => {
-    const res = await fetch("/api/roles", { credentials: "include", cache: "no-store" });
-    if (!res.ok) throw new Error(await parseApiError(res));
-    const roles = (await res.json()) as WorkspaceRole[];
+    const roles = await fetchRolesOnce({ force: true });
     setWorkspaceRoles(roles);
-    hydrateRoleRegistry(roles);
+    const email = sessionEmailRef.current;
+    if (email) markSliceLoaded("roles", email);
     return roles;
-  }, []);
+  }, [markSliceLoaded]);
 
   const removeWorkspaceRole = React.useCallback((id: string) => {
     setWorkspaceRoles((prev) => {
@@ -477,28 +500,25 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     return created;
   }, []);
 
-  const addGalleryItem = React.useCallback(
-    async (input: Omit<GalleryImage, "id">) => {
-      const res = await fetch("/api/gallery", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
-      });
-      if (!res.ok) throw new Error(await parseApiError(res));
-      const created = (await res.json()) as GalleryImage;
-      setGallery((prev) => [created, ...prev]);
-    },
-    [],
-  );
+  const addGalleryItem = React.useCallback(async (input: Omit<GalleryImage, "id">) => {
+    const res = await fetch("/api/gallery", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) throw new Error(await parseApiError(res));
+    const created = (await res.json()) as GalleryImage;
+    setGallery((prev) => [created, ...prev]);
+  }, []);
 
   const assignEmployeeToBay = React.useCallback(
-    async (bayId: string, employeeId: string | null) => {
+    async (bayId: string, employeeId: string | null, officeSlug?: string) => {
       const res = await fetch("/api/employees", {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bayId, employeeId }),
+        body: JSON.stringify({ bayId, employeeId, officeSlug }),
       });
       if (!res.ok) throw new Error(await parseApiError(res));
       const next = (await res.json()) as Employee[];
@@ -527,6 +547,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       dataError,
       dataSummary,
       refreshData,
+      ensureWorkspaceData,
       applyProfileSnapshot,
       refreshProfileAvatar,
       addEmployee,
@@ -556,6 +577,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       dataError,
       dataSummary,
       refreshData,
+      ensureWorkspaceData,
       applyProfileSnapshot,
       refreshProfileAvatar,
       addEmployee,
@@ -581,6 +603,16 @@ export function useAppState() {
   return ctx;
 }
 
+/** Ensure workspace slices for the current feature (deduped by AppState). */
+export function useEnsureWorkspaceData(slices: WorkspaceSlice[]) {
+  const { ensureWorkspaceData } = useAppState();
+  const key = slices.slice().sort().join(",");
+  React.useEffect(() => {
+    void ensureWorkspaceData(slices);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- key encodes slices
+  }, [ensureWorkspaceData, key]);
+}
+
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const { sessionStatus, user } = useAppState();
   const router = useRouter();
@@ -596,7 +628,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  // NextAuth sets status to "loading" during session updates; keep the shell visible.
   if (sessionStatus === "loading" && !user) {
     return null;
   }

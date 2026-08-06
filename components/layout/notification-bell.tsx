@@ -12,18 +12,60 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { NotificationListItem } from "@/components/notifications/notification-list-item";
+import { dedupeAsync } from "@/lib/dedupe-async";
 import { cn } from "@/lib/utils";
 import { parseApiError } from "@/providers/app-state";
 import type { NotificationDTO } from "@/models";
 
 const POLL_MS = 45_000;
 const PREVIEW_LIMIT = 2;
+const PREVIEW_TTL_MS = 8_000;
+const PREVIEW_CACHE_KEY = `notifications:preview:limit=${PREVIEW_LIMIT}&unreadOnly=true`;
 
 type NotificationsResponse = {
   notifications: NotificationDTO[];
   unreadCount: number;
   totalCount: number;
 };
+
+let previewCache: { at: number; data: NotificationsResponse } | null = null;
+
+async function fetchNotificationPreview(opts?: {
+  force?: boolean;
+}): Promise<NotificationsResponse> {
+  if (
+    !opts?.force &&
+    previewCache &&
+    Date.now() - previewCache.at < PREVIEW_TTL_MS
+  ) {
+    return previewCache.data;
+  }
+
+  return dedupeAsync(PREVIEW_CACHE_KEY, async () => {
+    const res = await fetch(
+      `/api/notifications?limit=${PREVIEW_LIMIT}&unreadOnly=true`,
+      {
+        credentials: "include",
+        cache: "no-store",
+      },
+    );
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403 || res.status === 404) {
+        const empty = { notifications: [], unreadCount: 0, totalCount: 0 };
+        previewCache = { at: Date.now(), data: empty };
+        return empty;
+      }
+      throw new Error(await parseApiError(res));
+    }
+    const data = (await res.json()) as NotificationsResponse;
+    previewCache = { at: Date.now(), data };
+    return data;
+  });
+}
+
+function invalidatePreviewCache() {
+  previewCache = null;
+}
 
 export function NotificationBell() {
   const [notifications, setNotifications] = React.useState<NotificationDTO[]>([]);
@@ -33,49 +75,32 @@ export function NotificationBell() {
   const [open, setOpen] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  const refreshNotifications = React.useCallback(async () => {
-    try {
-      const res = await fetch(
-        `/api/notifications?limit=${PREVIEW_LIMIT}&unreadOnly=true`,
-        {
-        credentials: "include",
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403 || res.status === 404) {
-          setNotifications([]);
-          setUnreadCount(0);
-          setTotalCount(0);
-          setError(null);
-          return;
-        }
-        throw new Error(await parseApiError(res));
-      }
-      const data = (await res.json()) as NotificationsResponse;
-      setNotifications(data.notifications);
-      setUnreadCount(
-        data.notifications.length === 0 ? 0 : data.unreadCount,
-      );
-      setTotalCount(data.totalCount);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load notifications");
-    }
+  const applyPreview = React.useCallback((data: NotificationsResponse) => {
+    setNotifications(data.notifications);
+    setUnreadCount(data.notifications.length === 0 ? 0 : data.unreadCount);
+    setTotalCount(data.totalCount);
+    setError(null);
   }, []);
+
+  const refreshNotifications = React.useCallback(
+    async (opts?: { force?: boolean }) => {
+      try {
+        const data = await fetchNotificationPreview(opts);
+        applyPreview(data);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load notifications");
+      }
+    },
+    [applyPreview],
+  );
 
   React.useEffect(() => {
     void refreshNotifications();
     const timer = window.setInterval(() => {
-      void refreshNotifications();
+      void refreshNotifications({ force: true });
     }, POLL_MS);
     return () => window.clearInterval(timer);
   }, [refreshNotifications]);
-
-  React.useEffect(() => {
-    if (!open) return;
-    setLoading(true);
-    void refreshNotifications().finally(() => setLoading(false));
-  }, [open, refreshNotifications]);
 
   const removeFromPopup = React.useCallback((notificationId: string) => {
     setNotifications((prev) => prev.filter((item) => item.id !== notificationId));
@@ -98,6 +123,7 @@ export function NotificationBell() {
       return;
     }
 
+    invalidatePreviewCache();
     setUnreadCount((count) => Math.max(0, count - 1));
   };
 
@@ -107,6 +133,7 @@ export function NotificationBell() {
       credentials: "include",
     });
     if (!res.ok) return;
+    invalidatePreviewCache();
     setNotifications([]);
     setUnreadCount(0);
   };
@@ -114,7 +141,9 @@ export function NotificationBell() {
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen) return;
-    void refreshNotifications();
+    // Single refresh on open (removed duplicate useEffect that also refreshed).
+    setLoading(true);
+    void refreshNotifications({ force: true }).finally(() => setLoading(false));
   };
 
   const showViewAll = notifications.length > 0;

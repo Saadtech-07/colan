@@ -90,8 +90,13 @@ export default function RolesPage() {
 
   React.useEffect(() => {
     if (dataLoading) return;
+    // Roles already loaded for this route — skip duplicate /api/roles fetch.
+    if (workspaceRoles.length > 0) {
+      setLoading(false);
+      return;
+    }
     void loadRoles();
-  }, [dataLoading, loadRoles]);
+  }, [dataLoading, loadRoles, workspaceRoles.length]);
 
   const filtered = workspaceRoles.filter((r) => {
     const q = search.trim().toLowerCase();
