@@ -18,15 +18,18 @@ export type SeatingFullscreenBlock = {
   label: string;
   officeSlug: string;
   occupancy: Map<string, Employee>;
+  cabinOccupancy?: Map<string, Employee>;
   rows: SeatingRowConfig[];
   showCabins?: boolean;
   cabinsBeforeA?: SeatingCabin[];
   cabinsAfterG?: SeatingCabin[];
   sideCabins?: SideCabinsConfig;
+  outsideEntrance?: { text: string } | null;
 };
 
 type SharedFloorProps = {
   selectedSeat: string | null;
+  selectedCabinId?: string | null;
   highlightSeats: Set<string> | null;
   layoutMode?: boolean;
   generatedLayout?: GeneratedSeatingLayout | null;
@@ -38,7 +41,9 @@ type SharedFloorProps = {
   viewMode: "all" | "occupied" | "available";
   canAssign: boolean;
   onSeatClick: (seatId: string, officeSlug: string) => void;
+  onCabinClick?: (cabinId: string, officeSlug: string) => void;
   onAssignSeat: (seatId: string, employeeId: string, officeSlug: string) => void;
+  onSwapSeats?: (fromSeatId: string, toSeatId: string, officeSlug: string) => void;
 };
 
 type Props = SharedFloorProps & {
@@ -61,6 +66,7 @@ export function SeatingFloorPlanFullscreen({
   subtitle,
   blocks,
   selectedSeat,
+  selectedCabinId = null,
   highlightSeats,
   layoutMode = false,
   generatedLayout = null,
@@ -72,7 +78,9 @@ export function SeatingFloorPlanFullscreen({
   viewMode,
   canAssign,
   onSeatClick,
+  onCabinClick,
   onAssignSeat,
+  onSwapSeats,
 }: Props) {
   const [mounted, setMounted] = React.useState(false);
   const [zoom, setZoom] = React.useState(1);
@@ -94,7 +102,10 @@ export function SeatingFloorPlanFullscreen({
   React.useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      // Let assignment dialog handle Escape while it is open above this view.
+      if (document.querySelector('[role="dialog"]')) return;
+      onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -172,6 +183,7 @@ export function SeatingFloorPlanFullscreen({
                 zoom={zoom}
                 occupancy={block.occupancy}
                 selectedSeat={selectedSeat}
+                selectedCabinId={selectedCabinId}
                 highlightSeats={highlightSeats}
                 layoutMode={layoutMode}
                 rows={block.rows}
@@ -187,9 +199,22 @@ export function SeatingFloorPlanFullscreen({
                 cabinsBeforeA={block.cabinsBeforeA}
                 cabinsAfterG={block.cabinsAfterG}
                 sideCabins={block.sideCabins}
+                outsideEntrance={block.outsideEntrance}
+                cabinOccupancy={block.cabinOccupancy}
+                onCabinClick={
+                  onCabinClick
+                    ? (cabinId) => onCabinClick(cabinId, block.officeSlug)
+                    : undefined
+                }
                 onSeatClick={(seatId) => onSeatClick(seatId, block.officeSlug)}
                 onAssignSeat={(seatId, employeeId) =>
                   onAssignSeat(seatId, employeeId, block.officeSlug)
+                }
+                onSwapSeats={
+                  onSwapSeats
+                    ? (fromSeatId, toSeatId) =>
+                        onSwapSeats(fromSeatId, toSeatId, block.officeSlug)
+                    : undefined
                 }
               />
             </section>

@@ -26,8 +26,8 @@ export function SeatingDownloadMenu({
 }: Props) {
   const buttonClass =
     size === "sm"
-      ? "h-8 rounded-lg gap-1.5 px-2.5 text-xs"
-      : "h-10 rounded-xl gap-2 px-4";
+      ? "h-9 rounded-xl border-slate-300 bg-white gap-1.5 px-3 text-xs font-semibold shadow-sm dark:border-border dark:bg-background"
+      : "h-10 rounded-xl gap-2 px-4 font-semibold";
 
   return (
     <DropdownMenu>

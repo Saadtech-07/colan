@@ -136,11 +136,11 @@ export function CreateAppUserSheet({ open, onOpenChange }: Props) {
     try {
       await withLoading("app-users-submit", LOADING_PRESETS.creatingAccount, async () => {
         const result = await createAppUserAccount(payload);
-        await refreshData();
         stashCreateAccountToast(createAccountToastFromResult(result));
         resetForm();
         onOpenChange(false);
         router.push("/app-users");
+        void refreshData();
       });
     } catch (e) {
       showMessage(e instanceof Error ? e.message : "Unable to create account.");

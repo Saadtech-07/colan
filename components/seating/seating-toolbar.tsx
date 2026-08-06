@@ -78,7 +78,7 @@ export function SeatingZoomControls({
   return (
     <div
       className={cn(
-        "inline-flex h-9 items-center gap-1 rounded-lg border border-border/70 bg-background px-1 shadow-sm",
+        "inline-flex h-9 items-center gap-1 rounded-xl border border-slate-300 bg-white px-1 shadow-sm dark:border-border dark:bg-background",
         className,
       )}
     >
@@ -161,9 +161,9 @@ export function SeatingToolbar({
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           className={cn(
-            "h-9 rounded-xl bg-background pl-9 text-sm",
+            "h-9 rounded-xl bg-white pl-9 text-sm shadow-sm dark:bg-background",
             embedded
-              ? "border border-black shadow-none transition-colors focus:border-black focus:ring-2 focus:ring-black/10 focus-visible:border-black focus-visible:ring-2 focus-visible:ring-black/10 dark:border-neutral-200 dark:focus:border-neutral-200 dark:focus-visible:border-neutral-200"
+              ? "border border-slate-300 font-medium transition-colors focus:border-slate-500 focus:ring-2 focus:ring-slate-400/20 focus-visible:border-slate-500 focus-visible:ring-2 focus-visible:ring-slate-400/20 dark:border-border"
               : "border-border/70",
           )}
         />
@@ -174,7 +174,12 @@ export function SeatingToolbar({
           <Button
             type="button"
             variant="outline"
-            className="h-9 shrink-0 rounded-xl border-border/70 bg-background px-3 text-sm"
+            className={cn(
+              "h-9 shrink-0 rounded-xl px-3 text-sm font-semibold shadow-sm",
+              embedded
+                ? "border-slate-300 bg-white dark:border-border dark:bg-background"
+                : "border-border/70 bg-background",
+            )}
           >
             <Filter className="h-3.5 w-3.5" />
             Filters

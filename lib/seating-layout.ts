@@ -7,8 +7,8 @@ export type FloorCell =
   | { kind: "label"; text: string }
   | { kind: "seat"; id: string }
   | { kind: "pillar" }
-  | { kind: "entrance"; text: string }
-  | { kind: "gap" };
+  | { kind: "entrance"; text: string; /** Seat-column span; default 3. */ span?: number }
+  | { kind: "gap"; /** Seat-column span; default 3 (match entrance). */ span?: number };
 
 export type SeatingRowConfig = {
   key: string;

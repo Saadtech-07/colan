@@ -60,6 +60,8 @@ export interface Employee {
   bayNumber: string;
   /** Office branch floor plan (chennai | pernambut | bangalore). */
   officeSlug?: string;
+  /** Cabin id on that office floor plan (exclusive with bay when set). */
+  cabinId?: string;
   imageUrl: string;
   /** Login email from the linked app user account. */
   email?: string;

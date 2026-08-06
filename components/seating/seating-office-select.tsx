@@ -56,11 +56,7 @@ function groupPlansByBranch(plans: FloorPlanSummary[]): BranchGroup[] {
     const groupPlans = (map.get(key) ?? [])
       .slice()
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-    const single = groupPlans[0];
-    const tabLabel =
-      key === "Chennai"
-        ? "Chennai"
-        : `${key} - ${blockLabel(single)}`;
+    const tabLabel = key;
     return {
       key,
       label: key,
@@ -141,10 +137,6 @@ export function SeatingOfficeSelect({ plans, value, onChange, disabled }: Props)
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-        ) : activePlan ? (
-          <span className="inline-flex h-9 items-center rounded-xl border border-border/70 bg-muted/40 px-3 text-sm font-semibold text-foreground">
-            {blockLabel(activePlan)}
-          </span>
         ) : null}
       </div>
 
@@ -156,8 +148,7 @@ export function SeatingOfficeSelect({ plans, value, onChange, disabled }: Props)
 
       <div
         className={cn(
-          "inline-flex w-full flex-wrap items-center gap-1 rounded-xl border border-border/70 bg-muted/40 p-1",
-          "sm:w-auto",
+          "inline-flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl border border-border/70 bg-muted/40 p-1",
           disabled && "pointer-events-none opacity-60",
         )}
         role="tablist"
@@ -174,7 +165,7 @@ export function SeatingOfficeSelect({ plans, value, onChange, disabled }: Props)
               disabled={disabled}
               onClick={() => selectBranch(branch)}
               className={cn(
-                "inline-flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors sm:flex-none sm:text-sm",
+                "inline-flex min-h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors sm:text-sm",
                 selected
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:bg-background/70 hover:text-foreground",

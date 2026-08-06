@@ -411,18 +411,57 @@ export const galleryCreateSchema = z.object({
 
 
 
-export const bayAssignSchema = z.object({
-  bayId: z.string().min(1),
-  employeeId: z.string().min(1).nullable(),
-  officeSlug: z.string().trim().min(1).max(64).optional(),
-});
+export const bayAssignSchema = z
+  .object({
+    bayId: z.string().min(1).optional(),
+    cabinId: z.string().min(1).optional(),
+    /** Swap occupants between these two seats (same office). */
+    swapBayIds: z.tuple([z.string().min(1), z.string().min(1)]).optional(),
+    employeeId: z.string().min(1).nullable().optional(),
+    officeSlug: z.string().trim().min(1).max(64).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasBay = !!value.bayId?.trim();
+    const hasCabin = !!value.cabinId?.trim();
+    const hasSwap = Array.isArray(value.swapBayIds) && value.swapBayIds.length === 2;
+    const modes = [hasBay, hasCabin, hasSwap].filter(Boolean).length;
+    if (modes !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide exactly one of bayId, cabinId, or swapBayIds",
+        path: hasSwap ? ["swapBayIds"] : hasBay ? ["cabinId"] : ["bayId"],
+      });
+      return;
+    }
+    if ((hasBay || hasCabin) && value.employeeId === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "employeeId is required for bay/cabin assignment",
+        path: ["employeeId"],
+      });
+    }
+    if (hasSwap && value.swapBayIds![0] === value.swapBayIds![1]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "swapBayIds must be two different seats",
+        path: ["swapBayIds"],
+      });
+    }
+  });
 
 const floorCellSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("label"), text: z.string() }),
   z.object({ kind: z.literal("seat"), id: z.string().min(1) }),
   z.object({ kind: z.literal("pillar") }),
-  z.object({ kind: z.literal("entrance"), text: z.string() }),
-  z.object({ kind: z.literal("gap") }),
+  z.object({
+    kind: z.literal("entrance"),
+    text: z.string(),
+    span: z.number().int().min(1).max(8).optional(),
+  }),
+  z.object({
+    kind: z.literal("gap"),
+    span: z.number().int().min(1).max(8).optional(),
+  }),
 ]);
 
 const seatingRowSchema = z.object({

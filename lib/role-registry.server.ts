@@ -14,18 +14,17 @@ export function invalidateServerRoleCache(): void {
 
 /** Server-only: load roles from MongoDB into the in-memory registry. */
 export async function ensureRoleRegistry(): Promise<Map<string, WorkspaceRole>> {
-  const { getDb } = await import("@/lib/mongodb");
-  const db = await getDb();
-  if (db) {
-    const { ensureAdminRoleFullAccess } = await import("@/lib/roles-data");
-    const restored = await ensureAdminRoleFullAccess(db);
-    if (restored) {
-      invalidateServerRoleCache();
-    }
-  }
-
   let rolesPromise = loadPromise;
   if (!rolesPromise) {
+    const { getDb } = await import("@/lib/mongodb");
+    const db = await getDb();
+    if (db) {
+      const { ensureAdminRoleFullAccess } = await import("@/lib/roles-data");
+      const restored = await ensureAdminRoleFullAccess(db);
+      if (restored) {
+        invalidateServerRoleCache();
+      }
+    }
     rolesPromise = listWorkspaceRoles();
     loadPromise = rolesPromise;
   }

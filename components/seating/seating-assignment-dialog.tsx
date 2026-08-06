@@ -16,6 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ALL_SEAT_IDS } from "@/lib/seating-layout";
+import { cabinOccupancyMap } from "@/lib/cabin-utils";
 import { employeeMatchesSearch, seatOccupancyMap } from "@/lib/seating-utils";
 import { teamTabLabel } from "@/lib/team-utils";
 import { employeeEligibleForSeating } from "@/lib/workspace-identity";
@@ -24,43 +25,57 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   open: boolean;
-  seatId: string | null;
+  seatId?: string | null;
+  cabinId?: string | null;
+  cabinLabel?: string | null;
   employees: Employee[];
   canAssign: boolean;
   saving: boolean;
   /** Floor plan office — required when Block A/B share seat ids. */
   officeSlug?: string;
   seatIds?: string[];
+  cabinIds?: string[];
+  /** Render above fullscreen floor-plan View (z-[100]). */
+  elevated?: boolean;
   onClose: () => void;
   onAssign: (employeeId: string) => void;
   onRemove: () => void;
-  onReassign: (targetSeatId: string) => void;
+  onReassign?: (targetId: string) => void;
 };
 
 export function SeatingAssignmentDialog({
   open,
-  seatId,
+  seatId = null,
+  cabinId = null,
+  cabinLabel = null,
   employees,
   canAssign,
   saving,
   officeSlug,
   seatIds,
+  cabinIds,
+  elevated = false,
   onClose,
   onAssign,
   onRemove,
   onReassign,
 }: Props) {
+  const isCabin = !!cabinId;
+  const locationId = cabinId ?? seatId;
   const [query, setQuery] = React.useState("");
-  const occupancy = React.useMemo(
-    () => seatOccupancyMap(employees, { officeSlug, seatIds }),
-    [employees, officeSlug, seatIds],
-  );
+
+  const occupancy = React.useMemo(() => {
+    if (isCabin) {
+      return cabinOccupancyMap(employees, { officeSlug, cabinIds });
+    }
+    return seatOccupancyMap(employees, { officeSlug, seatIds });
+  }, [cabinIds, employees, isCabin, officeSlug, seatIds]);
 
   React.useEffect(() => {
     if (open) setQuery("");
-  }, [open, seatId]);
+  }, [open, locationId]);
 
-  const occupant = seatId ? (occupancy.get(seatId) ?? null) : null;
+  const occupant = locationId ? (occupancy.get(locationId) ?? null) : null;
 
   const assignableEmployees = React.useMemo(() => {
     return employees.filter((e) => {
@@ -72,19 +87,37 @@ export function SeatingAssignmentDialog({
   }, [employees, occupant, query]);
 
   const vacantForReassign = React.useMemo(() => {
+    if (!onReassign) return [];
+    if (isCabin) {
+      const ids = cabinIds?.length ? cabinIds : [];
+      return ids.filter((id) => id !== cabinId && !occupancy.has(id));
+    }
     const ids = seatIds?.length ? seatIds : ALL_SEAT_IDS;
     return ids.filter((id) => id !== seatId && !occupancy.has(id));
-  }, [occupancy, seatId, seatIds]);
+  }, [cabinId, cabinIds, isCabin, occupancy, onReassign, seatId, seatIds]);
+
+  const title = isCabin
+    ? `Cabin · ${cabinLabel?.trim() || cabinId}`
+    : `Seat ${seatId}`;
+
+  const layerClass = elevated ? "z-[110]" : undefined;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] sm:max-w-lg">
+      <DialogContent
+        className={cn("max-h-[90vh] sm:max-w-lg", layerClass)}
+        overlayClassName={layerClass}
+      >
         <DialogHeader>
-          <DialogTitle>Seat {seatId}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {occupant
-              ? "View assignment, move to another seat, or remove."
-              : "Search and assign a team member to this seat."}
+              ? isCabin
+                ? "View assignment, move to another cabin, or remove."
+                : "View assignment, move to another seat, or remove."
+              : isCabin
+                ? "Search and assign a manager or team member to this cabin."
+                : "Search and assign a team member to this seat."}
           </DialogDescription>
         </DialogHeader>
 
@@ -108,26 +141,30 @@ export function SeatingAssignmentDialog({
 
             {canAssign && (
               <>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Move to vacant seat</p>
-                  <ScrollArea className="h-32 rounded-md border p-2">
-                    <div className="flex flex-wrap gap-1.5">
-                      {vacantForReassign.map((id) => (
-                        <Button
-                          key={id}
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="font-mono text-xs"
-                          disabled={saving}
-                          onClick={() => onReassign(id)}
-                        >
-                          {id}
-                        </Button>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </div>
+                {onReassign && vacantForReassign.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">
+                      {isCabin ? "Move to vacant cabin" : "Move to vacant seat"}
+                    </p>
+                    <ScrollArea className="h-32 rounded-md border p-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {vacantForReassign.map((id) => (
+                          <Button
+                            key={id}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="font-mono text-xs"
+                            disabled={saving}
+                            onClick={() => onReassign(id)}
+                          >
+                            {id}
+                          </Button>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
                 <Button
                   type="button"
                   variant="destructive"
@@ -140,7 +177,7 @@ export function SeatingAssignmentDialog({
                   ) : (
                     <UserMinus className="h-4 w-4" />
                   )}
-                  Remove from seat
+                  {isCabin ? "Remove from cabin" : "Remove from seat"}
                 </Button>
               </>
             )}
@@ -185,7 +222,11 @@ export function SeatingAssignmentDialog({
                             <p className="truncate font-medium">{emp.name}</p>
                             <p className="text-xs text-muted-foreground">
                               {emp.employeeId} · {teamTabLabel(emp.team)}
-                              {emp.bayNumber ? ` · currently ${emp.bayNumber}` : ""}
+                              {emp.cabinId
+                                ? ` · cabin ${emp.cabinId}`
+                                : emp.bayNumber
+                                  ? ` · currently ${emp.bayNumber}`
+                                  : ""}
                             </p>
                           </div>
                         </button>

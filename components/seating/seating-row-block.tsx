@@ -11,8 +11,13 @@ const SEAT_HEIGHT = 140;
 const CELL_GAP = 10;
 const LABEL_WIDTH = 128;
 const PILLAR_WIDTH = SEAT_WIDTH * 2 + CELL_GAP;
-const ENTRANCE_WIDTH = SEAT_WIDTH * 3 + CELL_GAP * 2;
+const DEFAULT_ENTRANCE_SPAN = 3;
 const ROW_LABEL_HEIGHT = SEAT_HEIGHT + 12;
+
+function spanWidth(span = DEFAULT_ENTRANCE_SPAN): number {
+  const columns = Math.max(1, span);
+  return columns * SEAT_WIDTH + Math.max(0, columns - 1) * CELL_GAP;
+}
 
 function renderCell(
   cell: FloorCell,
@@ -61,12 +66,13 @@ function renderCell(
           </span>
         </SeatingStructuralBlock>
       );
-    case "entrance":
+    case "entrance": {
+      const width = spanWidth(cell.span ?? DEFAULT_ENTRANCE_SPAN);
       return (
         <SeatingStructuralBlock
           key={key}
           variant="entrance"
-          width={ENTRANCE_WIDTH}
+          width={width}
           height={SEAT_HEIGHT}
         >
           <span className="text-[10px] font-bold uppercase leading-tight tracking-[0.2em] text-sky-800">
@@ -74,12 +80,16 @@ function renderCell(
           </span>
         </SeatingStructuralBlock>
       );
+    }
     case "gap":
       return (
         <div
           key={key}
           className="shrink-0"
-          style={{ width: ENTRANCE_WIDTH, height: ROW_LABEL_HEIGHT }}
+          style={{
+            width: spanWidth(cell.span ?? DEFAULT_ENTRANCE_SPAN),
+            height: ROW_LABEL_HEIGHT,
+          }}
           aria-hidden
         />
       );

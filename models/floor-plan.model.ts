@@ -24,7 +24,16 @@ export type FloorPlanDocument = {
   cabins?: {
     beforeA: SeatingCabin[];
     afterG: SeatingCabin[];
-    sideCabins?: { hrManager: string; manager: string };
+    sideCabins?: {
+      hrManager: string;
+      manager: string;
+      hrManagerId?: string;
+      managerId?: string;
+      spans?: { hrManager?: number; manager?: number };
+      equalHeights?: boolean;
+    };
+    /** Compact entrance rendered outside seating bays (e.g. Bangalore). */
+    outsideEntrance?: { text: string };
   };
   isActive: boolean;
   sortOrder?: number;

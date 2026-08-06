@@ -166,6 +166,10 @@ type CabinBlockProps = {
   width: number;
   height?: number;
   vertical?: boolean;
+  occupantName?: string | null;
+  selected?: boolean;
+  canAssign?: boolean;
+  onSelect?: () => void;
 };
 
 export function SeatingCabinBlock({
@@ -173,29 +177,93 @@ export function SeatingCabinBlock({
   width,
   height = 88,
   vertical = false,
+  occupantName = null,
+  selected: _selected = false,
+  canAssign = false,
+  onSelect,
 }: CabinBlockProps) {
+  const occupied = !!occupantName?.trim();
+  const interactive = typeof onSelect === "function";
+
+  const body = (
+    <div
+      className={cn(
+        "flex h-full w-full flex-col items-center justify-center gap-0.5 px-2",
+        vertical && "py-3",
+      )}
+    >
+      {occupied ? (
+        <>
+          <span
+            className={cn(
+              "max-w-full truncate font-extrabold leading-tight text-slate-900",
+              vertical ? "text-center text-[13px]" : "text-[14px]",
+            )}
+            title={occupantName ?? undefined}
+          >
+            {occupantName}
+          </span>
+          <span
+            className={cn(
+              "max-w-full truncate font-semibold leading-tight text-slate-600",
+              vertical ? "text-center text-[10px]" : "text-[11px]",
+            )}
+            title={label}
+          >
+            {label}
+          </span>
+        </>
+      ) : (
+        <>
+          <span
+            className={cn(
+              "max-w-full font-extrabold leading-tight text-slate-800",
+              vertical
+                ? "line-clamp-3 text-center text-[11px]"
+                : "line-clamp-2 text-[12px]",
+            )}
+          >
+            {label}
+          </span>
+          {interactive ? (
+            <span
+              className={cn(
+                "mt-0.5 text-slate-500",
+                vertical ? "text-[10px]" : "text-[11px]",
+              )}
+            >
+              {canAssign ? "Assign" : "Vacant"}
+            </span>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+
   return (
     <SeatingStructuralBlock width={width} height={height} variant="cabin">
-      <div
-        className={cn(
-          "flex h-full flex-col items-center justify-center gap-1 px-2",
-          vertical && "py-3",
-        )}
-      >
-        <span className="text-[9px] font-bold uppercase tracking-[0.22em] text-slate-500/80">
-          Cabin
-        </span>
-        <span
+      {interactive ? (
+        <button
+          type="button"
+          disabled={!canAssign && !occupied}
+          onClick={onSelect}
           className={cn(
-            "font-extrabold leading-tight text-slate-800",
-            vertical
-              ? "line-clamp-4 text-center text-[11px]"
-              : "line-clamp-2 text-[12px]",
+            "h-full w-full rounded-[inherit] text-left focus-visible:outline-none",
+            canAssign || occupied ? "cursor-pointer" : "cursor-default",
           )}
+          title={
+            occupied
+              ? `${occupantName} · ${label}`
+              : canAssign
+                ? `Assign to ${label}`
+                : label
+          }
         >
-          {label}
-        </span>
-      </div>
+          {body}
+        </button>
+      ) : (
+        body
+      )}
     </SeatingStructuralBlock>
   );
 }

@@ -4,6 +4,19 @@ import type { SeatingCabin } from "@/lib/seating-cabins";
 export type SideCabinsConfig = {
   hrManager: string;
   manager: string;
+  /** Stable ids for occupancy (defaults: side-hr-manager / side-manager). */
+  hrManagerId?: string;
+  managerId?: string;
+  /**
+   * How many seating row blocks each side cabin spans.
+   * Example (Pernambut): Conference = 2 (A–B), Sales Team = 1 (C).
+   */
+  spans?: {
+    hrManager?: number;
+    manager?: number;
+  };
+  /** Split the full side column (all seating rows) into two equal-height cabins. */
+  equalHeights?: boolean;
 };
 
 export type ColanLayoutState = {

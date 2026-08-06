@@ -95,11 +95,45 @@ export default function AppUsersPage() {
   const [roleFilter, setRoleFilter] = React.useState("all");
   const [teamFilter, setTeamFilter] = React.useState("all");
 
-  const toastTimerRef = React.useRef<number | null>(null);
-  const successTimerRef = React.useRef<number | null>(null);
   const openedFromQueryRef = React.useRef(false);
 
   const deleting = isLoadingKey("app-users-delete");
+
+  const NOTIFICATION_MS = 2000;
+
+  const showToast = React.useCallback((next: CreateAccountToast) => {
+    setToast(next);
+  }, []);
+
+  const showSuccessMessage = React.useCallback((message: string) => {
+    const isRemoved = /removed|deleted/i.test(message);
+    setToast({
+      variant: "success",
+      title: message,
+      description: isRemoved
+        ? "The account is no longer in the directory."
+        : "Changes are saved to the account directory.",
+    });
+    setSuccess(null);
+  }, []);
+
+  // Auto-dismiss pop notifications after 2s (re-arms correctly under Strict Mode).
+  React.useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => {
+      setToast(null);
+    }, NOTIFICATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  // Keep banner path on the same 2s timeout if ever used.
+  React.useEffect(() => {
+    if (!success) return;
+    const timer = window.setTimeout(() => {
+      setSuccess(null);
+    }, NOTIFICATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [success]);
 
   const roleNameMap = React.useMemo(
     () => new Map(workspaceRoles.map((role) => [role.key, role.name])),
@@ -205,24 +239,6 @@ export default function AppUsersPage() {
     return () => window.clearTimeout(timer);
   }, [fetchUsers, isAdmin, dataLoading]);
 
-  const showToast = React.useCallback((next: CreateAccountToast) => {
-    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-    setToast(next);
-    toastTimerRef.current = window.setTimeout(() => {
-      setToast(null);
-      toastTimerRef.current = null;
-    }, 2000);
-  }, []);
-
-  const showSuccessMessage = React.useCallback((message: string) => {
-    if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
-    setSuccess(message);
-    successTimerRef.current = window.setTimeout(() => {
-      setSuccess(null);
-      successTimerRef.current = null;
-    }, 4000);
-  }, []);
-
   React.useEffect(() => {
     const pending = consumeCreateAccountToast();
     if (pending) {
@@ -237,14 +253,6 @@ export default function AppUsersPage() {
       void fetchUsers({ silent: true, force: true });
     }
   }, [fetchUsers, showSuccessMessage, showToast]);
-
-  React.useEffect(
-    () => () => {
-      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-      if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
-    },
-    [],
-  );
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -323,14 +331,42 @@ export default function AppUsersPage() {
 
   return (
     <div className="space-y-6">
-      {toast && (
-        <div className="fixed right-4 top-20 z-50 w-[calc(100vw-2rem)] max-w-sm sm:right-6">
+      {error && !deleting && (
+        <div className="rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      {success && !deleting && (
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-primary">
+          <span>{success}</span>
+          <button
+            type="button"
+            className="rounded-md p-1 text-primary/70 transition hover:bg-primary/10 hover:text-primary"
+            onClick={() => {
+              setSuccess(null);
+            }}
+            aria-label="Dismiss notification"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <SectionTitle as="h2" className="font-semibold text-muted-foreground">
+          Account directory
+        </SectionTitle>
+
+        {toast ? (
           <div
             className={
               toast.variant === "success"
-                ? "rounded-2xl border border-emerald-500/30 bg-card p-4 shadow-xl"
-                : "rounded-2xl border border-amber-500/30 bg-card p-4 shadow-xl"
+                ? "w-full shrink-0 rounded-2xl border border-emerald-500/30 bg-card p-3.5 shadow-lg sm:w-auto sm:max-w-sm"
+                : "w-full shrink-0 rounded-2xl border border-amber-500/30 bg-card p-3.5 shadow-lg sm:w-auto sm:max-w-sm"
             }
+            role="status"
+            aria-live="polite"
           >
             <div className="flex items-start gap-3">
               <div
@@ -353,38 +389,17 @@ export default function AppUsersPage() {
               <button
                 type="button"
                 className="rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                onClick={() => setToast(null)}
-                aria-label="Dismiss notification"
+                  onClick={() => {
+                    setToast(null);
+                  }}
+                  aria-label="Dismiss notification"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {error && !deleting && (
-        <div className="rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
-      {success && !deleting && (
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-primary">
-          <span>{success}</span>
-          <button
-            type="button"
-            className="rounded-md p-1 text-primary/70 transition hover:bg-primary/10 hover:text-primary"
-            onClick={() => {
-              if (successTimerRef.current) window.clearTimeout(successTimerRef.current);
-              setSuccess(null);
-            }}
-            aria-label="Dismiss notification"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-      )}
+        ) : null}
+      </div>
 
       <PageLoadingShell
         loading={loading}
@@ -395,10 +410,6 @@ export default function AppUsersPage() {
         minLoadingHeight="0"
       >
         <div className="space-y-4">
-        <SectionTitle as="h2" className="font-semibold text-muted-foreground">
-          Account directory
-        </SectionTitle>
-
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative min-w-0 flex-1 sm:max-w-md">

@@ -48,17 +48,19 @@ export function SeatCard({
         onDragStart={(e) => {
           if (!occupant || !canAssign) return;
           e.dataTransfer.setData("text/employee-id", occupant.id);
+          e.dataTransfer.setData("text/source-seat-id", seatId);
           e.dataTransfer.effectAllowed = "move";
           onDragStart?.(occupant.id);
         }}
         onDragOver={(e) => {
-          if (!canAssign || occupied) return;
+          if (!canAssign) return;
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
         }}
         onDrop={(e) => {
-          if (!canAssign || occupied) return;
+          if (!canAssign) return;
           e.preventDefault();
+          e.stopPropagation();
           onDrop?.();
         }}
         onClick={onSelect}
@@ -69,12 +71,18 @@ export function SeatCard({
             : "border-slate-200/80 bg-gradient-to-b from-white via-white to-slate-50 shadow-[inset_0_2px_0_rgba(255,255,255,0.95),0_4px_10px_rgba(15,23,42,0.06)]",
           "group-hover/seat:shadow-[inset_0_2px_0_rgba(255,255,255,0.95),0_10px_22px_rgba(15,23,42,0.12)]",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-white",
-          canAssign && "cursor-pointer",
+          canAssign && (occupied ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"),
           !occupied && "group-hover/seat:border-primary/30",
           occupied && teamColors && cn(teamColors.border, "group-hover/seat:brightness-[1.02]"),
           selected &&
             "ring-2 ring-primary ring-offset-2 ring-offset-white shadow-[0_0_0_1px_rgba(59,130,246,0.15),0_16px_32px_rgba(59,130,246,0.2)]",
-          highlighted && !selected && "ring-2 ring-amber-400/80 ring-offset-2 ring-offset-white",
+          highlighted &&
+            !selected &&
+            cn(
+              "z-20 border-slate-500/70 bg-gradient-to-b from-slate-200 via-slate-300/90 to-slate-200",
+              "ring-2 ring-slate-600 ring-offset-2 ring-offset-white",
+              "shadow-[0_0_0_1px_rgba(71,85,105,0.35),0_12px_28px_rgba(51,65,85,0.25)]",
+            ),
           inLayoutCanvas &&
             !occupied &&
             "border-violet-300/70 ring-2 ring-violet-400/50 ring-offset-2 ring-offset-white",
@@ -94,7 +102,9 @@ export function SeatCard({
           className={cn(
             "inline-flex min-h-5 items-center gap-1 rounded-full border px-2 font-mono text-[10px] font-bold leading-none shadow-sm",
             occupied
-              ? "border-violet-200/80 bg-white/95 text-violet-900"
+              ? highlighted && !selected
+                ? "border-slate-500/40 bg-white text-slate-900"
+                : "border-violet-200/80 bg-white/95 text-violet-900"
               : "border-slate-200/80 bg-white/95 text-slate-700",
           )}
         >
@@ -113,7 +123,14 @@ export function SeatCard({
                 {occupant.name.slice(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
-            <span className="mt-1.5 line-clamp-1 w-full px-0.5 text-[10px] font-semibold leading-tight text-slate-900">
+            <span
+              className={cn(
+                "mt-1.5 line-clamp-1 w-full px-0.5 font-semibold leading-tight",
+                highlighted && !selected
+                  ? "text-[11px] font-bold text-slate-900"
+                  : "text-[10px] text-slate-900",
+              )}
+            >
               {occupant.name}
             </span>
             <span

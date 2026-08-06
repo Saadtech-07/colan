@@ -24,7 +24,7 @@ import {
   stashEditAccountSuccess,
   updateAppUserAccount,
 } from "@/lib/edit-app-user-client";
-import { fetchAppUsersList } from "@/lib/app-users-client";
+import { fetchAppUsersList, clearCachedAppUsers } from "@/lib/app-users-client";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
 import { parseApiError, useAppState } from "@/providers/app-state";
@@ -183,11 +183,13 @@ export function EditAppUserSheet({ userId, open, onOpenChange }: Props) {
     try {
       await withLoading("app-users-submit", LOADING_PRESETS.updatingAccount, async () => {
         await updateAppUserAccount(userId, values);
-        await refreshData();
         stashEditAccountSuccess();
+        clearCachedAppUsers();
         resetState();
         onOpenChange(false);
         router.push("/app-users");
+        // Refresh workspace data in the background — don't block navigation.
+        void refreshData();
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to save account.");

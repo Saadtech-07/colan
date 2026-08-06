@@ -15,6 +15,8 @@ export type EmployeeDocument = {
   bayNumber: string;
   /** Office floor plan slug (chennai | pernambut | bangalore). */
   officeSlug?: string | null;
+  /** Cabin assignment on that office (e.g. cabin-cfo). */
+  cabinId?: string | null;
   imageUrl: string;
   email?: string;
   directory?: {
@@ -50,6 +52,7 @@ export function employeeDocToDTO(doc: EmployeeDocument): Employee {
     gender: doc.gender ?? "male",
     bayNumber: doc.bayNumber,
     officeSlug: doc.officeSlug ?? undefined,
+    cabinId: doc.cabinId ?? undefined,
     imageUrl: doc.imageUrl,
     email: doc.email?.trim() || undefined,
   };
@@ -66,6 +69,7 @@ export function employeeInputToDocFields(
     gender: input.gender ?? "male",
     bayNumber: input.bayNumber,
     officeSlug: input.officeSlug ?? null,
+    cabinId: input.cabinId ?? null,
     imageUrl: input.imageUrl,
   };
 }

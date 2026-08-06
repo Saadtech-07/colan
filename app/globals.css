@@ -202,6 +202,44 @@
   }
 }
 
+/** Soft attention pulse for seating fullscreen "View" control. */
+@keyframes seating-view-hint {
+  0%,
+  100% {
+    transform: scale(1);
+    border-color: hsl(var(--border));
+    box-shadow:
+      0 1px 2px hsl(222 47% 11% / 0.04),
+      0 0 0 0 hsl(var(--primary) / 0);
+  }
+  45% {
+    transform: scale(1.04);
+    border-color: hsl(var(--primary) / 0.55);
+    box-shadow:
+      0 2px 8px hsl(var(--primary) / 0.14),
+      0 0 0 5px hsl(var(--primary) / 0.1);
+  }
+  70% {
+    transform: scale(1.015);
+    border-color: hsl(var(--primary) / 0.35);
+    box-shadow:
+      0 1px 4px hsl(var(--primary) / 0.08),
+      0 0 0 2px hsl(var(--primary) / 0.06);
+  }
+}
+
+@keyframes seating-view-hint-icon {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.72;
+  }
+  45% {
+    transform: scale(1.14);
+    opacity: 1;
+  }
+}
+
 @layer utilities {
   .app-page-enter {
     animation: app-page-enter var(--motion-duration-page) var(--motion-ease-out) both;
@@ -290,6 +328,26 @@
   .gallery-glass-shine {
     animation: gallery-glass-shimmer 4s ease-in-out infinite;
   }
+
+  .seating-view-hint {
+    animation: seating-view-hint 2.6s var(--motion-ease) infinite;
+    will-change: transform, box-shadow, border-color;
+  }
+
+  .seating-view-hint:hover,
+  .seating-view-hint:focus-visible {
+    animation-play-state: paused;
+  }
+
+  .seating-view-hint .seating-view-hint-icon {
+    animation: seating-view-hint-icon 2.6s var(--motion-ease) infinite;
+    will-change: transform, opacity;
+  }
+
+  .seating-view-hint:hover .seating-view-hint-icon,
+  .seating-view-hint:focus-visible .seating-view-hint-icon {
+    animation-play-state: paused;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -308,7 +366,9 @@
   .dashboard-reveal-in,
   .dashboard-reveal-scale,
   .gallery-glass-float,
-  .gallery-glass-shine {
+  .gallery-glass-shine,
+  .seating-view-hint,
+  .seating-view-hint .seating-view-hint-icon {
     animation: none;
   }
 }

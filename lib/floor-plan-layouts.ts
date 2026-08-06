@@ -36,7 +36,6 @@ function rowLabel(text: string): FloorCell {
 }
 
 const pillar = (): FloorCell => ({ kind: "pillar" });
-const gap = (): FloorCell => ({ kind: "gap" });
 
 export function seatIdsFromRows(rows: SeatingRowConfig[]): string[] {
   return rows.flatMap((row) =>
@@ -120,26 +119,25 @@ export const BANGALORE_ROWS: SeatingRowConfig[] = [
     top: [rowLabel("C-ROW (24)"), ...seatIds("C", 1, 12)],
     bottom: [rowLabel(""), ...seatIds("C", 24, 13, -1)],
   },
+  /**
+   * D-row mirrors B-row exactly (same width / alignment).
+   */
   {
     key: "D",
     label: "D-ROW",
-    seatCount: 14,
+    seatCount: 20,
     floorKey: "2",
     top: [
-      rowLabel("D-ROW (14)"),
-      { kind: "entrance", text: "*** ENTRANCE ***" },
+      rowLabel("D-ROW (20)"),
+      ...seatIds("D", 1, 5),
       pillar(),
-      ...seatIds("D", 1, 4),
-      pillar(),
-      ...seatIds("D", 5, 7),
+      ...seatIds("D", 6, 10),
     ],
     bottom: [
       rowLabel(""),
-      gap(),
+      ...seatIds("D", 20, 16, -1),
       pillar(),
-      ...seatIds("D", 14, 11, -1),
-      pillar(),
-      ...seatIds("D", 10, 8, -1),
+      ...seatIds("D", 15, 11, -1),
     ],
   },
 ];
@@ -147,7 +145,10 @@ export const BANGALORE_ROWS: SeatingRowConfig[] = [
 const CHENNAI_CABINS = {
   beforeA: CABINS_BEFORE_A_ROW.map((c) => ({ ...c })),
   afterG: CABINS_AFTER_G_ROW.map((c) => ({ ...c })),
-  sideCabins: { ...DEFAULT_SIDE_CABINS },
+  sideCabins: {
+    ...DEFAULT_SIDE_CABINS,
+    manager: "Project Manager",
+  },
 };
 
 function cloneChennaiCabins(prefix: string) {
@@ -187,6 +188,97 @@ const SIMPLE_CABINS = (prefix: string): {
   ],
   sideCabins: { hrManager: "HR Manager", manager: "Manager" },
 });
+
+/** Bangalore: CFO / HR Team on top; Conference + CEO below; Project Manager on side. */
+export const BANGALORE_CABINS = {
+  beforeA: [
+    {
+      id: "bangalore-cabin-cfo",
+      label: "CFO Room",
+      placement: "before-A" as const,
+    },
+    {
+      id: "bangalore-cabin-hr-team",
+      label: "HR Team",
+      placement: "before-A" as const,
+    },
+  ],
+  afterG: [
+    {
+      id: "bangalore-cabin-conference",
+      label: "Conference",
+      placement: "after-G" as const,
+    },
+    {
+      id: "bangalore-cabin-ceo",
+      label: "CEO Room",
+      placement: "after-G" as const,
+    },
+  ],
+  sideCabins: {
+    hrManager: "HR Manager",
+    manager: "Project Manager",
+    hrManagerId: "bangalore-side-hr-manager",
+    managerId: "bangalore-side-project-manager",
+  },
+};
+
+/** Pernambut: equal Manager/HR above A1–A8; HR Manager/Manager below C; Conference on the side. */
+export const PERNAMBUT_CABINS = {
+  beforeA: [
+    { id: "pernambut-cabin-manager", label: "Manager", placement: "before-A" as const },
+    { id: "pernambut-cabin-hr", label: "HR", placement: "before-A" as const },
+  ],
+  afterG: [
+    {
+      id: "pernambut-cabin-hr-manager",
+      label: "HR Manager",
+      placement: "after-G" as const,
+    },
+    {
+      id: "pernambut-cabin-manager-back",
+      label: "Manager",
+      placement: "after-G" as const,
+    },
+  ],
+  sideCabins: {
+    hrManager: "Conference",
+    manager: "Sales Team",
+    hrManagerId: "pernambut-side-conference",
+    managerId: "pernambut-side-sales",
+    equalHeights: true,
+  },
+};
+
+/** Canonical cabin layouts for seeded offices (overrides stale DB copies). */
+export function catalogCabinsForSlug(slug: string): FloorPlanDocument["cabins"] | null {
+  const key = normalizeOfficeSlug(slug);
+  if (key === "pernambut") return PERNAMBUT_CABINS;
+  if (key === "bangalore") return BANGALORE_CABINS;
+  if (key === CHENNAI_BLOCK_A_SLUG) return CHENNAI_CABINS;
+  if (key === CHENNAI_BLOCK_B_SLUG) return cloneChennaiCabins("chennai-b");
+  return null;
+}
+
+/** Canonical row layouts for seeded offices (fixes stale D-row / entrance geometry). */
+export function catalogRowsForSlug(slug: string): SeatingRowConfig[] | null {
+  const key = normalizeOfficeSlug(slug);
+  if (key === "bangalore") {
+    return BANGALORE_ROWS.map((row) => ({
+      ...row,
+      top: [...row.top],
+      bottom: [...row.bottom],
+    }));
+  }
+  if (key === "pernambut") {
+    return PERNAMBUT_ROWS.map((row) => ({
+      ...row,
+      top: [...row.top],
+      bottom: [...row.bottom],
+    }));
+  }
+  return null;
+}
 
 export type FloorPlanSeed = Omit<FloorPlanDocument, "_id">;
 
@@ -243,13 +335,13 @@ export function buildFloorPlanSeeds(): FloorPlanSeed[] {
     },
     {
       slug: "pernambut",
-      name: "Pernambut · Block A",
+      name: "Pernambut",
       city: "Pernambut",
-      building: "Block A",
+      building: "Main Office",
       floors: [{ key: "1", label: "Ground Floor" }],
       rows: pernambutRows,
       seatIds: seatIdsFromRows(pernambutRows),
-      cabins: SIMPLE_CABINS("pernambut"),
+      cabins: PERNAMBUT_CABINS,
       isActive: true,
       sortOrder: 2,
       source: "seed",
@@ -258,16 +350,16 @@ export function buildFloorPlanSeeds(): FloorPlanSeed[] {
     },
     {
       slug: "bangalore",
-      name: "Bangalore · Block A",
+      name: "Bangalore",
       city: "Bangalore",
-      building: "Block A",
+      building: "Tech Park 1",
       floors: [
         { key: "1", label: "Floor 1" },
         { key: "2", label: "Floor 2" },
       ],
       rows: bangaloreRows,
       seatIds: seatIdsFromRows(bangaloreRows),
-      cabins: SIMPLE_CABINS("bangalore"),
+      cabins: BANGALORE_CABINS,
       isActive: true,
       sortOrder: 3,
       source: "seed",

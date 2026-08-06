@@ -53,6 +53,10 @@ import { DEFAULT_SIDE_CABINS } from "@/lib/seating-layout-editor-snapshot";
 import { requestColanLayoutEdit } from "@/lib/seating-layout-edit-client";
 import { jsPDF } from "jspdf";
 import {
+  cabinOccupancyMap,
+  listCabinSlotsOnPlan,
+} from "@/lib/cabin-utils";
+import {
   computeSeatingStats,
   highlightedSeatIds,
   seatOccupancyMap,
@@ -65,7 +69,15 @@ import { useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
 
 export default function SeatingPage() {
-  const { employees, assignEmployeeToBay, access, teamNames, workspaceRoles } = useAppState();
+  const {
+    employees,
+    assignEmployeeToBay,
+    assignEmployeeToCabin,
+    swapEmployeeBays,
+    access,
+    teamNames,
+    workspaceRoles,
+  } = useAppState();
   const { withLoading, isLoadingKey } = useGlobalLoading();
   const canAssign = access?.canAssignSeating ?? false;
 
@@ -76,9 +88,32 @@ export default function SeatingPage() {
   const [viewMode, setViewMode] = React.useState<"all" | "occupied" | "available">("all");
   const [zoom, setZoom] = React.useState(1);
   const [fullscreenOpen, setFullscreenOpen] = React.useState(false);
+  const [viewHintActive, setViewHintActive] = React.useState(true);
+
+  React.useEffect(() => {
+    try {
+      if (sessionStorage.getItem("seating-view-hint-seen") === "1") {
+        setViewHintActive(false);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const openFullscreenView = React.useCallback(() => {
+    setViewHintActive(false);
+    try {
+      sessionStorage.setItem("seating-view-hint-seen", "1");
+    } catch {
+      /* ignore */
+    }
+    setFullscreenOpen(true);
+  }, []);
   const floorPlanRef = React.useRef<SeatingFloorPlanHandle>(null);
   const [selectedSeat, setSelectedSeat] = React.useState<string | null>(null);
   const [dialogSeat, setDialogSeat] = React.useState<string | null>(null);
+  const [dialogCabinId, setDialogCabinId] = React.useState<string | null>(null);
+  const [selectedCabinId, setSelectedCabinId] = React.useState<string | null>(null);
   const [aiPanelOpen, setAiPanelOpen] = React.useState(false);
   const [aiSuggestion, setAiSuggestion] = React.useState<SeatingAiSuggestion | null>(null);
   const [colanOccupancySnapshot, setColanOccupancySnapshot] =
@@ -136,6 +171,8 @@ export default function SeatingPage() {
     promptCabinsAfterG ?? activePlan?.cabins?.afterG ?? CABINS_AFTER_G_ROW;
   const activeSideCabins =
     promptSideCabins ?? activePlan?.cabins?.sideCabins ?? DEFAULT_SIDE_CABINS;
+  const activeOutsideEntrance =
+    promptRows ? null : (activePlan?.cabins?.outsideEntrance ?? null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -368,6 +405,32 @@ export default function SeatingPage() {
     setZoom(1);
   };
 
+  const cabinSlots = React.useMemo(
+    () => (activePlan ? listCabinSlotsOnPlan(activePlan) : []),
+    [activePlan],
+  );
+  const cabinIds = React.useMemo(() => cabinSlots.map((s) => s.id), [cabinSlots]);
+  const cabinOccupancy = React.useMemo(
+    () =>
+      cabinOccupancyMap(employees, {
+        officeSlug,
+        cabinIds,
+      }),
+    [cabinIds, employees, officeSlug],
+  );
+  const dialogCabinLabel = React.useMemo(() => {
+    if (!dialogCabinId) return null;
+    const fromActive = cabinSlots.find((s) => s.id === dialogCabinId)?.label;
+    if (fromActive) return fromActive;
+    if (companionPlan) {
+      return (
+        listCabinSlotsOnPlan(companionPlan).find((s) => s.id === dialogCabinId)
+          ?.label ?? dialogCabinId
+      );
+    }
+    return dialogCabinId;
+  }, [cabinSlots, companionPlan, dialogCabinId]);
+
   const runAssign = async (
     seatId: string,
     employeeId: string | null,
@@ -376,7 +439,40 @@ export default function SeatingPage() {
     await withLoading("seating-assign", LOADING_PRESETS.assigningBay, async () => {
       await assignEmployeeToBay(seatId, employeeId, targetOfficeSlug);
       setDialogSeat(null);
+      setDialogCabinId(null);
       setSelectedSeat(employeeId ? seatId : null);
+      if (!layoutMode) {
+        setColanOccupancySnapshot(null);
+      }
+    });
+  };
+
+  const runSwapSeats = async (
+    fromSeatId: string,
+    toSeatId: string,
+    targetOfficeSlug = officeSlug,
+  ) => {
+    await withLoading("seating-assign", LOADING_PRESETS.assigningBay, async () => {
+      await swapEmployeeBays(fromSeatId, toSeatId, targetOfficeSlug);
+      setDialogSeat(null);
+      setDialogCabinId(null);
+      setSelectedSeat(toSeatId);
+      if (!layoutMode) {
+        setColanOccupancySnapshot(null);
+      }
+    });
+  };
+
+  const runAssignCabin = async (
+    cabinId: string,
+    employeeId: string | null,
+    targetOfficeSlug = officeSlug,
+  ) => {
+    await withLoading("seating-assign", LOADING_PRESETS.assigningBay, async () => {
+      await assignEmployeeToCabin(cabinId, employeeId, targetOfficeSlug);
+      setDialogCabinId(null);
+      setDialogSeat(null);
+      setSelectedCabinId(employeeId ? cabinId : null);
       if (!layoutMode) {
         setColanOccupancySnapshot(null);
       }
@@ -417,8 +513,34 @@ export default function SeatingPage() {
     if (layoutMode && layoutSeats && !layoutSeats.has(seatId)) return;
     if (promptLayoutActive) return;
     setSelectedSeat(seatId);
+    setSelectedCabinId(null);
+    setDialogCabinId(null);
     setDialogOfficeSlug(targetOfficeSlug);
     if (canAssign) setDialogSeat(seatId);
+  };
+
+  const handleCabinClick = (cabinId: string, targetOfficeSlug = officeSlug) => {
+    if (layoutMode || promptLayoutActive) return;
+    setSelectedCabinId(cabinId);
+    setSelectedSeat(null);
+    setDialogSeat(null);
+    setDialogOfficeSlug(targetOfficeSlug);
+    if (canAssign) {
+      setDialogCabinId(cabinId);
+      return;
+    }
+    // View-only: open when occupied on the clicked office.
+    const slots =
+      targetOfficeSlug === officeSlug
+        ? cabinIds
+        : companionPlan
+          ? listCabinSlotsOnPlan(companionPlan).map((s) => s.id)
+          : cabinIds;
+    const occupied = cabinOccupancyMap(employees, {
+      officeSlug: targetOfficeSlug,
+      cabinIds: slots,
+    }).has(cabinId);
+    if (occupied) setDialogCabinId(cabinId);
   };
 
   const fullscreenBlocks = React.useMemo((): SeatingFullscreenBlock[] => {
@@ -435,20 +557,28 @@ export default function SeatingPage() {
       ];
     }
 
-    const toBlock = (plan: FloorPlanDTO, slug: string): SeatingFullscreenBlock => ({
-      key: slug,
-      label: `${plan.city ?? "Office"} · ${plan.building ?? plan.name}`,
-      officeSlug: slug,
-      occupancy: seatOccupancyMap(employees, {
+    const toBlock = (plan: FloorPlanDTO, slug: string): SeatingFullscreenBlock => {
+      const slots = listCabinSlotsOnPlan(plan);
+      return {
+        key: slug,
+        label: `${plan.city ?? "Office"} · ${plan.building ?? plan.name}`,
         officeSlug: slug,
-        seatIds: plan.seatIds,
-      }),
-      rows: plan.rows,
-      showCabins: true,
-      cabinsBeforeA: plan.cabins?.beforeA ?? CABINS_BEFORE_A_ROW,
-      cabinsAfterG: plan.cabins?.afterG ?? CABINS_AFTER_G_ROW,
-      sideCabins: plan.cabins?.sideCabins ?? DEFAULT_SIDE_CABINS,
-    });
+        occupancy: seatOccupancyMap(employees, {
+          officeSlug: slug,
+          seatIds: plan.seatIds,
+        }),
+        cabinOccupancy: cabinOccupancyMap(employees, {
+          officeSlug: slug,
+          cabinIds: slots.map((s) => s.id),
+        }),
+        rows: plan.rows,
+        showCabins: true,
+        cabinsBeforeA: plan.cabins?.beforeA ?? CABINS_BEFORE_A_ROW,
+        cabinsAfterG: plan.cabins?.afterG ?? CABINS_AFTER_G_ROW,
+        sideCabins: plan.cabins?.sideCabins ?? DEFAULT_SIDE_CABINS,
+        outsideEntrance: plan.cabins?.outsideEntrance ?? null,
+      };
+    };
 
     if (isChennaiOfficeSlug(officeSlug) && activePlan && companionPlan) {
       const blockA =
@@ -480,17 +610,20 @@ export default function SeatingPage() {
         label: "Floor layout",
         officeSlug,
         occupancy: displayOccupancy,
+        cabinOccupancy,
         rows: activeRows,
         showCabins: !layoutMode,
         cabinsBeforeA: activeCabinsBeforeA,
         cabinsAfterG: activeCabinsAfterG,
         sideCabins: activeSideCabins,
+        outsideEntrance: activeOutsideEntrance,
       },
     ];
   }, [
     layoutMode,
     officeSlug,
     displayOccupancy,
+    cabinOccupancy,
     activeRows,
     activePlan,
     companionPlan,
@@ -498,6 +631,7 @@ export default function SeatingPage() {
     activeCabinsBeforeA,
     activeCabinsAfterG,
     activeSideCabins,
+    activeOutsideEntrance,
   ]);
 
   const handleGenerateText = async (prompt: string) => {
@@ -721,75 +855,86 @@ export default function SeatingPage() {
 
       <SeatingAnalyticsOverview stats={headerStats} variant="dashboard" />
 
-      <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <SeatingToolbar
-          embedded
-          hideZoom
-          search={search}
-          onSearchChange={setSearch}
-          teamFilter={teamFilter}
-          onTeamFilterChange={setTeamFilter}
-          roleFilter={roleFilter}
-          onRoleFilterChange={setRoleFilter}
-          roleFilterOptions={roleFilterOptions}
-          genderFilter={genderFilter}
-          onGenderFilterChange={setGenderFilter}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          teamNames={teamNames}
-          stats={headerStats}
-          zoom={zoom}
-          onZoomChange={setZoom}
-          onReset={resetFilters}
-        />
+      <div className="rounded-2xl border border-slate-200 bg-slate-100/90 p-3 shadow-[0_1px_0_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(15,23,42,0.18)] dark:border-border dark:bg-muted/40 sm:p-3.5">
+        <div className="mb-2.5 flex items-center justify-between gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 dark:text-muted-foreground">
+            Search & floor tools
+          </p>
+        </div>
+        <div className="flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
+          <SeatingToolbar
+            embedded
+            hideZoom
+            search={search}
+            onSearchChange={setSearch}
+            teamFilter={teamFilter}
+            onTeamFilterChange={setTeamFilter}
+            roleFilter={roleFilter}
+            onRoleFilterChange={setRoleFilter}
+            roleFilterOptions={roleFilterOptions}
+            genderFilter={genderFilter}
+            onGenderFilterChange={setGenderFilter}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            teamNames={teamNames}
+            stats={headerStats}
+            zoom={zoom}
+            onZoomChange={setZoom}
+            onReset={resetFilters}
+          />
 
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-          <SeatingZoomControls zoom={zoom} onZoomChange={setZoom} />
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <SeatingZoomControls zoom={zoom} onZoomChange={setZoom} />
 
-          {canAssign && colanFrozen && !layoutMode && (
+            {canAssign && colanFrozen && !layoutMode && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 rounded-xl border-slate-300 bg-white gap-1.5 px-2.5 text-xs font-semibold shadow-sm dark:border-border dark:bg-background"
+                onClick={exitColanFrozenView}
+              >
+                Show live seating
+              </Button>
+            )}
+
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="h-9 rounded-lg gap-1.5 px-2.5 text-xs"
-              onClick={exitColanFrozenView}
+              className={cn(
+                "h-9 rounded-xl border-slate-300 bg-white gap-1.5 px-3 text-xs font-semibold shadow-sm dark:border-border dark:bg-background",
+                viewHintActive && "seating-view-hint border-primary/50",
+              )}
+              onClick={openFullscreenView}
+              aria-label="Open full floor plan view"
             >
-              Show live seating
+              <Expand className={cn("h-3.5 w-3.5", viewHintActive && "seating-view-hint-icon")} />
+              View
             </Button>
-          )}
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 rounded-lg gap-1.5 px-2.5 text-xs"
-            onClick={() => setFullscreenOpen(true)}
-          >
-            <Expand className="h-3.5 w-3.5" />
-            View
-          </Button>
+            <SeatingDownloadMenu
+              onExportImage={exportLayoutImage}
+              onExportPdf={exportPdf}
+              onExportExcel={exportCsv}
+            />
 
-          <SeatingDownloadMenu
-            onExportImage={exportLayoutImage}
-            onExportPdf={exportPdf}
-            onExportExcel={exportCsv}
-          />
-
-          {layoutMode && (
-            <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-xs font-medium text-violet-800 dark:text-violet-200">
-              Layout planner
-            </span>
-          )}
-          {promptLayoutActive && (
-            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-900 dark:text-emerald-200">
-              Prompt layout
-            </span>
-          )}
-          {colanFrozen && (
-            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-900 dark:text-amber-200">
-              Colan frozen
-            </span>
-          )}
+            {layoutMode && (
+              <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2.5 py-1 text-xs font-medium text-violet-800 dark:text-violet-200">
+                Layout planner
+              </span>
+            )}
+            {promptLayoutActive && (
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-900 dark:text-emerald-200">
+                Prompt layout
+              </span>
+            )}
+            {colanFrozen && (
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-900 dark:text-amber-200">
+                Colan frozen
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -837,8 +982,15 @@ export default function SeatingPage() {
             cabinsBeforeA={activeCabinsBeforeA}
             cabinsAfterG={activeCabinsAfterG}
             sideCabins={activeSideCabins}
+            outsideEntrance={activeOutsideEntrance}
+            cabinOccupancy={cabinOccupancy}
+            selectedCabinId={selectedCabinId}
+            onCabinClick={handleCabinClick}
             onSeatClick={handleSeatClick}
             onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}
+            onSwapSeats={(fromSeatId, toSeatId) =>
+              void runSwapSeats(fromSeatId, toSeatId)
+            }
           />
         </SeatingScrollViewport>
       </section>
@@ -872,6 +1024,7 @@ export default function SeatingPage() {
         }
         blocks={fullscreenBlocks}
         selectedSeat={selectedSeat}
+        selectedCabinId={selectedCabinId}
         highlightSeats={highlights}
         layoutMode={layoutMode}
         generatedLayout={aiSuggestion?.layout ?? null}
@@ -883,31 +1036,71 @@ export default function SeatingPage() {
         viewMode={viewMode}
         canAssign={canAssign && !promptLayoutActive}
         onSeatClick={handleSeatClick}
+        onCabinClick={handleCabinClick}
         onAssignSeat={(seatId, employeeId, slug) => void runAssign(seatId, employeeId, slug)}
+        onSwapSeats={(fromSeatId, toSeatId, slug) =>
+          void runSwapSeats(fromSeatId, toSeatId, slug)
+        }
       />
 
       <SeatingAssignmentDialog
-        open={!!dialogSeat}
+        open={!!dialogSeat || !!dialogCabinId}
         seatId={dialogSeat}
+        cabinId={dialogCabinId}
+        cabinLabel={dialogCabinLabel}
         employees={employees}
         canAssign={canAssign}
         saving={saving}
         officeSlug={dialogOfficeSlug}
+        elevated={fullscreenOpen}
         seatIds={
           dialogOfficeSlug === officeSlug
             ? planSeatIds
             : companionPlan?.seatIds ?? planSeatIds
         }
-        onClose={() => setDialogSeat(null)}
+        cabinIds={
+          dialogOfficeSlug === officeSlug
+            ? cabinIds
+            : companionPlan
+              ? listCabinSlotsOnPlan(companionPlan).map((s) => s.id)
+              : cabinIds
+        }
+        onClose={() => {
+          setDialogSeat(null);
+          setDialogCabinId(null);
+        }}
         onAssign={(employeeId) => {
+          if (dialogCabinId) {
+            void runAssignCabin(dialogCabinId, employeeId, dialogOfficeSlug);
+            return;
+          }
           if (!dialogSeat) return;
           void runAssign(dialogSeat, employeeId, dialogOfficeSlug);
         }}
         onRemove={() => {
+          if (dialogCabinId) {
+            void runAssignCabin(dialogCabinId, null, dialogOfficeSlug);
+            return;
+          }
           if (!dialogSeat) return;
           void runAssign(dialogSeat, null, dialogOfficeSlug);
         }}
-        onReassign={(targetSeatId) => {
+        onReassign={(targetId) => {
+          if (dialogCabinId) {
+            const map = cabinOccupancyMap(employees, {
+              officeSlug: dialogOfficeSlug,
+              cabinIds:
+                dialogOfficeSlug === officeSlug
+                  ? cabinIds
+                  : companionPlan
+                    ? listCabinSlotsOnPlan(companionPlan).map((s) => s.id)
+                    : cabinIds,
+            });
+            const emp = map.get(dialogCabinId) ?? null;
+            if (!emp) return;
+            void runAssignCabin(targetId, emp.id, dialogOfficeSlug);
+            return;
+          }
           const map = seatOccupancyMap(employees, {
             officeSlug: dialogOfficeSlug,
             seatIds:
@@ -917,7 +1110,7 @@ export default function SeatingPage() {
           });
           const emp = dialogSeat ? map.get(dialogSeat) ?? null : null;
           if (!emp) return;
-          void runAssign(targetSeatId, emp.id, dialogOfficeSlug);
+          void runAssign(targetId, emp.id, dialogOfficeSlug);
         }}
       />
     </div>

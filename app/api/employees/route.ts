@@ -3,8 +3,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
   assignEmployeeToBay,
+  assignEmployeeToCabin,
   createEmployee,
   listEmployees,
+  swapEmployeesBetweenBays,
 } from "@/lib/data-service";
 import { DataBackendError } from "@/lib/data-backend";
 import {
@@ -85,14 +87,20 @@ export async function PATCH(req: Request) {
       { status: 400 },
     );
   }
-  const { bayId, employeeId, officeSlug } = parsed.data;
+  const { bayId, cabinId, swapBayIds, employeeId, officeSlug } = parsed.data;
   if (employeeId) {
     if (!ObjectId.isValid(employeeId)) {
       return NextResponse.json({ error: "Invalid employee id" }, { status: 400 });
     }
   }
   try {
-    await assignEmployeeToBay(bayId, employeeId, officeSlug);
+    if (swapBayIds) {
+      await swapEmployeesBetweenBays(swapBayIds[0], swapBayIds[1], officeSlug);
+    } else if (cabinId) {
+      await assignEmployeeToCabin(cabinId, employeeId ?? null, officeSlug);
+    } else if (bayId) {
+      await assignEmployeeToBay(bayId, employeeId ?? null, officeSlug);
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Assign failed";
     return NextResponse.json({ error: msg }, { status: 400 });

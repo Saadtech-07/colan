@@ -19,6 +19,8 @@ import {
 import type { ProjectManagerSummary } from "@/types";
 import { addressesFromDirectory, directoryPatchFromAddresses } from "@/lib/employee-address";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
+import { getRoleFromRegistry } from "@/lib/role-registry";
+import { isValidSeatId } from "@/lib/seating-layout";
 import {
   roleEligibleForOfficeSeat,
   roleShowsTeamOnProfile,
@@ -517,7 +519,8 @@ export async function updateAppUser(
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   if (!ObjectId.isValid(id)) throw new Error("Invalid user id.");
 
-  const current = await col.findOne({ _id: new ObjectId(id) });
+  const userObjectId = new ObjectId(id);
+  const current = await col.findOne({ _id: userObjectId });
   if (!current) throw new Error("User not found.");
 
   const nextRole = input.appRole ?? current.appRole;
@@ -544,16 +547,19 @@ export async function updateAppUser(
   if (input.employeeId !== undefined) {
     const trimmedUserId = input.employeeId.trim();
     if (!trimmedUserId) throw new Error("User ID is required.");
-    const userIdPattern = new RegExp(
-      `^${trimmedUserId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-      "i",
-    );
-    const duplicateUserId = await col.findOne({
-      employeeId: { $regex: userIdPattern },
-      _id: { $ne: new ObjectId(id) },
-    });
-    if (duplicateUserId) {
-      throw new Error("An account with this user ID already exists.");
+    const currentUserId = (current.employeeId ?? "").trim();
+    if (trimmedUserId.toLowerCase() !== currentUserId.toLowerCase()) {
+      const userIdPattern = new RegExp(
+        `^${trimmedUserId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        "i",
+      );
+      const duplicateUserId = await col.findOne({
+        employeeId: { $regex: userIdPattern },
+        _id: { $ne: userObjectId },
+      });
+      if (duplicateUserId) {
+        throw new Error("An account with this user ID already exists.");
+      }
     }
     updates.employeeId = trimmedUserId;
   }
@@ -564,7 +570,7 @@ export async function updateAppUser(
   if (Object.keys(unset).length > 0) updateDoc.$unset = unset;
 
   const result = await col.findOneAndUpdate(
-    { _id: new ObjectId(id) },
+    { _id: userObjectId },
     updateDoc,
     { returnDocument: "after" },
   );
@@ -605,17 +611,17 @@ export async function updateAppUser(
   const nextJoinedDate = nextDirectory.joinedDate ?? new Date().toISOString().split("T")[0];
 
   const employeeCol = db.collection(COLLECTIONS.employees);
-  const existingEmployee = await employeeCol.findOne({
+  const employeeFilter = {
     $or: [{ email: current.email }, { "directory.workEmail": current.email }],
-  });
+  };
+  const existingEmployee = await employeeCol.findOne(employeeFilter);
 
   let nextBayNumber = existingEmployee?.bayNumber ?? "";
   if (input.bayNumber !== undefined) {
     const trimmedBay = input.bayNumber.trim();
     if (!trimmedBay || trimmedBay === "__unassigned__") {
       nextBayNumber = "";
-    } else {
-      const { isValidSeatId } = await import("@/lib/seating-layout");
+    } else if (trimmedBay !== (existingEmployee?.bayNumber ?? "")) {
       if (!isValidSeatId(trimmedBay)) {
         throw new Error(
           `Invalid seat "${trimmedBay}". Choose a seat from the office floor plan (e.g. A1, D3).`,
@@ -629,12 +635,18 @@ export async function updateAppUser(
         throw new Error(`Seat ${trimmedBay} is already assigned to another employee.`);
       }
       nextBayNumber = trimmedBay;
+    } else {
+      nextBayNumber = trimmedBay;
     }
   }
 
-  const roleRegistry = await ensureRoleRegistry();
-  const employeeRole =
-    roleRegistry.get(normalizeAppRole(nextRole))?.name ?? "Employee";
+  let employeeRole =
+    getRoleFromRegistry(normalizeAppRole(nextRole))?.name ?? null;
+  if (!employeeRole) {
+    const roleRegistry = await ensureRoleRegistry();
+    employeeRole =
+      roleRegistry.get(normalizeAppRole(nextRole))?.name ?? "Employee";
+  }
 
   const employeeSet = {
     employeeId: nextEmployeeId,
@@ -656,11 +668,7 @@ export async function updateAppUser(
     updatedAt: new Date(),
   };
 
-  const employeeFilter = {
-    $or: [{ email: current.email }, { "directory.workEmail": current.email }],
-  };
-
-  const employeeUpdate = await db.collection("employees").updateOne(employeeFilter, {
+  const employeeUpdate = await employeeCol.updateOne(employeeFilter, {
     $set: employeeSet,
   });
 
@@ -668,7 +676,7 @@ export async function updateAppUser(
 
   if (employeeUpdate.matchedCount === 0) {
     employeeRef = new ObjectId();
-    await db.collection("employees").insertOne({
+    await employeeCol.insertOne({
       _id: employeeRef,
       employeeId: nextEmployeeId,
       email: current.email,
@@ -693,7 +701,9 @@ export async function updateAppUser(
       updatedAt: new Date(),
     });
   } else if (!employeeRef) {
-    const refreshed = await employeeCol.findOne(employeeFilter);
+    const refreshed = await employeeCol.findOne(employeeFilter, {
+      projection: { _id: 1 },
+    });
     employeeRef = refreshed?._id;
   }
 

@@ -65,6 +65,17 @@ type AppStateContextValue = {
     employeeId: string | null,
     officeSlug?: string,
   ) => Promise<void>;
+  /** Swap (or move) two seating bays on the same office plan. */
+  swapEmployeeBays: (
+    fromBayId: string,
+    toBayId: string,
+    officeSlug?: string,
+  ) => Promise<void>;
+  assignEmployeeToCabin: (
+    cabinId: string,
+    employeeId: string | null,
+    officeSlug?: string,
+  ) => Promise<void>;
 };
 
 const AppStateContext = React.createContext<AppStateContextValue | null>(null);
@@ -527,6 +538,39 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const swapEmployeeBays = React.useCallback(
+    async (fromBayId: string, toBayId: string, officeSlug?: string) => {
+      const res = await fetch("/api/employees", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          swapBayIds: [fromBayId, toBayId],
+          officeSlug,
+        }),
+      });
+      if (!res.ok) throw new Error(await parseApiError(res));
+      const next = (await res.json()) as Employee[];
+      setEmployees(next);
+    },
+    [],
+  );
+
+  const assignEmployeeToCabin = React.useCallback(
+    async (cabinId: string, employeeId: string | null, officeSlug?: string) => {
+      const res = await fetch("/api/employees", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cabinId, employeeId, officeSlug }),
+      });
+      if (!res.ok) throw new Error(await parseApiError(res));
+      const next = (await res.json()) as Employee[];
+      setEmployees(next);
+    },
+    [],
+  );
+
   const value = React.useMemo(
     () => ({
       user,
@@ -557,6 +601,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       deleteWorkspaceTeam,
       addGalleryItem,
       assignEmployeeToBay,
+      swapEmployeeBays,
+      assignEmployeeToCabin,
     }),
     [
       user,
@@ -587,6 +633,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       deleteWorkspaceTeam,
       addGalleryItem,
       assignEmployeeToBay,
+      swapEmployeeBays,
+      assignEmployeeToCabin,
     ],
   );
 
