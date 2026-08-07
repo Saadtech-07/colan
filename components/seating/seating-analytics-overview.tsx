@@ -12,6 +12,8 @@ type Props = {
   variant?: "dashboard" | "legacy";
   /** @deprecated Use variant="legacy" instead. */
   compact?: boolean;
+  /** Hide the Utilization card (branch list overview). */
+  hideUtilization?: boolean;
 };
 
 type AnalyticsItem = {
@@ -26,6 +28,7 @@ export function SeatingAnalyticsOverview({
   stats,
   variant = "dashboard",
   compact = false,
+  hideUtilization = false,
 }: Props) {
   const occupancyRate = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0;
   const useDashboardStyle = variant === "dashboard" || compact;
@@ -55,15 +58,18 @@ export function SeatingAnalyticsOverview({
         "from-amber-500/12 via-amber-500/6 to-transparent text-amber-700 dark:text-amber-300",
       iconClassName: "text-amber-700 dark:text-amber-300",
     },
-    {
+  ];
+
+  if (!hideUtilization) {
+    items.push({
       label: "Utilization",
       value: `${occupancyRate}%`,
       icon: Percent,
       toneClass:
         "from-violet-500/12 via-violet-500/6 to-transparent text-violet-600 dark:text-violet-300",
       iconClassName: "text-violet-600 dark:text-violet-300",
-    },
-  ];
+    });
+  }
 
   if (!useDashboardStyle) {
     return (
@@ -77,13 +83,17 @@ export function SeatingAnalyticsOverview({
               Bay analytics
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Live seating capacity and utilization.
+              Live seating capacity and bay occupancy.
             </p>
           </div>
         </div>
 
-        <div className="grid auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {items.map((item) => (
+        <div
+          className={cn(
+            "grid auto-rows-fr gap-3 sm:grid-cols-2",
+            hideUtilization ? "lg:grid-cols-3" : "lg:grid-cols-4",
+          )}
+        >          {items.map((item) => (
             <LegacyStatCard key={item.label} item={item} compact={false} />
           ))}
         </div>
@@ -92,7 +102,12 @@ export function SeatingAnalyticsOverview({
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div
+      className={cn(
+        "grid gap-4 sm:grid-cols-2",
+        hideUtilization ? "xl:grid-cols-3" : "xl:grid-cols-4",
+      )}
+    >
       {items.map((item) => {
         const Icon = item.icon;
         return (

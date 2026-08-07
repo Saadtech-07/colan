@@ -9,6 +9,8 @@ import {
 export const DEFAULT_SIDE_CABINS: SideCabinsConfig = {
   hrManager: "HR Manager",
   manager: "Manager",
+  equalHeights: false,
+  spans: { hrManager: 1, manager: 1 },
 };
 
 export function defaultColanLayoutState(): ColanLayoutState {

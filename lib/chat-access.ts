@@ -26,8 +26,3 @@ export function canSendChat(roleKey: AppRole): boolean {
     hasPermission(roleKey, "chat:send")
   );
 }
-
-/** Search people and manage the personal chat inbox (all roles with send access). */
-export function canManageChatInbox(roleKey: AppRole): boolean {
-  return canSendChat(roleKey);
-}

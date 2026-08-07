@@ -62,7 +62,7 @@ export function buildDefaultAppUserForm(defaultTeam: TeamName): AppUserAccountFo
   };
 }
 
-export function applyAppUserRole(
+function applyAppUserRole(
   prev: AppUserAccountFormValues,
   appRole: AppRole,
   defaultTeam: TeamName,
@@ -119,23 +119,6 @@ export function buildFormFromAppUserRecord(args: {
     gender: args.gender ?? "male",
     imageUrl: args.imageUrl ?? "",
   };
-}
-
-export function directoryFieldsFromForm(
-  values: AppUserAccountFormValues,
-): ReturnType<typeof directoryPatchFromAddresses> {
-  return directoryPatchFromAddresses(
-    {
-      currentAddress: values.currentAddress,
-      permanentAddress: values.permanentAddress,
-    },
-    {
-      workEmail: values.workEmail.trim() || values.email.trim().toLowerCase(),
-      personalEmail: values.personalEmail.trim() || undefined,
-      phone: values.phone.trim() || undefined,
-      joinedDate: values.joinedDate.trim() || undefined,
-    },
-  );
 }
 
 type StepProps = {
@@ -538,16 +521,6 @@ export function AppUserWorkspaceDetailsStep({
           disabled={disabled}
         />
       </section>
-    </div>
-  );
-}
-
-/** @deprecated Use step components for create/edit flows. */
-export function AppUserAccountFormFields(props: StepProps) {
-  return (
-    <div className="space-y-6">
-      <AppUserAccountDetailsStep {...props} />
-      <AppUserWorkspaceDetailsStep {...props} />
     </div>
   );
 }

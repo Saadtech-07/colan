@@ -418,6 +418,8 @@ export const bayAssignSchema = z
     /** Swap occupants between these two seats (same office). */
     swapBayIds: z.tuple([z.string().min(1), z.string().min(1)]).optional(),
     employeeId: z.string().min(1).nullable().optional(),
+    /** Team cabins: set exact membership (may be empty to clear). */
+    employeeIds: z.array(z.string().min(1)).optional(),
     officeSlug: z.string().trim().min(1).max(64).optional(),
   })
   .superRefine((value, ctx) => {
@@ -433,10 +435,17 @@ export const bayAssignSchema = z
       });
       return;
     }
-    if ((hasBay || hasCabin) && value.employeeId === undefined) {
+    if (hasBay && value.employeeId === undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "employeeId is required for bay/cabin assignment",
+        message: "employeeId is required for bay assignment",
+        path: ["employeeId"],
+      });
+    }
+    if (hasCabin && value.employeeId === undefined && value.employeeIds === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "employeeId or employeeIds is required for cabin assignment",
         path: ["employeeId"],
       });
     }
@@ -515,6 +524,13 @@ export const floorPlanUpdateSchema = floorPlanCreateSchema
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one field is required",
   });
+
+export const floorPlanCabinSwapSchema = z.object({
+  cabinIds: z.tuple([z.string().trim().min(1), z.string().trim().min(1)]).refine(
+    ([a, b]) => a !== b,
+    { message: "Choose two different cabins to swap" },
+  ),
+});
 
 export const floorPlanImportSchema = z.object({
   plans: z.array(floorPlanCreateSchema).min(1).max(50),

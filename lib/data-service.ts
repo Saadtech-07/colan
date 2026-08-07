@@ -1093,6 +1093,87 @@ export async function assignEmployeeToCabin(
   return listEmployees();
 }
 
+/** Set exact membership for a cabin (team cabins / clear-all with []). */
+export async function setCabinEmployees(
+  cabinId: string,
+  employeeIds: string[],
+  officeSlug?: string | null,
+): Promise<Employee[]> {
+  const { getFloorPlanBySlug, normalizeOfficeSlug } = await import("@/lib/floor-plans");
+  const { isCabinOnPlan } = await import("@/lib/cabin-utils");
+  const office = normalizeOfficeSlug(officeSlug);
+  const plan = await getFloorPlanBySlug(office);
+  if (!plan || !plan.isActive) {
+    throw new Error(`Unknown office floor plan "${office}".`);
+  }
+  if (!isCabinOnPlan(cabinId, plan)) {
+    throw new Error(
+      `Invalid cabin "${cabinId}" for ${plan.name}. Pick a cabin from that office floor plan.`,
+    );
+  }
+
+  const matchesOffice = (slug?: string | null) => normalizeOfficeSlug(slug) === office;
+  const cabin = cabinId.trim();
+  const uniqueIds = [...new Set(employeeIds.map((id) => id.trim()).filter(Boolean))];
+  for (const id of uniqueIds) {
+    if (!ObjectId.isValid(id)) throw new Error(`Invalid employee id: ${id}`);
+  }
+  const selected = new Set(uniqueIds);
+
+  const db = await getDb();
+  if (!db) {
+    if (!allowInMemoryFallback()) {
+      throw new Error("MongoDB is not available.");
+    }
+    const list = memoryStore.employees;
+    for (const e of list) {
+      if (e.cabinId === cabin && matchesOffice(e.officeSlug) && !selected.has(e.id)) {
+        e.cabinId = undefined;
+        e.officeSlug = undefined;
+      }
+    }
+    for (const id of uniqueIds) {
+      const emp = list.find((e) => e.id === id);
+      if (emp) {
+        emp.cabinId = cabin;
+        emp.officeSlug = office;
+        emp.bayNumber = "";
+      }
+    }
+    return list.map((e) => ({ ...e }));
+  }
+
+  await ensureMongoSeed(db);
+  const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const occupants = await col
+    .find({ cabinId: cabin })
+    .project({ _id: 1, officeSlug: 1 })
+    .toArray();
+  const clearIds = occupants
+    .filter((row) => matchesOffice(row.officeSlug) && !selected.has(String(row._id)))
+    .map((row) => row._id);
+  if (clearIds.length > 0) {
+    await col.updateMany(
+      { _id: { $in: clearIds } },
+      { $set: { cabinId: null, officeSlug: null, updatedAt: new Date() } },
+    );
+  }
+  if (uniqueIds.length > 0) {
+    await col.updateMany(
+      { _id: { $in: uniqueIds.map((id) => new ObjectId(id)) } },
+      {
+        $set: {
+          cabinId: cabin,
+          officeSlug: office,
+          bayNumber: "",
+          updatedAt: new Date(),
+        },
+      },
+    );
+  }
+  return listEmployees();
+}
+
 export async function listProjects(): Promise<Project[]> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();

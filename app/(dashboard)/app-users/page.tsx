@@ -50,7 +50,7 @@ import { consumeCreateAccountToast } from "@/lib/create-app-user-client";
 import { consumeEditAccountSuccess } from "@/lib/edit-app-user-client";
 import { fetchAppUsersList, getCachedAppUsers } from "@/lib/app-users-client";
 import { resolveAppUserFromQuery } from "@/lib/app-user-navigation";
-import type { AppRole, TeamName } from "@/types";
+import type { AppRole } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
 
 type CreateAccountToast = {
@@ -79,7 +79,7 @@ export default function AppUsersPage() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { isAdmin, user, refreshData, teamNames, workspaceRoles, employees, dataLoading } =
+  const { isAdmin, user, refreshData, workspaceRoles, employees, dataLoading } =
     useAppState();
   const { withLoading, isLoadingKey } = useGlobalLoading();
 

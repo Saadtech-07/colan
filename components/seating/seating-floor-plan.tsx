@@ -48,12 +48,15 @@ type Props = {
   /** Compact entrance outside seating bays (not in a row). */
   outsideEntrance?: { text: string } | null;
   cabinOccupancy?: Map<string, Employee>;
+  cabinOccupants?: Map<string, Employee[]>;
   selectedCabinId?: string | null;
   onCabinClick?: (cabinId: string) => void;
   onSeatClick: (seatId: string) => void;
   onAssignSeat: (seatId: string, employeeId: string) => void;
   /** Drag an occupied seat onto another occupied seat to swap. */
   onSwapSeats?: (fromSeatId: string, toSeatId: string) => void;
+  /** Drag one cabin onto another to swap cabin places (labels + assignees). */
+  onSwapCabins?: (fromCabinId: string, toCabinId: string) => void;
 };
 
 export type SeatingFloorPlanHandle = {
@@ -84,18 +87,55 @@ export const SeatingFloorPlan = React.forwardRef<SeatingFloorPlanHandle, Props>(
       sideCabins,
       outsideEntrance = null,
       cabinOccupancy,
+      cabinOccupants,
       selectedCabinId = null,
       onCabinClick,
       onSeatClick,
       onAssignSeat,
       onSwapSeats,
+      onSwapCabins,
     },
     ref,
   ) {
   const [dragEmployeeId, setDragEmployeeId] = React.useState<string | null>(null);
   const [dragSourceSeatId, setDragSourceSeatId] = React.useState<string | null>(null);
+  const [dragCabinId, setDragCabinId] = React.useState<string | null>(null);
+  const dragCabinIdRef = React.useRef<string | null>(null);
   const aiCanvasRef = React.useRef<SeatingAiCanvasHandle>(null);
   const exportRootRef = React.useRef<HTMLDivElement>(null);
+
+  const handleCabinDrop = React.useCallback(
+    (targetCabinId: string, sourceCabinId?: string) => {
+      if (!onSwapCabins) return;
+      const fromCabinId = sourceCabinId || dragCabinIdRef.current;
+      if (!fromCabinId) return;
+      if (targetCabinId === fromCabinId) {
+        dragCabinIdRef.current = null;
+        setDragCabinId(null);
+        return;
+      }
+      onSwapCabins(fromCabinId, targetCabinId);
+      dragCabinIdRef.current = null;
+      setDragCabinId(null);
+    },
+    [onSwapCabins],
+  );
+
+  const cabinDragProps = {
+    canDragSwap: Boolean(canAssign && onSwapCabins && !layoutMode),
+    onCabinDragStart: (cabinId: string) => {
+      dragCabinIdRef.current = cabinId;
+      setDragCabinId(cabinId);
+    },
+    onCabinDragEnd: () => {
+      // Delay clear so drop handlers can still read the source id.
+      window.setTimeout(() => {
+        dragCabinIdRef.current = null;
+        setDragCabinId(null);
+      }, 0);
+    },
+    onCabinDrop: handleCabinDrop,
+  };
 
   React.useImperativeHandle(ref, () => ({
     getLayoutCanvas: () => aiCanvasRef.current?.getCanvas() ?? null,
@@ -179,9 +219,11 @@ export const SeatingFloorPlan = React.forwardRef<SeatingFloorPlanHandle, Props>(
               sideCabins={sideCabins}
               rowCount={rows.length}
               cabinOccupancy={cabinOccupancy}
+                cabinOccupants={cabinOccupants}
               selectedCabinId={selectedCabinId}
               canAssign={canAssign}
               onCabinClick={onCabinClick}
+              {...cabinDragProps}
             />
           )}
           <div className="min-w-0">
@@ -191,9 +233,11 @@ export const SeatingFloorPlan = React.forwardRef<SeatingFloorPlanHandle, Props>(
                 seatSpan={cabinSeatSpan}
                 className="mb-6"
                 cabinOccupancy={cabinOccupancy}
+                cabinOccupants={cabinOccupants}
                 selectedCabinId={selectedCabinId}
                 canAssign={canAssign}
                 onCabinClick={onCabinClick}
+                {...cabinDragProps}
               />
             )}
             {rows.map((row) => (
@@ -270,9 +314,11 @@ export const SeatingFloorPlan = React.forwardRef<SeatingFloorPlanHandle, Props>(
                 seatSpan={cabinSeatSpan}
                 className="mt-2"
                 cabinOccupancy={cabinOccupancy}
+                cabinOccupants={cabinOccupants}
                 selectedCabinId={selectedCabinId}
                 canAssign={canAssign}
                 onCabinClick={onCabinClick}
+                {...cabinDragProps}
               />
             )}
           </div>

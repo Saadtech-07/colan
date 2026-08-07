@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { SeatingCabinBlock } from "@/components/seating/seating-3d";
-import { sideCabinSlots } from "@/lib/cabin-utils";
+import { isTeamCabinLabel, sideCabinSlots } from "@/lib/cabin-utils";
 import {
   ROW_AISLE_MARGIN,
   ROW_BLOCK_HEIGHT,
@@ -20,12 +20,18 @@ type Props = {
   /** Total seating row blocks beside the side column (Pernambut = 3). */
   rowCount?: number;
   cabinOccupancy?: Map<string, Employee>;
+  cabinOccupants?: Map<string, Employee[]>;
   selectedCabinId?: string | null;
   canAssign?: boolean;
   onCabinClick?: (cabinId: string) => void;
+  canDragSwap?: boolean;
+  onCabinDragStart?: (cabinId: string) => void;
+  onCabinDragEnd?: () => void;
+  onCabinDrop?: (cabinId: string, sourceCabinId?: string) => void;
 };
 
-function cabinHeight(rowBlocks: number): number {
+/** Height of N seating row blocks including the aisles between them. */
+function stackHeight(rowBlocks: number): number {
   const rows = Math.max(1, rowBlocks);
   return ROW_BLOCK_HEIGHT * rows + ROW_AISLE_MARGIN * Math.max(0, rows - 1);
 }
@@ -35,34 +41,36 @@ export function SeatingSideCabins({
   sideCabins = DEFAULT_SIDE_CABINS,
   rowCount = 2,
   cabinOccupancy,
+  cabinOccupants,
   selectedCabinId = null,
   canAssign = false,
   onCabinClick,
+  canDragSwap = false,
+  onCabinDragStart,
+  onCabinDragEnd,
+  onCabinDrop,
 }: Props) {
   const slots = sideCabinSlots(sideCabins);
   const columnRows = Math.max(1, rowCount);
 
   if (slots.length === 0) return null;
 
-  const equal =
-    sideCabins.equalHeights && slots.length === 2
-      ? Math.floor((cabinHeight(columnRows) - ROW_AISLE_MARGIN) / 2)
-      : null;
-
-  const heightFor = (index: number) => {
-    if (equal != null) return equal;
-    if (slots.length === 1) {
-      const span =
-        index === 0
-          ? (sideCabins.spans?.hrManager ?? columnRows)
-          : (sideCabins.spans?.manager ?? columnRows);
-      return cabinHeight(span);
+  /**
+   * Cabin 0 → A-ROW (A1–A17); cabin 1 → B-ROW (B1–B24).
+   * Face height equals one seating row block so no empty gaps appear between cabins.
+   * equalHeights (Pernambut): split the full side column evenly.
+   */
+  const heightFor = (index: number): number => {
+    if (sideCabins.equalHeights && slots.length === 2) {
+      return Math.floor((stackHeight(columnRows) - ROW_AISLE_MARGIN) / 2);
     }
-    const span =
-      index === 0
-        ? (sideCabins.spans?.hrManager ?? 1)
-        : (sideCabins.spans?.manager ?? 1);
-    return cabinHeight(span);
+    if (slots.length === 1) {
+      return stackHeight(sideCabins.spans?.hrManager ?? columnRows);
+    }
+    const spanKey = index === 0 ? "hrManager" : "manager";
+    // Default one row each (HR Manager = A, Project Manager = B).
+    const span = Math.max(1, Number(sideCabins.spans?.[spanKey] ?? 1) || 1);
+    return stackHeight(span);
   };
 
   return (
@@ -72,23 +80,39 @@ export function SeatingSideCabins({
       aria-label="Side office cabins"
     >
       <div style={{ height: SIDE_CABIN_TOP_OFFSET }} aria-hidden />
-      {slots.map((slot, index) => (
-        <React.Fragment key={slot.id}>
-          {index > 0 ? (
-            <div style={{ height: ROW_AISLE_MARGIN }} aria-hidden />
-          ) : null}
-          <SeatingCabinBlock
-            label={slot.label}
-            width={SIDE_CABIN_WIDTH}
-            height={heightFor(index)}
-            vertical
-            occupantName={cabinOccupancy?.get(slot.id)?.name}
-            selected={selectedCabinId === slot.id}
-            canAssign={canAssign}
-            onSelect={onCabinClick ? () => onCabinClick(slot.id) : undefined}
-          />
-        </React.Fragment>
-      ))}
+      {slots.map((slot, index) => {
+        const height = heightFor(index);
+        return (
+          <React.Fragment key={slot.id}>
+            {index > 0 ? (
+              <div style={{ height: ROW_AISLE_MARGIN }} aria-hidden />
+            ) : null}
+            <SeatingCabinBlock
+              cabinId={slot.id}
+              label={slot.label}
+              width={SIDE_CABIN_WIDTH}
+              height={height}
+              vertical
+              occupantName={
+                (cabinOccupants?.get(slot.id) ?? []).map((e) => e.name)[0] ??
+                cabinOccupancy?.get(slot.id)?.name
+              }
+              occupantNames={
+                isTeamCabinLabel(slot.label)
+                  ? (cabinOccupants?.get(slot.id) ?? []).map((e) => e.name)
+                  : undefined
+              }
+              selected={selectedCabinId === slot.id}
+              canAssign={canAssign}
+              canDragSwap={canDragSwap}
+              onCabinDragStart={onCabinDragStart}
+              onCabinDragEnd={onCabinDragEnd}
+              onCabinDrop={onCabinDrop}
+              onSelect={onCabinClick ? () => onCabinClick(slot.id) : undefined}
+            />
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }

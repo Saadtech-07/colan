@@ -1,7 +1,6 @@
-import { getDb } from "@/lib/mongodb";
 import { listProjects } from "@/lib/data-service";
 import { listTasks } from "@/lib/tasks-data";
-import { COLLECTIONS, ensureColanModelIndexes, TASK_STATUSES } from "@/models";
+import { TASK_STATUSES } from "@/models";
 import type { ProjectAnalytics, TaskAnalytics, WorkloadAnalytics } from "@/types";
 import { filterProjectsForUser } from "@/lib/permissions";
 import type { AppRole, TeamName } from "@/types";
@@ -98,12 +97,4 @@ export async function getWorkloadAnalytics(
       }))
       .sort((a, b) => b.totalTasks - a.totalTasks),
   };
-}
-
-export async function refreshAnalyticsFromDb(): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-  await ensureColanModelIndexes(db);
-  const { syncAllProjectTaskStats } = await import("@/lib/project-stats");
-  await syncAllProjectTaskStats();
 }

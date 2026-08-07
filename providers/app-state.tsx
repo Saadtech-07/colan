@@ -76,6 +76,11 @@ type AppStateContextValue = {
     employeeId: string | null,
     officeSlug?: string,
   ) => Promise<void>;
+  assignEmployeesToCabin: (
+    cabinId: string,
+    employeeIds: string[],
+    officeSlug?: string,
+  ) => Promise<void>;
 };
 
 const AppStateContext = React.createContext<AppStateContextValue | null>(null);
@@ -571,6 +576,21 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  const assignEmployeesToCabin = React.useCallback(
+    async (cabinId: string, employeeIds: string[], officeSlug?: string) => {
+      const res = await fetch("/api/employees", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cabinId, employeeIds, officeSlug }),
+      });
+      if (!res.ok) throw new Error(await parseApiError(res));
+      const next = (await res.json()) as Employee[];
+      setEmployees(next);
+    },
+    [],
+  );
+
   const value = React.useMemo(
     () => ({
       user,
@@ -603,6 +623,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       assignEmployeeToBay,
       swapEmployeeBays,
       assignEmployeeToCabin,
+      assignEmployeesToCabin,
     }),
     [
       user,
@@ -635,6 +656,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       assignEmployeeToBay,
       swapEmployeeBays,
       assignEmployeeToCabin,
+      assignEmployeesToCabin,
     ],
   );
 

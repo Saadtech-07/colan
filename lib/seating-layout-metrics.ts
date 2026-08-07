@@ -20,13 +20,16 @@ export const CANVAS_ENTRANCE_WIDTH = SEAT_WIDTH * 3 + CELL_GAP * 2;
 export const CANVAS_LABEL_WIDTH = 72;
 export const CANVAS_ROW_STRIDE = CANVAS_SEAT_HEIGHT + CANVAS_ROW_GAP;
 
-/** Single seat band (e.g. A1–A16 or A17–A32). */
-export const SEAT_BAND_HEIGHT = SEAT_HEIGHT + SEAT_DEPTH + 12;
+/** Single seat band height (matches seat cell: SEAT_HEIGHT + SEAT_DEPTH). */
+export const SEAT_BAND_HEIGHT = SEAT_HEIGHT + SEAT_DEPTH;
 
-/** Gap between top and bottom bands inside one row block. */
+/** Gap between top and bottom bands inside one row block (mt-2). */
 export const ROW_BAND_GAP = 8;
 
-/** Full row block height (A1→A17 span, B1→B24 span). */
+/**
+ * Full seating row block height — A1↔A17 (A-ROW) or B1↔B24 (B-ROW).
+ * Side cabins sized to one row use this value.
+ */
 export const ROW_BLOCK_HEIGHT = SEAT_BAND_HEIGHT * 2 + ROW_BAND_GAP;
 
 /** Margin between row blocks (mb-6). */
@@ -35,6 +38,6 @@ export const ROW_AISLE_MARGIN = 24;
 export const SIDE_CABIN_WIDTH = 88;
 export const HORIZONTAL_CABIN_HEIGHT = 88;
 
-/** Top offset before row A (horizontal cabin row + margin). */
+/** Top offset before row A (top cabin strip + mb-6). */
 export const SIDE_CABIN_TOP_OFFSET =
-  HORIZONTAL_CABIN_HEIGHT + SEAT_DEPTH + 12 + ROW_AISLE_MARGIN;
+  HORIZONTAL_CABIN_HEIGHT + ROW_AISLE_MARGIN;

@@ -84,7 +84,13 @@ export async function DELETE(_req: Request, { params }: Params) {
   const { slug } = await params;
   try {
     const deleted = await deleteFloorPlan(slug);
-    return NextResponse.json(deleted);
+    return NextResponse.json({
+      ok: true,
+      deleted: true,
+      slug: deleted.slug,
+      name: deleted.name,
+      plan: deleted,
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Delete failed";
     const status = msg.includes("not found") ? 404 : 400;

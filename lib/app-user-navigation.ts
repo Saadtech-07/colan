@@ -7,12 +7,6 @@ export function appUserEditHref(employeeId: string): string {
   return `/app-users?employeeId=${encodeURIComponent(id)}`;
 }
 
-export function appUserEditHrefById(userId: string): string {
-  const id = userId.trim();
-  if (!id) return "/app-users";
-  return `/app-users/${encodeURIComponent(id)}/edit`;
-}
-
 export function resolveAppUserForEmployee(
   users: AppUserPublicDTO[],
   employee: Pick<Employee, "employeeId" | "email" | "directory">,

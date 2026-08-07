@@ -119,11 +119,14 @@ export function SeatingStructuralBlock({
   const isPillar = variant === "pillar";
   const isCabin = variant === "cabin";
   const depth = isPillar ? 14 : isCabin ? 12 : 10;
+  // Cabins: layout height === face height so side cabins can match A/B row blocks exactly.
+  // Depth/shadow paint below without adding extra flow height (avoids empty gaps).
+  const layoutHeight = isCabin ? height : height + depth;
 
   return (
     <div
-      className={cn("relative shrink-0 pb-3", className)}
-      style={{ width, height: height + depth }}
+      className={cn("relative shrink-0", !isCabin && "pb-3", className)}
+      style={{ width, height: layoutHeight }}
       aria-hidden={isPillar}
     >
       <BlockDepthFaces
@@ -167,10 +170,19 @@ type CabinBlockProps = {
   height?: number;
   vertical?: boolean;
   occupantName?: string | null;
+  /** Team cabins: multiple names shown as bullets (same cabin size). */
+  occupantNames?: string[];
   selected?: boolean;
   canAssign?: boolean;
   onSelect?: () => void;
+  cabinId?: string;
+  canDragSwap?: boolean;
+  onCabinDragStart?: (cabinId: string) => void;
+  onCabinDragEnd?: () => void;
+  onCabinDrop?: (targetCabinId: string, sourceCabinId?: string) => void;
 };
+
+export const CABIN_DRAG_MIME = "application/x-colan-cabin";
 
 export function SeatingCabinBlock({
   label,
@@ -178,30 +190,103 @@ export function SeatingCabinBlock({
   height = 88,
   vertical = false,
   occupantName = null,
+  occupantNames,
   selected: _selected = false,
   canAssign = false,
   onSelect,
+  cabinId,
+  canDragSwap = false,
+  onCabinDragStart,
+  onCabinDragEnd,
+  onCabinDrop,
 }: CabinBlockProps) {
-  const occupied = !!occupantName?.trim();
+  const names =
+    occupantNames && occupantNames.length > 0
+      ? occupantNames.map((n) => n.trim()).filter(Boolean)
+      : occupantName?.trim()
+        ? [occupantName.trim()]
+        : [];
+  const occupied = names.length > 0;
+  const isTeamList =
+    names.length > 1 ||
+    (occupantNames !== undefined &&
+      names.length >= 1 &&
+      /\bteam\s*$/i.test(label));
   const interactive = typeof onSelect === "function";
+  const draggable = canDragSwap && !!cabinId && canAssign;
+  const teamSummary =
+    names.length === 1
+      ? names[0]
+      : names.length > 1
+        ? `${names.length} members`
+        : null;
 
   const body = (
     <div
       className={cn(
-        "flex h-full w-full flex-col items-center justify-center gap-0.5 px-2",
-        vertical && "py-3",
+        "flex h-full w-full flex-col px-2",
+        vertical
+          ? "items-center justify-center gap-0.5 py-2"
+          : "items-center justify-center gap-0.5",
       )}
     >
-      {occupied ? (
+      {occupied && isTeamList ? (
+        <div
+          className={cn(
+            "group/team relative flex h-full w-full flex-col items-center justify-center gap-0.5",
+            vertical && "px-0.5",
+          )}
+        >
+          <span
+            className={cn(
+              "max-w-full shrink-0 truncate font-extrabold leading-tight text-slate-800",
+              vertical ? "text-center text-[10px]" : "text-[11px]",
+            )}
+            title={label}
+          >
+            {label}
+          </span>
+          <span
+            className={cn(
+              "max-w-full truncate font-semibold leading-tight text-slate-600",
+              vertical ? "text-center text-[10px]" : "text-[11px]",
+            )}
+          >
+            {teamSummary}
+          </span>
+          <div
+            role="tooltip"
+            className={cn(
+              "absolute inset-1 z-20 flex flex-col overflow-hidden rounded-[14px] border border-slate-200/80 bg-white/95 px-2 py-1.5 shadow-sm backdrop-blur-[2px]",
+              "opacity-0 transition-opacity duration-150 group-hover/team:opacity-100 group-focus-within/team:opacity-100",
+            )}
+          >
+            <p className="shrink-0 truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              {label}
+            </p>
+            <ul className="mt-1 min-h-0 flex-1 space-y-0.5 overflow-y-auto">
+              {names.map((name) => (
+                <li
+                  key={name}
+                  className="truncate text-[11px] font-semibold leading-snug text-slate-800"
+                  title={name}
+                >
+                  {name}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : occupied ? (
         <>
           <span
             className={cn(
               "max-w-full truncate font-extrabold leading-tight text-slate-900",
               vertical ? "text-center text-[13px]" : "text-[14px]",
             )}
-            title={occupantName ?? undefined}
+            title={names[0]}
           >
-            {occupantName}
+            {names[0]}
           </span>
           <span
             className={cn(
@@ -246,17 +331,44 @@ export function SeatingCabinBlock({
         <button
           type="button"
           disabled={!canAssign && !occupied}
+          draggable={draggable}
+          onDragStart={(event) => {
+            if (!draggable || !cabinId) return;
+            event.dataTransfer.setData(CABIN_DRAG_MIME, cabinId);
+            event.dataTransfer.setData("text/plain", cabinId);
+            event.dataTransfer.effectAllowed = "move";
+            onCabinDragStart?.(cabinId);
+          }}
+          onDragEnd={() => onCabinDragEnd?.()}
+          onDragOver={(event) => {
+            if (!canDragSwap || !cabinId) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={(event) => {
+            if (!canDragSwap || !cabinId) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const fromId =
+              event.dataTransfer.getData(CABIN_DRAG_MIME) ||
+              event.dataTransfer.getData("text/plain") ||
+              undefined;
+            onCabinDrop?.(cabinId, fromId || undefined);
+          }}
           onClick={onSelect}
           className={cn(
             "h-full w-full rounded-[inherit] text-left focus-visible:outline-none",
             canAssign || occupied ? "cursor-pointer" : "cursor-default",
+            draggable && "cursor-grab active:cursor-grabbing",
           )}
           title={
-            occupied
-              ? `${occupantName} · ${label}`
-              : canAssign
-                ? `Assign to ${label}`
-                : label
+            occupied && isTeamList
+              ? `${label}: ${names.join(", ")}`
+              : occupied
+                ? `${names[0]} · ${label}`
+                : canAssign
+                  ? `Assign to ${label}`
+                  : label
           }
         >
           {body}

@@ -8,7 +8,7 @@ import {
 import { employeeSlugFromId } from "@/lib/employee-slug";
 import { listProjects } from "@/lib/data-service";
 import { listTasks } from "@/lib/tasks-data";
-import type { Employee, OrgChartNode, Person, PersonDetail, PersonStatus } from "@/types";
+import type { Employee, Person, PersonDetail, PersonStatus } from "@/types";
 
 export type PersonListFilters = {
   search?: string;
@@ -162,30 +162,6 @@ export async function deletePerson(id: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-export async function getOrganizationChart(): Promise<OrgChartNode[]> {
-  const people = await listPeople();
-  const byId = new Map(people.map((person) => [person.id, person]));
-  const childrenByManager = new Map<string, OrgChartNode[]>();
-
-  for (const person of people) {
-    const managerId = person.reportingManagerId;
-    if (!managerId || !byId.has(managerId)) continue;
-    const bucket = childrenByManager.get(managerId) ?? [];
-    bucket.push({ ...person, children: [] });
-    childrenByManager.set(managerId, bucket);
-  }
-
-  function buildNode(person: Person): OrgChartNode {
-    const children = (childrenByManager.get(person.id) ?? []).map((child) => buildNode(child));
-    return { ...person, children };
-  }
-
-  const roots = people.filter(
-    (person) => !person.reportingManagerId || !byId.has(person.reportingManagerId),
-  );
-  return roots.map((root) => buildNode(root));
 }
 
 export async function listProjectMembers(projectId: string) {

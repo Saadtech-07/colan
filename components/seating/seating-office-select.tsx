@@ -4,11 +4,11 @@ import * as React from "react";
 import { ChevronDown, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  CHENNAI_BLOCK_A_SLUG,
-  CHENNAI_BLOCK_B_SLUG,
-  isChennaiOfficeSlug,
-  normalizeOfficeSlug,
-} from "@/lib/floor-plan-layouts";
+  blockLabelForPlan,
+  groupFloorPlansByBranch,
+  type FloorPlanBranchGroup,
+} from "@/lib/floor-plan-branch";
+import { normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
 import type { FloorPlanSummary } from "@/models/floor-plan.model";
 import {
   DropdownMenu,
@@ -25,49 +25,8 @@ type Props = {
   disabled?: boolean;
 };
 
-type BranchGroup = {
-  key: string;
-  label: string;
-  tabLabel: string;
-  plans: FloorPlanSummary[];
-};
-
-function blockLabel(plan: FloorPlanSummary): string {
-  if (plan.slug === CHENNAI_BLOCK_A_SLUG || plan.building === "Block A") return "Block A";
-  if (plan.slug === CHENNAI_BLOCK_B_SLUG || plan.building === "Block B") return "Block B";
-  return plan.building?.trim() || "Block A";
-}
-
-function groupPlansByBranch(plans: FloorPlanSummary[]): BranchGroup[] {
-  const order: string[] = [];
-  const map = new Map<string, FloorPlanSummary[]>();
-
-  for (const plan of plans) {
-    const city = (plan.city ?? plan.name).trim() || "Office";
-    const key = isChennaiOfficeSlug(plan.slug) ? "Chennai" : city;
-    if (!map.has(key)) {
-      order.push(key);
-      map.set(key, []);
-    }
-    map.get(key)!.push(plan);
-  }
-
-  return order.map((key) => {
-    const groupPlans = (map.get(key) ?? [])
-      .slice()
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-    const tabLabel = key;
-    return {
-      key,
-      label: key,
-      tabLabel,
-      plans: groupPlans,
-    };
-  });
-}
-
 export function SeatingOfficeSelect({ plans, value, onChange, disabled }: Props) {
-  const branches = React.useMemo(() => groupPlansByBranch(plans), [plans]);
+  const branches = React.useMemo(() => groupFloorPlansByBranch(plans), [plans]);
   const currentSlug = normalizeOfficeSlug(value);
   const activeBranch = React.useMemo(() => {
     return (
@@ -82,20 +41,17 @@ export function SeatingOfficeSelect({ plans, value, onChange, disabled }: Props)
     activeBranch?.plans[0] ??
     null;
 
-  const chennaiBlocks =
-    activeBranch?.key === "Chennai" ? activeBranch.plans : [];
-  const showBlockDropdown = chennaiBlocks.length > 1;
+  const branchBlocks = activeBranch?.plans ?? [];
+  const showBlockDropdown = branchBlocks.length > 1;
 
   if (plans.length === 0) return null;
 
-  const selectBranch = (branch: BranchGroup) => {
+  const selectBranch = (branch: FloorPlanBranchGroup) => {
     if (disabled) return;
     const preferred =
-      branch.key === "Chennai"
-        ? branch.plans.find((p) => p.slug === CHENNAI_BLOCK_A_SLUG) ??
-          branch.plans.find((p) => p.slug === currentSlug) ??
-          branch.plans[0]
-        : branch.plans[0];
+      branch.plans.find((p) => p.building === "Block A") ??
+      branch.plans.find((p) => p.slug === currentSlug) ??
+      branch.plans[0];
     if (preferred) onChange(preferred.slug);
   };
 
@@ -115,12 +71,12 @@ export function SeatingOfficeSelect({ plans, value, onChange, disabled }: Props)
                 size="sm"
                 className="h-9 gap-1.5 rounded-xl border-border/70 bg-background px-3 text-sm font-semibold shadow-sm"
               >
-                {activePlan ? blockLabel(activePlan) : "Block A"}
+                {activePlan ? blockLabelForPlan(activePlan) : "Block A"}
                 <ChevronDown className="h-3.5 w-3.5 opacity-70" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="min-w-[10rem]">
-              {chennaiBlocks.map((plan) => (
+              {branchBlocks.map((plan) => (
                 <DropdownMenuItem
                   key={plan.slug}
                   className={cn(
@@ -129,7 +85,7 @@ export function SeatingOfficeSelect({ plans, value, onChange, disabled }: Props)
                   )}
                   onClick={() => onChange(plan.slug)}
                 >
-                  {blockLabel(plan)}
+                  {blockLabelForPlan(plan)}
                   <span className="ml-auto text-xs font-normal text-muted-foreground">
                     {plan.seatCount} bays
                   </span>
@@ -141,7 +97,7 @@ export function SeatingOfficeSelect({ plans, value, onChange, disabled }: Props)
       </div>
 
       <p className="text-xs text-muted-foreground sm:text-sm">
-        {activeBranch?.key === "Chennai"
+        {showBlockDropdown
           ? "Switch Block A or Block B from the dropdown. Occupancy updates when seats are assigned."
           : "Choose a branch to open its floor plan."}
       </p>
@@ -172,7 +128,7 @@ export function SeatingOfficeSelect({ plans, value, onChange, disabled }: Props)
               )}
             >
               <MapPin className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-              {branch.tabLabel}
+              {branch.label}
             </button>
           );
         })}

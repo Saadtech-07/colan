@@ -1,11 +1,20 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, Expand, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Expand, Pencil, Plus, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SeatingAnalyticsOverview } from "@/components/seating/seating-analytics-overview";
+import {
+  aggregateAllBranchStats,
+  SeatingBranchList,
+} from "@/components/seating/seating-branch-list";
 import { SeatingAssignmentDialog } from "@/components/seating/seating-assignment-dialog";
 import { SeatingDownloadMenu } from "@/components/seating/seating-download-menu";
+import {
+  SeatingTransferConfirmDialog,
+  type SeatTransferPending,
+} from "@/components/seating/seating-transfer-confirm-dialog";
 import {
   SeatingFloorPlan,
   type SeatingFloorPlanHandle,
@@ -36,10 +45,12 @@ import {
   DEFAULT_OFFICE_SLUG,
   isChennaiOfficeSlug,
 } from "@/lib/floor-plan-layouts";
+import { branchKeyForPlan, blockLabelForPlan } from "@/lib/floor-plan-branch";
 import {
   fetchFloorPlanDetail,
   fetchFloorPlanSummaries,
   invalidateFloorPlanClientCache,
+  swapFloorPlanCabinsClient,
 } from "@/lib/floor-plans-client";
 import type { FloorPlanDTO, FloorPlanSummary } from "@/models/floor-plan.model";
 import { applyOccupancySwaps } from "@/lib/seating-layout-prompt";
@@ -54,6 +65,7 @@ import { requestColanLayoutEdit } from "@/lib/seating-layout-edit-client";
 import { jsPDF } from "jspdf";
 import {
   cabinOccupancyMap,
+  cabinOccupantsMap,
   listCabinSlotsOnPlan,
 } from "@/lib/cabin-utils";
 import {
@@ -73,6 +85,7 @@ export default function SeatingPage() {
     employees,
     assignEmployeeToBay,
     assignEmployeeToCabin,
+    assignEmployeesToCabin,
     swapEmployeeBays,
     access,
     teamNames,
@@ -128,11 +141,67 @@ export default function SeatingPage() {
   const [promptCabinsAfterG, setPromptCabinsAfterG] = React.useState<SeatingCabin[] | null>(null);
   const [promptSideCabins, setPromptSideCabins] = React.useState<SideCabinsConfig | null>(null);
   const [officeSlug, setOfficeSlug] = React.useState(DEFAULT_OFFICE_SLUG);
+  /** Landing shows all branches; floor plan opens only after View (or ?office=). */
+  const [listMode, setListMode] = React.useState(true);
   const [officePlans, setOfficePlans] = React.useState<FloorPlanSummary[]>([]);
+  const [plansLoading, setPlansLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    try {
+      const fromQuery = new URLSearchParams(window.location.search)
+        .get("office")
+        ?.trim()
+        .toLowerCase();
+      if (fromQuery) {
+        setOfficeSlug(fromQuery);
+        setListMode(false);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const syncOfficeUrl = React.useCallback((slug: string | null) => {
+    try {
+      const url = new URL(window.location.href);
+      if (slug) url.searchParams.set("office", slug);
+      else url.searchParams.delete("office");
+      window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const openBranchFloor = React.useCallback(
+    (slug: string) => {
+      setOfficeSlug(slug);
+      setListMode(false);
+      syncOfficeUrl(slug);
+    },
+    [syncOfficeUrl],
+  );
+
+  const backToBranchList = React.useCallback(() => {
+    setListMode(true);
+    setFullscreenOpen(false);
+    setAiPanelOpen(false);
+    syncOfficeUrl(null);
+  }, [syncOfficeUrl]);
+
+  const selectOfficeSlug = React.useCallback(
+    (slug: string) => {
+      setOfficeSlug(slug);
+      if (!listMode) syncOfficeUrl(slug);
+    },
+    [listMode, syncOfficeUrl],
+  );
+
   const [activePlan, setActivePlan] = React.useState<FloorPlanDTO | null>(null);
   const [companionPlan, setCompanionPlan] = React.useState<FloorPlanDTO | null>(null);
-  const [planLoading, setPlanLoading] = React.useState(true);
+  const [planLoading, setPlanLoading] = React.useState(false);
   const [dialogOfficeSlug, setDialogOfficeSlug] = React.useState(DEFAULT_OFFICE_SLUG);
+  const [seatTransferPending, setSeatTransferPending] =
+    React.useState<SeatTransferPending | null>(null);
 
   const saving = isLoadingKey("seating-assign");
   const aiGenerating = isLoadingKey("seating-ai-generate");
@@ -169,33 +238,46 @@ export default function SeatingPage() {
     promptCabinsBeforeA ?? activePlan?.cabins?.beforeA ?? CABINS_BEFORE_A_ROW;
   const activeCabinsAfterG =
     promptCabinsAfterG ?? activePlan?.cabins?.afterG ?? CABINS_AFTER_G_ROW;
-  const activeSideCabins =
-    promptSideCabins ?? activePlan?.cabins?.sideCabins ?? DEFAULT_SIDE_CABINS;
+  const activeSideCabins = React.useMemo(() => {
+    const raw =
+      promptSideCabins ?? activePlan?.cabins?.sideCabins ?? DEFAULT_SIDE_CABINS;
+    // Pernambut keeps equalHeights. Everyone else: one cabin per seating row
+    // (HR Manager = A-ROW / A1–A17, Project Manager = B-ROW / B1–B24).
+    if (raw.equalHeights) return raw;
+    return {
+      ...raw,
+      equalHeights: false,
+      spans: { hrManager: 1, manager: 1 },
+    };
+  }, [promptSideCabins, activePlan?.cabins?.sideCabins]);
   const activeOutsideEntrance =
     promptRows ? null : (activePlan?.cabins?.outsideEntrance ?? null);
 
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
+      setPlansLoading(true);
       try {
         invalidateFloorPlanClientCache();
         const plans = await fetchFloorPlanSummaries({ force: true });
         if (cancelled) return;
         setOfficePlans(plans);
-        if (plans.length > 0 && !plans.some((p) => p.slug === officeSlug)) {
-          setOfficeSlug(plans[0].slug);
-        }
       } catch {
-        /* keep default Colan layout */
+        /* keep empty list */
+      } finally {
+        if (!cancelled) setPlansLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once on mount
   }, []);
 
   React.useEffect(() => {
+    if (listMode) {
+      setPlanLoading(false);
+      return;
+    }
     let cancelled = false;
     (async () => {
       setPlanLoading(true);
@@ -221,13 +303,24 @@ export default function SeatingPage() {
         setPromptWarnings([]);
         setPromptOccupancySwaps([]);
 
-        if (isChennaiOfficeSlug(officeSlug)) {
+        if (officePlans.length > 0) {
+          const branchKey = branchKeyForPlan(plan);
+          const sibling = officePlans.find(
+            (p) => p.slug !== plan.slug && branchKeyForPlan(p) === branchKey,
+          );
+          if (sibling) {
+            const siblingPlan = await fetchFloorPlanDetail(sibling.slug, { force: true });
+            if (!cancelled) setCompanionPlan(siblingPlan);
+          } else if (!cancelled) {
+            setCompanionPlan(null);
+          }
+        } else if (isChennaiOfficeSlug(officeSlug)) {
           const siblingSlug =
             officeSlug === CHENNAI_BLOCK_A_SLUG
               ? CHENNAI_BLOCK_B_SLUG
               : CHENNAI_BLOCK_A_SLUG;
-          const sibling = await fetchFloorPlanDetail(siblingSlug, { force: true });
-          if (!cancelled) setCompanionPlan(sibling);
+          const siblingPlan = await fetchFloorPlanDetail(siblingSlug, { force: true });
+          if (!cancelled) setCompanionPlan(siblingPlan);
         } else if (!cancelled) {
           setCompanionPlan(null);
         }
@@ -243,7 +336,7 @@ export default function SeatingPage() {
     return () => {
       cancelled = true;
     };
-  }, [officeSlug]);
+  }, [listMode, officeSlug, officePlans]);
 
   const buildColanLayoutState = React.useCallback(
     () => ({
@@ -418,6 +511,14 @@ export default function SeatingPage() {
       }),
     [cabinIds, employees, officeSlug],
   );
+  const cabinOccupants = React.useMemo(
+    () =>
+      cabinOccupantsMap(employees, {
+        officeSlug,
+        cabinIds,
+      }),
+    [cabinIds, employees, officeSlug],
+  );
   const dialogCabinLabel = React.useMemo(() => {
     if (!dialogCabinId) return null;
     const fromActive = cabinSlots.find((s) => s.id === dialogCabinId)?.label;
@@ -463,6 +564,151 @@ export default function SeatingPage() {
     });
   };
 
+  const seatIdsForOffice = React.useCallback(
+    (slug: string) => {
+      if (slug === officeSlug) return planSeatIds;
+      if (companionPlan && slug === companionPlan.slug) return companionPlan.seatIds;
+      return planSeatIds;
+    },
+    [companionPlan, officeSlug, planSeatIds],
+  );
+
+  const occupancyForOffice = React.useCallback(
+    (slug: string) =>
+      seatOccupancyMap(employees, {
+        officeSlug: slug,
+        seatIds: seatIdsForOffice(slug),
+      }),
+    [employees, seatIdsForOffice],
+  );
+
+  const requestMoveSeat = React.useCallback(
+    (toSeatId: string, employeeId: string, targetOfficeSlug = officeSlug) => {
+      const occupancy = occupancyForOffice(targetOfficeSlug);
+      let fromSeatId: string | null = null;
+      let employeeName = "This employee";
+      for (const [seatId, employee] of occupancy) {
+        if (employee.id === employeeId) {
+          fromSeatId = seatId;
+          employeeName = employee.name;
+          break;
+        }
+      }
+      if (!fromSeatId || fromSeatId === toSeatId) return;
+      if (occupancy.has(toSeatId)) return;
+
+      setSeatTransferPending({
+        kind: "move",
+        fromSeatId,
+        toSeatId,
+        employeeId,
+        employeeName,
+        officeSlug: targetOfficeSlug,
+      });
+    },
+    [occupancyForOffice, officeSlug],
+  );
+
+  const requestSwapSeats = React.useCallback(
+    (fromSeatId: string, toSeatId: string, targetOfficeSlug = officeSlug) => {
+      if (fromSeatId === toSeatId) return;
+      const occupancy = occupancyForOffice(targetOfficeSlug);
+      const fromEmployee = occupancy.get(fromSeatId);
+      const toEmployee = occupancy.get(toSeatId);
+      if (!fromEmployee || !toEmployee) return;
+
+      setSeatTransferPending({
+        kind: "swap",
+        fromSeatId,
+        toSeatId,
+        fromEmployeeId: fromEmployee.id,
+        fromEmployeeName: fromEmployee.name,
+        toEmployeeId: toEmployee.id,
+        toEmployeeName: toEmployee.name,
+        officeSlug: targetOfficeSlug,
+      });
+    },
+    [occupancyForOffice, officeSlug],
+  );
+
+  const confirmSeatTransfer = async () => {
+    if (!seatTransferPending) return;
+    const pending = seatTransferPending;
+    try {
+      if (pending.kind === "cabin-swap") {
+        await withLoading("seating-assign", LOADING_PRESETS.assigningBay, async () => {
+          const updated = await swapFloorPlanCabinsClient(
+            pending.officeSlug,
+            pending.fromCabinId,
+            pending.toCabinId,
+          );
+          if (updated.slug === officeSlug) {
+            setActivePlan(updated);
+          } else if (companionPlan && updated.slug === companionPlan.slug) {
+            setCompanionPlan(updated);
+          }
+          setSelectedCabinId(null);
+          setDialogCabinId(null);
+        });
+      } else if (pending.kind === "swap") {
+        await runSwapSeats(pending.fromSeatId, pending.toSeatId, pending.officeSlug);
+      } else {
+        await runAssign(pending.toSeatId, pending.employeeId, pending.officeSlug);
+      }
+      setSeatTransferPending(null);
+    } catch {
+      // Keep dialog open so the admin can cancel or retry after the error surfaces.
+    }
+  };
+
+  const cabinLabelOnOffice = React.useCallback(
+    (cabinId: string, targetOfficeSlug: string) => {
+      const plan =
+        targetOfficeSlug === officeSlug
+          ? activePlan
+          : companionPlan?.slug === targetOfficeSlug
+            ? companionPlan
+            : activePlan;
+      if (!plan) return cabinId;
+      return (
+        listCabinSlotsOnPlan(plan).find((slot) => slot.id === cabinId)?.label ?? cabinId
+      );
+    },
+    [activePlan, companionPlan, officeSlug],
+  );
+
+  const requestSwapCabins = React.useCallback(
+    (fromCabinId: string, toCabinId: string, targetOfficeSlug = officeSlug) => {
+      if (!fromCabinId || !toCabinId || fromCabinId === toCabinId) return;
+      const occupancy = cabinOccupancyMap(employees, {
+        officeSlug: targetOfficeSlug,
+        cabinIds:
+          targetOfficeSlug === officeSlug
+            ? cabinIds
+            : companionPlan
+              ? listCabinSlotsOnPlan(companionPlan).map((s) => s.id)
+              : cabinIds,
+      });
+      setSeatTransferPending({
+        kind: "cabin-swap",
+        fromCabinId,
+        toCabinId,
+        fromCabinLabel: cabinLabelOnOffice(fromCabinId, targetOfficeSlug),
+        toCabinLabel: cabinLabelOnOffice(toCabinId, targetOfficeSlug),
+        fromOccupantName: occupancy.get(fromCabinId)?.name ?? null,
+        toOccupantName: occupancy.get(toCabinId)?.name ?? null,
+        officeSlug: targetOfficeSlug,
+      });
+    },
+    [
+      cabinIds,
+      cabinLabelOnOffice,
+      companionPlan,
+      employees,
+      officeSlug,
+    ],
+  );
+
   const runAssignCabin = async (
     cabinId: string,
     employeeId: string | null,
@@ -473,6 +719,22 @@ export default function SeatingPage() {
       setDialogCabinId(null);
       setDialogSeat(null);
       setSelectedCabinId(employeeId ? cabinId : null);
+      if (!layoutMode) {
+        setColanOccupancySnapshot(null);
+      }
+    });
+  };
+
+  const runAssignCabinMembers = async (
+    cabinId: string,
+    employeeIds: string[],
+    targetOfficeSlug = officeSlug,
+  ) => {
+    await withLoading("seating-assign", LOADING_PRESETS.assigningBay, async () => {
+      await assignEmployeesToCabin(cabinId, employeeIds, targetOfficeSlug);
+      setDialogCabinId(null);
+      setDialogSeat(null);
+      setSelectedCabinId(employeeIds.length > 0 ? cabinId : null);
       if (!layoutMode) {
         setColanOccupancySnapshot(null);
       }
@@ -536,10 +798,11 @@ export default function SeatingPage() {
         : companionPlan
           ? listCabinSlotsOnPlan(companionPlan).map((s) => s.id)
           : cabinIds;
-    const occupied = cabinOccupancyMap(employees, {
-      officeSlug: targetOfficeSlug,
-      cabinIds: slots,
-    }).has(cabinId);
+    const occupied =
+      (cabinOccupantsMap(employees, {
+        officeSlug: targetOfficeSlug,
+        cabinIds: slots,
+      }).get(cabinId)?.length ?? 0) > 0;
     if (occupied) setDialogCabinId(cabinId);
   };
 
@@ -571,6 +834,10 @@ export default function SeatingPage() {
           officeSlug: slug,
           cabinIds: slots.map((s) => s.id),
         }),
+        cabinOccupants: cabinOccupantsMap(employees, {
+          officeSlug: slug,
+          cabinIds: slots.map((s) => s.id),
+        }),
         rows: plan.rows,
         showCabins: true,
         cabinsBeforeA: plan.cabins?.beforeA ?? CABINS_BEFORE_A_ROW,
@@ -580,19 +847,20 @@ export default function SeatingPage() {
       };
     };
 
-    if (isChennaiOfficeSlug(officeSlug) && activePlan && companionPlan) {
-      const blockA =
-        officeSlug === CHENNAI_BLOCK_A_SLUG
-          ? toBlock(activePlan, CHENNAI_BLOCK_A_SLUG)
-          : toBlock(companionPlan, CHENNAI_BLOCK_A_SLUG);
-      const blockB =
-        officeSlug === CHENNAI_BLOCK_B_SLUG
-          ? toBlock(activePlan, CHENNAI_BLOCK_B_SLUG)
-          : toBlock(companionPlan, CHENNAI_BLOCK_B_SLUG);
-      return [
-        { ...blockA, label: "Chennai · Block A" },
-        { ...blockB, label: "Chennai · Block B" },
-      ];
+    if (activePlan && companionPlan) {
+      const primary = toBlock(activePlan, activePlan.slug);
+      const secondary = toBlock(companionPlan, companionPlan.slug);
+      const ordered =
+        activePlan.building === "Block B" || activePlan.slug.endsWith("-block-b")
+          ? [secondary, primary]
+          : [primary, secondary];
+      return ordered.map((block) => ({
+        ...block,
+        label:
+          block.officeSlug === activePlan.slug
+            ? activePlan.name
+            : companionPlan.name || blockLabelForPlan(companionPlan),
+      }));
     }
 
     if (activePlan) {
@@ -611,6 +879,7 @@ export default function SeatingPage() {
         officeSlug,
         occupancy: displayOccupancy,
         cabinOccupancy,
+        cabinOccupants,
         rows: activeRows,
         showCabins: !layoutMode,
         cabinsBeforeA: activeCabinsBeforeA,
@@ -624,6 +893,7 @@ export default function SeatingPage() {
     officeSlug,
     displayOccupancy,
     cabinOccupancy,
+    cabinOccupants,
     activeRows,
     activePlan,
     companionPlan,
@@ -667,7 +937,15 @@ export default function SeatingPage() {
       }),
     [employees, officeSlug, planSeatIds],
   );
-  const headerStats = layoutMode || colanFrozen ? stats : liveStats;
+  const orgStats = React.useMemo(
+    () => aggregateAllBranchStats(officePlans, employees),
+    [officePlans, employees],
+  );
+  const headerStats = listMode
+    ? orgStats
+    : layoutMode || colanFrozen
+      ? stats
+      : liveStats;
 
   const exportSeatIds = React.useMemo(() => {
     if (layoutMode && layoutSeats) return Array.from(layoutSeats);
@@ -797,20 +1075,45 @@ export default function SeatingPage() {
     <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 flex-col gap-2">
-          {floorSectionTitle ? (
-            <p className="text-sm font-semibold text-muted-foreground">{floorSectionTitle}</p>
-          ) : null}
-          <SeatingOfficeSelect
-            plans={officePlans}
-            value={officeSlug}
-            onChange={setOfficeSlug}
-            disabled={planLoading || layoutMode || promptLayoutActive}
-          />
+          {listMode ? (
+            <>
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">
+                Seating arrangement
+              </h2>
+              <p className="text-xs text-muted-foreground sm:text-sm">
+                Review occupancy by branch, then open a floor plan to assign seats.
+              </p>
+            </>
+          ) : (
+            <>
+              {floorSectionTitle ? (
+                <p className="text-sm font-semibold text-muted-foreground">{floorSectionTitle}</p>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
+                  onClick={backToBranchList}
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  All branches
+                </Button>
+              </div>
+              <SeatingOfficeSelect
+                plans={officePlans}
+                value={officeSlug}
+                onChange={selectOfficeSlug}
+                disabled={planLoading || layoutMode || promptLayoutActive}
+              />
+            </>
+          )}
         </div>
 
         {canAssign && (
           <div className="flex flex-wrap items-center justify-end gap-2 lg:pt-1">
-            {promptLayoutActive && (
+            {!listMode && promptLayoutActive && (
               <Button
                 type="button"
                 variant="secondary"
@@ -822,7 +1125,7 @@ export default function SeatingPage() {
                 Back to office
               </Button>
             )}
-            {layoutMode && (
+            {!listMode && layoutMode && (
               <Button
                 type="button"
                 variant="secondary"
@@ -836,25 +1139,78 @@ export default function SeatingPage() {
             )}
             <Button
               type="button"
+              variant="outline"
               size="sm"
-              className={cn(
-                "h-9 shrink-0 gap-1.5 rounded-lg border-0 px-3.5 text-xs font-semibold shadow-sm transition-colors",
-                "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md",
-                "focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2",
-                "dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500",
-                aiPanelOpen && "bg-blue-700 hover:bg-blue-800 dark:bg-blue-700 dark:hover:bg-blue-600",
-              )}
-              onClick={() => setAiPanelOpen((open) => !open)}
+              className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+              disabled={(!listMode && (planLoading || layoutMode || promptLayoutActive)) || plansLoading}
+              asChild
             >
-              <Sparkles className="h-3.5 w-3.5 text-white" />
-              {aiPanelOpen ? "Close AI" : "AI generator"}
+              <Link href="/seating/floors/new">
+                <Plus className="h-3.5 w-3.5" />
+                Create floor
+              </Link>
             </Button>
+            {!listMode && activePlan && !planLoading && !layoutMode && !promptLayoutActive ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+                asChild
+              >
+                <Link href={`/seating/floors/${encodeURIComponent(officeSlug)}/edit`}>
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit floor
+                </Link>
+              </Button>
+            ) : !listMode ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+                disabled
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit floor
+              </Button>
+            ) : null}
+            {!listMode ? (
+              <Button
+                type="button"
+                size="sm"
+                className={cn(
+                  "h-9 shrink-0 gap-1.5 rounded-lg border-0 px-3.5 text-xs font-semibold shadow-sm transition-colors",
+                  "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md",
+                  "focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2",
+                  "dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500",
+                  aiPanelOpen && "bg-blue-700 hover:bg-blue-800 dark:bg-blue-700 dark:hover:bg-blue-600",
+                )}
+                onClick={() => setAiPanelOpen((open) => !open)}
+              >
+                <Sparkles className="h-3.5 w-3.5 text-white" />
+                {aiPanelOpen ? "Close AI" : "AI generator"}
+              </Button>
+            ) : null}
           </div>
         )}
       </div>
 
-      <SeatingAnalyticsOverview stats={headerStats} variant="dashboard" />
+      <SeatingAnalyticsOverview
+        stats={headerStats}
+        variant="dashboard"
+        hideUtilization={listMode}
+      />
 
+      {listMode ? (
+        <SeatingBranchList
+          plans={officePlans}
+          employees={employees}
+          loading={plansLoading}
+          onViewBranch={openBranchFloor}
+        />
+      ) : (
+        <>
       <div className="rounded-2xl border border-slate-200 bg-slate-100/90 p-3 shadow-[0_1px_0_rgba(15,23,42,0.04),0_8px_24px_-16px_rgba(15,23,42,0.18)] dark:border-border dark:bg-muted/40 sm:p-3.5">
         <div className="mb-2.5 flex items-center justify-between gap-2">
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 dark:text-muted-foreground">
@@ -984,12 +1340,18 @@ export default function SeatingPage() {
             sideCabins={activeSideCabins}
             outsideEntrance={activeOutsideEntrance}
             cabinOccupancy={cabinOccupancy}
+            cabinOccupants={cabinOccupants}
             selectedCabinId={selectedCabinId}
             onCabinClick={handleCabinClick}
             onSeatClick={handleSeatClick}
-            onAssignSeat={(seatId, employeeId) => void runAssign(seatId, employeeId)}
+            onAssignSeat={(seatId, employeeId) =>
+              requestMoveSeat(seatId, employeeId)
+            }
             onSwapSeats={(fromSeatId, toSeatId) =>
-              void runSwapSeats(fromSeatId, toSeatId)
+              requestSwapSeats(fromSeatId, toSeatId)
+            }
+            onSwapCabins={(fromCabinId, toCabinId) =>
+              requestSwapCabins(fromCabinId, toCabinId)
             }
           />
         </SeatingScrollViewport>
@@ -1000,15 +1362,17 @@ export default function SeatingPage() {
           View-only mode. Admins and project leads can assign seats from this floor plan.
         </p>
       )}
+        </>
+      )}
 
       <SeatingFloorPlanFullscreen
-        open={fullscreenOpen}
+        open={!listMode && fullscreenOpen}
         onClose={() => setFullscreenOpen(false)}
         title={
           layoutMode
             ? "New layout canvas"
-            : isChennaiOfficeSlug(officeSlug)
-              ? "Chennai · Block A & Block B"
+            : activePlan && companionPlan
+              ? `${branchKeyForPlan(activePlan)} · Block A & Block B`
               : activePlan?.building
                 ? `${activePlan.city ?? "Office"} · ${activePlan.building}`
                 : activePlan?.name ?? "Floor layout"
@@ -1018,8 +1382,8 @@ export default function SeatingPage() {
             ? "Desks from your AI prompt — assignments save immediately."
             : colanFrozen
               ? "Frozen Colan view from before the layout planner."
-              : isChennaiOfficeSlug(officeSlug)
-                ? "Both Chennai blocks · fitted to your screen · scroll down"
+              : activePlan && companionPlan
+                ? "Both office blocks · fitted to your screen · scroll down"
                 : "Full layout fitted to your screen · scroll down for more rows"
         }
         blocks={fullscreenBlocks}
@@ -1037,14 +1401,29 @@ export default function SeatingPage() {
         canAssign={canAssign && !promptLayoutActive}
         onSeatClick={handleSeatClick}
         onCabinClick={handleCabinClick}
-        onAssignSeat={(seatId, employeeId, slug) => void runAssign(seatId, employeeId, slug)}
+        onAssignSeat={(seatId, employeeId, slug) =>
+          requestMoveSeat(seatId, employeeId, slug)
+        }
         onSwapSeats={(fromSeatId, toSeatId, slug) =>
-          void runSwapSeats(fromSeatId, toSeatId, slug)
+          requestSwapSeats(fromSeatId, toSeatId, slug)
+        }
+        onSwapCabins={(fromCabinId, toCabinId, slug) =>
+          requestSwapCabins(fromCabinId, toCabinId, slug)
         }
       />
 
+      <SeatingTransferConfirmDialog
+        pending={listMode ? null : seatTransferPending}
+        elevated={fullscreenOpen}
+        loading={saving}
+        onOpenChange={(open) => {
+          if (!open && !saving) setSeatTransferPending(null);
+        }}
+        onConfirm={() => void confirmSeatTransfer()}
+      />
+
       <SeatingAssignmentDialog
-        open={!!dialogSeat || !!dialogCabinId}
+        open={!listMode && (!!dialogSeat || !!dialogCabinId)}
         seatId={dialogSeat}
         cabinId={dialogCabinId}
         cabinLabel={dialogCabinLabel}
@@ -1077,9 +1456,13 @@ export default function SeatingPage() {
           if (!dialogSeat) return;
           void runAssign(dialogSeat, employeeId, dialogOfficeSlug);
         }}
+        onAssignMany={(employeeIds) => {
+          if (!dialogCabinId) return;
+          void runAssignCabinMembers(dialogCabinId, employeeIds, dialogOfficeSlug);
+        }}
         onRemove={() => {
           if (dialogCabinId) {
-            void runAssignCabin(dialogCabinId, null, dialogOfficeSlug);
+            void runAssignCabinMembers(dialogCabinId, [], dialogOfficeSlug);
             return;
           }
           if (!dialogSeat) return;
@@ -1109,8 +1492,10 @@ export default function SeatingPage() {
                 : companionPlan?.seatIds ?? planSeatIds,
           });
           const emp = dialogSeat ? map.get(dialogSeat) ?? null : null;
-          if (!emp) return;
-          void runAssign(targetId, emp.id, dialogOfficeSlug);
+          if (!emp || !dialogSeat) return;
+          setDialogSeat(null);
+          setDialogCabinId(null);
+          requestMoveSeat(targetId, emp.id, dialogOfficeSlug);
         }}
       />
     </div>

@@ -75,6 +75,62 @@ export function SeatingScrollViewport({
     const node = scrollRef.current;
     if (!node) return;
 
+    const EDGE_PX = 72;
+    const SCROLL_STEP = 18;
+    let frame = 0;
+
+    const onDragOver = (event: DragEvent) => {
+      if (!node.contains(event.target as Node) && event.target !== node) {
+        // Still allow scrolling when dragging over scaled children.
+        const rect = node.getBoundingClientRect();
+        if (
+          event.clientY < rect.top ||
+          event.clientY > rect.bottom ||
+          event.clientX < rect.left ||
+          event.clientX > rect.right
+        ) {
+          return;
+        }
+      }
+
+      const rect = node.getBoundingClientRect();
+      let deltaY = 0;
+      let deltaX = 0;
+
+      if (event.clientY < rect.top + EDGE_PX) {
+        deltaY = -SCROLL_STEP;
+      } else if (event.clientY > rect.bottom - EDGE_PX) {
+        deltaY = SCROLL_STEP;
+      }
+
+      if (!fitWidth) {
+        if (event.clientX < rect.left + EDGE_PX) {
+          deltaX = -SCROLL_STEP;
+        } else if (event.clientX > rect.right - EDGE_PX) {
+          deltaX = SCROLL_STEP;
+        }
+      }
+
+      if (deltaY === 0 && deltaX === 0) return;
+
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (deltaY) node.scrollTop += deltaY;
+        if (deltaX) node.scrollLeft += deltaX;
+      });
+    };
+
+    node.addEventListener("dragover", onDragOver);
+    return () => {
+      cancelAnimationFrame(frame);
+      node.removeEventListener("dragover", onDragOver);
+    };
+  }, [fitWidth]);
+
+  React.useEffect(() => {
+    const node = scrollRef.current;
+    if (!node) return;
+
     const onWheel = (event: WheelEvent) => {
       if (event.ctrlKey || event.metaKey) return;
 

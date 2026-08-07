@@ -148,6 +148,9 @@ const CHENNAI_CABINS = {
   sideCabins: {
     ...DEFAULT_SIDE_CABINS,
     manager: "Project Manager",
+    /** HR Manager = A-ROW (A1–A17); Project Manager = B-ROW (B1–B24). */
+    equalHeights: false,
+    spans: { hrManager: 1, manager: 1 },
   },
 };
 
@@ -161,7 +164,12 @@ function cloneChennaiCabins(prefix: string) {
       ...c,
       id: `${prefix}-${c.id}`,
     })),
-    sideCabins: { ...DEFAULT_SIDE_CABINS },
+    sideCabins: {
+      ...DEFAULT_SIDE_CABINS,
+      manager: "Project Manager",
+      equalHeights: false,
+      spans: { hrManager: 1, manager: 1 },
+    },
   };
 }
 
@@ -220,6 +228,8 @@ export const BANGALORE_CABINS = {
     manager: "Project Manager",
     hrManagerId: "bangalore-side-hr-manager",
     managerId: "bangalore-side-project-manager",
+    equalHeights: false,
+    spans: { hrManager: 1, manager: 1 },
   },
 };
 

@@ -1,6 +1,6 @@
 import type { EmployeeDirectoryInfo } from "@/types";
 
-export type EmployeeAddressFields = {
+type EmployeeAddressFields = {
   currentAddress: string;
   permanentAddress: string;
 };
@@ -33,13 +33,4 @@ export function directoryPatchFromAddresses(
     permanentAddress: permanentAddress || undefined,
     location: currentAddress || undefined,
   };
-}
-
-export function formatDirectoryLocationSummary(
-  directory?: Partial<EmployeeDirectoryInfo> | null,
-): string {
-  if (!directory) return "";
-  const { currentAddress, permanentAddress } = addressesFromDirectory(directory);
-  const parts = [currentAddress, permanentAddress].filter(Boolean);
-  return parts.join(" · ");
 }

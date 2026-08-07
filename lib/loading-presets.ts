@@ -64,6 +64,18 @@ export const LOADING_PRESETS = {
     title: "Updating Colan layout",
     description: "Applying layout changes to the floor plan...",
   },
+  creatingFloorPlan: {
+    title: "Creating floor plan",
+    description: "Saving the new office floor plan...",
+  },
+  updatingFloorPlan: {
+    title: "Saving floor plan",
+    description: "Updating seating rows and cabins...",
+  },
+  deletingFloorPlan: {
+    title: "Deleting floor plan",
+    description: "Removing the office floor plan from the database...",
+  },
   loadingProjects: {
     title: "Loading projects",
     description: "Fetching project portfolio...",
@@ -97,6 +109,9 @@ export const LOADING_KEY_PRIORITY = [
   "seating-ai-generate",
   "seating-layout-edit",
   "seating-ai-apply",
+  "floor-plan-create",
+  "floor-plan-update",
+  "floor-plan-delete",
   "project-detail",
   "workspace-sync",
   "session",

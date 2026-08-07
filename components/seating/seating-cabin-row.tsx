@@ -2,6 +2,7 @@
 
 import { SeatingCabinBlock } from "@/components/seating/seating-3d";
 import type { SeatingCabin } from "@/lib/seating-cabins";
+import { isTeamCabinLabel } from "@/lib/cabin-utils";
 import {
   CELL_GAP,
   LABEL_WIDTH,
@@ -19,9 +20,14 @@ type Props = {
    */
   seatSpan?: number;
   cabinOccupancy?: Map<string, Employee>;
+  cabinOccupants?: Map<string, Employee[]>;
   selectedCabinId?: string | null;
   canAssign?: boolean;
   onCabinClick?: (cabinId: string) => void;
+  canDragSwap?: boolean;
+  onCabinDragStart?: (cabinId: string) => void;
+  onCabinDragEnd?: () => void;
+  onCabinDrop?: (cabinId: string, sourceCabinId?: string) => void;
 };
 
 export function SeatingCabinRow({
@@ -29,9 +35,14 @@ export function SeatingCabinRow({
   className,
   seatSpan = 16,
   cabinOccupancy,
+  cabinOccupants,
   selectedCabinId = null,
   canAssign = false,
   onCabinClick,
+  canDragSwap = false,
+  onCabinDragStart,
+  onCabinDragEnd,
+  onCabinDrop,
 }: Props) {
   if (cabins.length === 0) return null;
 
@@ -51,15 +62,25 @@ export function SeatingCabinRow({
           style={{ width: rowGridWidth, gap: cabinGap }}
         >
           {cabins.map((cabin) => {
-            const occupant = cabinOccupancy?.get(cabin.id) ?? null;
+            const team = isTeamCabinLabel(cabin.label);
+            const occupants =
+              cabinOccupants?.get(cabin.id) ??
+              (cabinOccupancy?.get(cabin.id) ? [cabinOccupancy.get(cabin.id)!] : []);
+            const names = occupants.map((e) => e.name);
             return (
               <SeatingCabinBlock
                 key={cabin.id}
+                cabinId={cabin.id}
                 label={cabin.label}
                 width={cabinWidth}
-                occupantName={occupant?.name}
+                occupantName={names[0] ?? null}
+                occupantNames={team ? names : undefined}
                 selected={selectedCabinId === cabin.id}
                 canAssign={canAssign}
+                canDragSwap={canDragSwap}
+                onCabinDragStart={onCabinDragStart}
+                onCabinDragEnd={onCabinDragEnd}
+                onCabinDrop={onCabinDrop}
                 onSelect={
                   onCabinClick ? () => onCabinClick(cabin.id) : undefined
                 }

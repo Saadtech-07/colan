@@ -19,6 +19,7 @@ export type SeatingFullscreenBlock = {
   officeSlug: string;
   occupancy: Map<string, Employee>;
   cabinOccupancy?: Map<string, Employee>;
+  cabinOccupants?: Map<string, Employee[]>;
   rows: SeatingRowConfig[];
   showCabins?: boolean;
   cabinsBeforeA?: SeatingCabin[];
@@ -44,6 +45,7 @@ type SharedFloorProps = {
   onCabinClick?: (cabinId: string, officeSlug: string) => void;
   onAssignSeat: (seatId: string, employeeId: string, officeSlug: string) => void;
   onSwapSeats?: (fromSeatId: string, toSeatId: string, officeSlug: string) => void;
+  onSwapCabins?: (fromCabinId: string, toCabinId: string, officeSlug: string) => void;
 };
 
 type Props = SharedFloorProps & {
@@ -81,6 +83,7 @@ export function SeatingFloorPlanFullscreen({
   onCabinClick,
   onAssignSeat,
   onSwapSeats,
+  onSwapCabins,
 }: Props) {
   const [mounted, setMounted] = React.useState(false);
   const [zoom, setZoom] = React.useState(1);
@@ -201,6 +204,7 @@ export function SeatingFloorPlanFullscreen({
                 sideCabins={block.sideCabins}
                 outsideEntrance={block.outsideEntrance}
                 cabinOccupancy={block.cabinOccupancy}
+                cabinOccupants={block.cabinOccupants}
                 onCabinClick={
                   onCabinClick
                     ? (cabinId) => onCabinClick(cabinId, block.officeSlug)
@@ -214,6 +218,12 @@ export function SeatingFloorPlanFullscreen({
                   onSwapSeats
                     ? (fromSeatId, toSeatId) =>
                         onSwapSeats(fromSeatId, toSeatId, block.officeSlug)
+                    : undefined
+                }
+                onSwapCabins={
+                  onSwapCabins
+                    ? (fromCabinId, toCabinId) =>
+                        onSwapCabins(fromCabinId, toCabinId, block.officeSlug)
                     : undefined
                 }
               />

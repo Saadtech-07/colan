@@ -6,6 +6,7 @@ import {
   assignEmployeeToCabin,
   createEmployee,
   listEmployees,
+  setCabinEmployees,
   swapEmployeesBetweenBays,
 } from "@/lib/data-service";
 import { DataBackendError } from "@/lib/data-backend";
@@ -87,15 +88,24 @@ export async function PATCH(req: Request) {
       { status: 400 },
     );
   }
-  const { bayId, cabinId, swapBayIds, employeeId, officeSlug } = parsed.data;
+  const { bayId, cabinId, swapBayIds, employeeId, employeeIds, officeSlug } = parsed.data;
   if (employeeId) {
     if (!ObjectId.isValid(employeeId)) {
       return NextResponse.json({ error: "Invalid employee id" }, { status: 400 });
     }
   }
+  if (employeeIds) {
+    for (const id of employeeIds) {
+      if (!ObjectId.isValid(id)) {
+        return NextResponse.json({ error: `Invalid employee id: ${id}` }, { status: 400 });
+      }
+    }
+  }
   try {
     if (swapBayIds) {
       await swapEmployeesBetweenBays(swapBayIds[0], swapBayIds[1], officeSlug);
+    } else if (cabinId && employeeIds !== undefined) {
+      await setCabinEmployees(cabinId, employeeIds, officeSlug);
     } else if (cabinId) {
       await assignEmployeeToCabin(cabinId, employeeId ?? null, officeSlug);
     } else if (bayId) {
