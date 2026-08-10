@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, Trash2 } from "lucide-react";
+import { ConfirmDeleteDialog } from "@/components/features/confirm-delete-dialog";
 import { FloorBranchEditor } from "@/components/seating/floor-branch-editor";
 import { Button } from "@/components/ui/button";
 import { PageTitle } from "@/components/ui/page-typography";
@@ -44,10 +45,13 @@ export default function EditFloorPlanPage() {
   const [branchLabel, setBranchLabel] = React.useState("Branch");
   const [knownSlugs, setKnownSlugs] = React.useState<string[]>([]);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
   const saving = isLoadingKey("floor-plan-update");
   const deleting = isLoadingKey("floor-plan-delete");
   const busy = saving || deleting;
+  const deleteTargets = knownSlugs.length > 0 ? knownSlugs : slug ? [slug] : [];
 
   React.useEffect(() => {
     if (access && !canAssign) {
@@ -136,7 +140,8 @@ export default function EditFloorPlanPage() {
           const block = state.blocks[index]!;
           const payload = buildBlockPayload(state.city, block, index);
           if (block.existingSlug) {
-            const { slug: _omit, ...patch } = payload;
+            const { slug: _slug, ...patch } = payload;
+            void _slug;
             await updateFloorPlanClient(block.existingSlug, patch);
             keptSlugs.add(block.existingSlug);
             if (block.existingSlug === slug) focusSlug = block.existingSlug;
@@ -163,24 +168,20 @@ export default function EditFloorPlanPage() {
     });
   };
 
-  const deleteEntireBranch = async () => {
-    const targets = knownSlugs.length > 0 ? knownSlugs : [slug];
-    const confirmed = window.confirm(
-      targets.length > 1
-        ? `Delete entire "${branchLabel}" branch?\n\nThis permanently removes ${targets.length} floor plans:\n${targets.join(", ")}\n\nThis cannot be undone.`
-        : `Delete entire "${branchLabel}" branch?\n\nThis permanently removes the floor plan. This cannot be undone.`,
-    );
-    if (!confirmed) return;
+  const confirmDeleteBranch = async () => {
+    if (deleteTargets.length === 0) return;
+    setDeleteError(null);
 
     await withLoading("floor-plan-delete", LOADING_PRESETS.deletingFloorPlan, async () => {
       try {
-        for (const target of targets) {
+        for (const target of deleteTargets) {
           await deleteFloorPlanClient(target);
         }
         invalidateFloorPlanClientCache();
+        setDeleteDialogOpen(false);
         router.push("/seating");
       } catch (e) {
-        window.alert(e instanceof Error ? e.message : "Could not delete branch.");
+        setDeleteError(e instanceof Error ? e.message : "Could not delete branch.");
       }
     });
   };
@@ -228,12 +229,20 @@ export default function EditFloorPlanPage() {
                   Permanently remove every block in this branch from MongoDB.
                 </p>
               </div>
+              {deleteError ? (
+                <p className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {deleteError}
+                </p>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
-                disabled={busy}
+                disabled={busy || deleteTargets.length === 0}
                 className="h-10 gap-2 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => void deleteEntireBranch()}
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteDialogOpen(true);
+                }}
               >
                 {deleting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -246,6 +255,47 @@ export default function EditFloorPlanPage() {
           }
         />
       )}
+
+      <ConfirmDeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && deleting) return;
+          setDeleteDialogOpen(open);
+          if (!open) setDeleteError(null);
+        }}
+        loading={deleting}
+        title={`Delete entire ${branchLabel}?`}
+        confirmLabel="Delete"
+        onConfirm={confirmDeleteBranch}
+        description={
+          deleteTargets.length > 1 ? (
+            <>
+              This permanently removes{" "}
+              <span className="font-medium text-foreground">
+                {deleteTargets.length} floor plans
+              </span>{" "}
+              in <span className="font-medium text-foreground">{branchLabel}</span>:
+              <span className="mt-2 block rounded-xl border border-border/60 bg-muted/30 px-3 py-2 font-mono text-xs text-foreground">
+                {deleteTargets.join(", ")}
+              </span>
+              <span className="mt-2 block">This cannot be undone.</span>
+            </>
+          ) : (
+            <>
+              This permanently removes the floor plan for{" "}
+              <span className="font-medium text-foreground">{branchLabel}</span>
+              {deleteTargets[0] ? (
+                <>
+                  {" "}
+                  (
+                  <span className="font-mono text-xs text-foreground">{deleteTargets[0]}</span>)
+                </>
+              ) : null}
+              . This cannot be undone.
+            </>
+          )
+        }
+      />
     </div>
   );
 }

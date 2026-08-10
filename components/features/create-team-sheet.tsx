@@ -44,7 +44,7 @@ export function CreateTeamSheet({ open, onOpenChange, onCreated }: Props) {
   }, [open, resetForm]);
 
   const submit = async () => {
-    if (!values.name.trim() || !values.code.trim()) return;
+    if (!values.name.trim()) return;
     setError(null);
     setSaving(true);
     try {
@@ -84,7 +84,7 @@ export function CreateTeamSheet({ open, onOpenChange, onCreated }: Props) {
           <Button
             type="button"
             onClick={submit}
-            disabled={saving || !values.name.trim() || !values.code.trim()}
+            disabled={saving || !values.name.trim()}
             className="h-12 w-full rounded-xl text-base font-medium"
           >
             {saving ? (
@@ -97,7 +97,7 @@ export function CreateTeamSheet({ open, onOpenChange, onCreated }: Props) {
             )}
           </Button>
           <p className="text-center text-[11px] text-muted-foreground">
-            Team slug is generated automatically from the team name.
+            Team slug and code are generated automatically from the team name.
           </p>
         </SheetFooter>
       </SheetContent>

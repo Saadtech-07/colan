@@ -19,8 +19,8 @@ import {
 import {
   normalizeTeamCode,
   normalizeTeamName,
+  teamCodeFromName,
   teamSlugFromName,
-  teamTabLabel,
 } from "@/lib/team-utils";
 import type { TeamUpsertInput } from "@/models";
 
@@ -51,7 +51,11 @@ export function CreateTeamForm({
   idPrefix = "create-team",
 }: Props) {
   const namePreview = values.name.trim() ? normalizeTeamName(values.name) : "";
-  const codePreview = values.code.trim() ? normalizeTeamCode(values.code) : "";
+  const codePreview = values.code.trim()
+    ? normalizeTeamCode(values.code)
+    : namePreview
+      ? teamCodeFromName(namePreview)
+      : "";
   const slugPreview = namePreview ? teamSlugFromName(namePreview) : "";
 
   const squadName = namePreview || null;
@@ -118,7 +122,7 @@ export function CreateTeamForm({
           id={`${idPrefix}-name`}
           value={values.name}
           onChange={(e) => patch({ name: e.target.value })}
-          placeholder="e.g. Java, Mobile, Data"
+          placeholder="e.g. Sales, React, Node"
           className="h-11 rounded-xl border-border/70 bg-muted/20"
         />
         {namePreview ? (
@@ -148,13 +152,14 @@ export function CreateTeamForm({
           id={`${idPrefix}-code`}
           value={values.code}
           onChange={(e) => patch({ code: e.target.value })}
-          placeholder="e.g. JAVA, MOBILE, DATA"
+          placeholder="Auto from team name"
           className="h-11 rounded-xl border-border/70 bg-muted/20 font-mono uppercase"
         />
         {codePreview ? (
           <p className="text-xs text-muted-foreground">
             Will be saved as:{" "}
             <span className="font-medium text-foreground">{codePreview}</span>
+            {!values.code.trim() ? " (auto)" : ""}
           </p>
         ) : null}
       </div>
@@ -173,12 +178,12 @@ export function CreateTeamForm({
             <SelectValue
               placeholder={
                 accountsLoading
-                  ? "Loading team leads…"
+                  ? "Loading accounts…"
                   : !squadName
-                    ? "Enter a team name first"
+                    ? "None"
                     : leadOptions.length === 0
-                      ? `No lead accounts for ${teamTabLabel(squadName)}`
-                      : "Select team lead (optional)"
+                      ? "None"
+                      : "None"
               }
             />
           </SelectTrigger>
@@ -207,12 +212,8 @@ export function CreateTeamForm({
             <SelectValue
               placeholder={
                 accountsLoading
-                  ? "Loading managers…"
-                  : !squadName
-                    ? "Enter a team name first"
-                    : managerOptions.length === 0
-                      ? `No manager accounts for ${teamTabLabel(squadName)}`
-                      : "Select team manager (optional)"
+                  ? "Loading accounts…"
+                  : "None"
               }
             />
           </SelectTrigger>
@@ -231,9 +232,13 @@ export function CreateTeamForm({
 }
 
 export function createTeamFormToInput(values: CreateTeamFormValues): TeamUpsertInput {
+  const name = values.name.trim();
+  const code =
+    normalizeTeamCode(values.code) ||
+    (name ? teamCodeFromName(normalizeTeamName(name)) : "");
   return {
-    name: values.name.trim(),
-    code: values.code.trim(),
+    name,
+    code: code || undefined,
     teamLeadId: values.teamLeadId || null,
     teamManagerId: values.teamManagerId || null,
   };

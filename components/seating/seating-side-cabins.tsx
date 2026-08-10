@@ -9,7 +9,7 @@ import {
   SIDE_CABIN_TOP_OFFSET,
   SIDE_CABIN_WIDTH,
 } from "@/lib/seating-layout-metrics";
-import { DEFAULT_SIDE_CABINS } from "@/lib/seating-layout-editor-snapshot";
+import { EMPTY_SIDE_CABINS } from "@/lib/seating-layout-editor-snapshot";
 import type { SideCabinsConfig } from "@/lib/seating-layout-editor-types";
 import type { Employee } from "@/types";
 import { cn } from "@/lib/utils";
@@ -38,7 +38,7 @@ function stackHeight(rowBlocks: number): number {
 
 export function SeatingSideCabins({
   className,
-  sideCabins = DEFAULT_SIDE_CABINS,
+  sideCabins = EMPTY_SIDE_CABINS,
   rowCount = 2,
   cabinOccupancy,
   cabinOccupants,

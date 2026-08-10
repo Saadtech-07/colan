@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,22 +22,32 @@ export type ConfirmDeleteTarget = {
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  target: ConfirmDeleteTarget | null;
   onConfirm: () => void | Promise<void>;
   loading?: boolean;
   title?: string;
+  /** Account-style target (used when `description` is not provided). */
+  target?: ConfirmDeleteTarget | null;
   entityLabel?: string;
+  /** Custom body copy. Prefer this for non-account deletes. */
+  description?: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
 };
 
 export function ConfirmDeleteDialog({
   open,
   onOpenChange,
-  target,
   onConfirm,
   loading = false,
   title = "Delete account?",
+  target = null,
   entityLabel = "account",
+  description,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
 }: Props) {
+  const canConfirm = Boolean(description) || Boolean(target);
+
   const handleConfirm = async () => {
     await onConfirm();
   };
@@ -61,7 +72,9 @@ export function ConfirmDeleteDialog({
                 {title}
               </DialogTitle>
               <DialogDescription className="text-sm leading-6 text-muted-foreground">
-                {target ? (
+                {description ? (
+                  description
+                ) : target ? (
                   <>
                     You are about to permanently delete the{" "}
                     <span className="font-medium text-foreground">{entityLabel}</span> for{" "}
@@ -84,13 +97,13 @@ export function ConfirmDeleteDialog({
             onClick={() => onOpenChange(false)}
             disabled={loading}
           >
-            Cancel
+            {cancelLabel}
           </Button>
           <Button
             type="button"
             className="h-11 min-w-[120px] rounded-2xl border border-border/70 bg-background px-6 font-semibold text-foreground shadow-sm transition-colors hover:border-destructive hover:bg-destructive hover:text-destructive-foreground focus-visible:ring-destructive/30"
             onClick={() => void handleConfirm()}
-            disabled={loading || !target}
+            disabled={loading || !canConfirm}
           >
             {loading ? (
               <>
@@ -98,7 +111,7 @@ export function ConfirmDeleteDialog({
                 Deleting…
               </>
             ) : (
-              "Confirm"
+              confirmLabel
             )}
           </Button>
         </DialogFooter>

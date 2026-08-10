@@ -60,7 +60,7 @@ import {
   type SeatingCabin,
 } from "@/lib/seating-cabins";
 import type { SideCabinsConfig } from "@/lib/seating-layout-editor-types";
-import { DEFAULT_SIDE_CABINS } from "@/lib/seating-layout-editor-snapshot";
+import { EMPTY_SIDE_CABINS } from "@/lib/seating-layout-editor-snapshot";
 import { requestColanLayoutEdit } from "@/lib/seating-layout-edit-client";
 import { jsPDF } from "jspdf";
 import {
@@ -235,19 +235,24 @@ export default function SeatingPage() {
   const promptLayoutActive = !layoutMode && promptRows !== null;
   const activeRows = promptRows ?? activePlan?.rows ?? SEATING_ROWS;
   const activeCabinsBeforeA =
-    promptCabinsBeforeA ?? activePlan?.cabins?.beforeA ?? CABINS_BEFORE_A_ROW;
+    promptCabinsBeforeA ??
+    activePlan?.cabins?.beforeA ??
+    (activePlan ? [] : CABINS_BEFORE_A_ROW);
   const activeCabinsAfterG =
-    promptCabinsAfterG ?? activePlan?.cabins?.afterG ?? CABINS_AFTER_G_ROW;
+    promptCabinsAfterG ??
+    activePlan?.cabins?.afterG ??
+    (activePlan ? [] : CABINS_AFTER_G_ROW);
   const activeSideCabins = React.useMemo(() => {
-    const raw =
-      promptSideCabins ?? activePlan?.cabins?.sideCabins ?? DEFAULT_SIDE_CABINS;
-    // Pernambut keeps equalHeights. Everyone else: one cabin per seating row
-    // (HR Manager = A-ROW / A1–A17, Project Manager = B-ROW / B1–B24).
+    const raw = promptSideCabins ?? activePlan?.cabins?.sideCabins;
+    // Only show left/right cabins that were explicitly saved on the plan.
+    // Do not fall back to DEFAULT_SIDE_CABINS (HR Manager / Manager).
+    const hasSide = !!(raw?.hrManager?.trim() || raw?.manager?.trim());
+    if (!hasSide || !raw) return EMPTY_SIDE_CABINS;
     if (raw.equalHeights) return raw;
     return {
       ...raw,
       equalHeights: false,
-      spans: { hrManager: 1, manager: 1 },
+      spans: raw.spans ?? { hrManager: 1, manager: 1 },
     };
   }, [promptSideCabins, activePlan?.cabins?.sideCabins]);
   const activeOutsideEntrance =
@@ -840,9 +845,12 @@ export default function SeatingPage() {
         }),
         rows: plan.rows,
         showCabins: true,
-        cabinsBeforeA: plan.cabins?.beforeA ?? CABINS_BEFORE_A_ROW,
-        cabinsAfterG: plan.cabins?.afterG ?? CABINS_AFTER_G_ROW,
-        sideCabins: plan.cabins?.sideCabins ?? DEFAULT_SIDE_CABINS,
+        cabinsBeforeA: plan.cabins?.beforeA ?? [],
+        cabinsAfterG: plan.cabins?.afterG ?? [],
+        sideCabins: plan.cabins?.sideCabins?.hrManager?.trim() ||
+          plan.cabins?.sideCabins?.manager?.trim()
+          ? plan.cabins.sideCabins!
+          : EMPTY_SIDE_CABINS,
         outsideEntrance: plan.cabins?.outsideEntrance ?? null,
       };
     };

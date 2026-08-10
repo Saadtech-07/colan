@@ -36,7 +36,7 @@ export type TeamDTO = {
 
 export type TeamUpsertInput = {
   name: string;
-  code: string;
+  code?: string;
   teamLeadId?: string | null;
   teamManagerId?: string | null;
 };

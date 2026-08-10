@@ -13,6 +13,12 @@ export const DEFAULT_SIDE_CABINS: SideCabinsConfig = {
   spans: { hrManager: 1, manager: 1 },
 };
 
+/** No left/right side cabins — use when a floor plan does not define any. */
+export const EMPTY_SIDE_CABINS: SideCabinsConfig = {
+  hrManager: "",
+  manager: "",
+};
+
 export function defaultColanLayoutState(): ColanLayoutState {
   return {
     rows: [],

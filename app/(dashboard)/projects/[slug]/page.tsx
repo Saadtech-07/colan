@@ -42,10 +42,12 @@ export default function ProjectDetailPage() {
   const params = useParams();
   const router = useRouter();
   const slug = String(params.slug ?? "");
-  const { access, user, employees, refreshData } = useAppState();
+  const { access, user, employees, applyProjectUpdate } = useAppState();
   const { withLoading } = useGlobalLoading();
   const withLoadingRef = React.useRef(withLoading);
-  withLoadingRef.current = withLoading;
+  React.useEffect(() => {
+    withLoadingRef.current = withLoading;
+  }, [withLoading]);
   const [project, setProject] = React.useState<ProjectDetail | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
@@ -100,10 +102,10 @@ export default function ProjectDetailPage() {
   const onSaved = React.useCallback(
     (detail: ProjectDetail) => {
       setProject(detail);
-      void refreshData();
+      applyProjectUpdate(detail);
       setSaveSuccessOpen(true);
     },
-    [refreshData],
+    [applyProjectUpdate],
   );
 
   const returnToProjects = React.useCallback(() => {

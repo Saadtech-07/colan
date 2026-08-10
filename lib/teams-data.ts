@@ -102,8 +102,8 @@ function normalizeTeamUpsertInput(input: TeamUpsertInput): {
   const name = normalizeTeamName(input.name);
   if (!name) throw new Error("Team name is required.");
 
-  const code = normalizeTeamCode(input.code);
-  if (!code) throw new Error("Team code is required.");
+  const code = normalizeTeamCode(input.code ?? "") || teamCodeFromName(name);
+  if (!code) throw new Error("Could not derive a team code from the name.");
 
   return {
     name,

@@ -30,9 +30,10 @@ export const teamNameSchema = z.string().trim().min(1).max(80);
 export const teamCodeSchema = z
   .string()
   .trim()
-  .min(1, "Team code is required")
   .max(24, "Team code must be at most 24 characters")
-  .regex(/^[A-Za-z0-9-]+$/, "Team code may only contain letters, numbers, and hyphens");
+  .regex(/^[A-Za-z0-9-]*$/, "Team code may only contain letters, numbers, and hyphens")
+  .optional()
+  .transform((value) => (value && value.length > 0 ? value : undefined));
 
 const optionalEmployeeRefSchema = z.preprocess(
   (value) => (value === null || value === undefined ? null : value),

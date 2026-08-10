@@ -22,6 +22,7 @@ import {
   fetchProjectsOnce,
   fetchRolesOnce,
   fetchTeamsOnce,
+  invalidateWorkspaceApiCache,
 } from "@/lib/workspace-api-client";
 import type { TeamDTO, TeamUpsertInput, WorkspaceRole } from "@/models";
 import type { AuthUser, Employee, GalleryImage, Project } from "@/types";
@@ -50,6 +51,8 @@ type AppStateContextValue = {
   refreshData: () => Promise<void>;
   /** Ensure specific workspace slices are loaded (deduped / cached per session). */
   ensureWorkspaceData: (slices: WorkspaceSlice[]) => Promise<void>;
+  /** Apply a project mutation result locally (no workspace re-sync overlay). */
+  applyProjectUpdate: (project: Project) => void;
   /** Apply profile fields already loaded elsewhere (no network). */
   applyProfileSnapshot: (profile: ProfileSessionSync & { imageUrl?: string }) => Promise<void>;
   /** Load profile image from the server (session omits large data URLs). */
@@ -516,6 +519,17 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     return created;
   }, []);
 
+  const applyProjectUpdate = React.useCallback((project: Project) => {
+    invalidateWorkspaceApiCache("workspace:GET:/api/projects");
+    setProjects((prev) => {
+      const index = prev.findIndex((entry) => entry.id === project.id);
+      if (index === -1) return [...prev, project];
+      const next = [...prev];
+      next[index] = { ...next[index], ...project };
+      return next;
+    });
+  }, []);
+
   const addGalleryItem = React.useCallback(async (input: Omit<GalleryImage, "id">) => {
     const res = await fetch("/api/gallery", {
       method: "POST",
@@ -612,6 +626,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       dataSummary,
       refreshData,
       ensureWorkspaceData,
+      applyProjectUpdate,
       applyProfileSnapshot,
       refreshProfileAvatar,
       addEmployee,
@@ -645,6 +660,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       dataSummary,
       refreshData,
       ensureWorkspaceData,
+      applyProjectUpdate,
       applyProfileSnapshot,
       refreshProfileAvatar,
       addEmployee,

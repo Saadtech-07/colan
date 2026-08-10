@@ -204,7 +204,7 @@ export function buildCabinsPayload(
     const second = sideList[1];
     sideCabins = {
       hrManager: first.label.trim(),
-      manager: (second?.label ?? first.label).trim(),
+      manager: second?.label?.trim() ?? "",
       hrManagerId: cabinIdFor(prefix, first.side, 0, first.cabinId),
       managerId: second
         ? cabinIdFor(prefix, second.side, 1, second.cabinId)

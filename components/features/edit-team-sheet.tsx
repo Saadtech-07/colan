@@ -47,7 +47,7 @@ export function EditTeamSheet({ team, open, onOpenChange, onUpdated }: Props) {
   }, [open, team]);
 
   const submit = async () => {
-    if (!values.name.trim() || !values.code.trim()) return;
+    if (!values.name.trim()) return;
     setError(null);
     setSaving(true);
     try {
@@ -88,7 +88,7 @@ export function EditTeamSheet({ team, open, onOpenChange, onUpdated }: Props) {
           <Button
             type="button"
             onClick={submit}
-            disabled={saving || !values.name.trim() || !values.code.trim()}
+            disabled={saving || !values.name.trim()}
             className="h-12 w-full rounded-xl text-base font-medium"
           >
             {saving ? (
@@ -101,7 +101,7 @@ export function EditTeamSheet({ team, open, onOpenChange, onUpdated }: Props) {
             )}
           </Button>
           <p className="text-center text-[11px] text-muted-foreground">
-            Team slug is generated automatically from the team name.
+            Team slug and code are generated automatically from the team name when left blank.
           </p>
         </SheetFooter>
       </SheetContent>
