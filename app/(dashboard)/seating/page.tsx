@@ -508,6 +508,16 @@ export default function SeatingPage() {
     [activePlan],
   );
   const cabinIds = React.useMemo(() => cabinSlots.map((s) => s.id), [cabinSlots]);
+  const cabinLabelsById = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const plan of [activePlan, companionPlan]) {
+      if (!plan) continue;
+      for (const slot of listCabinSlotsOnPlan(plan)) {
+        if (slot.label?.trim()) map.set(slot.id, slot.label.trim());
+      }
+    }
+    return map;
+  }, [activePlan, companionPlan]);
   const cabinOccupancy = React.useMemo(
     () =>
       cabinOccupancyMap(employees, {
@@ -1439,6 +1449,8 @@ export default function SeatingPage() {
         canAssign={canAssign}
         saving={saving}
         officeSlug={dialogOfficeSlug}
+        officePlans={officePlans}
+        cabinLabels={cabinLabelsById}
         elevated={fullscreenOpen}
         seatIds={
           dialogOfficeSlug === officeSlug

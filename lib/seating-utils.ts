@@ -1,10 +1,140 @@
 import { ALL_SEAT_IDS, isValidSeatId } from "@/lib/seating-layout";
-import { normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
+import {
+  blockLabelForPlan,
+  branchKeyForPlan,
+} from "@/lib/floor-plan-branch";
+import { isChennaiOfficeSlug, normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
 import { employeeMatchesRoleFilter } from "@/lib/team-members-ui";
 import { teamTabLabel } from "@/lib/team-utils";
 import { employeeEligibleForSeating } from "@/lib/workspace-identity";
+import type { FloorPlanSummary } from "@/models/floor-plan.model";
 import type { WorkspaceRole } from "@/models";
 import type { Employee, Gender, TeamName } from "@/types";
+
+type FloorPlanBranchRef = Pick<FloorPlanSummary, "slug" | "name" | "city" | "building">;
+
+function planForOfficeSlug(
+  slug: string | null | undefined,
+  plans: ReadonlyArray<FloorPlanBranchRef>,
+): FloorPlanBranchRef | undefined {
+  const normalized = normalizeOfficeSlug(slug);
+  return plans.find((p) => normalizeOfficeSlug(p.slug) === normalized);
+}
+
+function branchPlansForSlug(
+  slug: string | null | undefined,
+  plans: ReadonlyArray<FloorPlanBranchRef>,
+): FloorPlanBranchRef[] {
+  const branchKey = seatingBranchKeyForSlug(slug, plans);
+  return plans.filter(
+    (p) => branchKeyForPlan(p).toLowerCase() === branchKey.toLowerCase(),
+  );
+}
+
+/** Human-readable assignment: "Chennai Block A - C5" or "Bangalore - C5". */
+export function formatEmployeeSeatingLocation(
+  emp: Employee,
+  plans: ReadonlyArray<FloorPlanBranchRef> = [],
+  opts?: { cabinLabels?: ReadonlyMap<string, string> | Record<string, string> },
+): string | null {
+  const bay = emp.bayNumber?.trim();
+  const cabinId = emp.cabinId?.trim();
+  if (!bay && !cabinId) return null;
+
+  const branchKey = seatingBranchKeyForSlug(emp.officeSlug, plans);
+  const plan = planForOfficeSlug(emp.officeSlug, plans);
+  const siblingPlans = branchPlansForSlug(emp.officeSlug, plans);
+  const multiBlock = siblingPlans.length > 1;
+
+  const cabinLabels = opts?.cabinLabels;
+  let cabinLabel: string | undefined;
+  if (cabinId && cabinLabels) {
+    cabinLabel =
+      cabinLabels instanceof Map
+        ? cabinLabels.get(cabinId)
+        : (cabinLabels as Record<string, string>)[cabinId];
+  }
+
+  const slotLabel = cabinId
+    ? cabinLabel?.trim() ||
+      cabinId.replace(/^cabin[-_]?/i, "").replace(/[-_]+/g, " ").trim() ||
+      cabinId
+    : bay!;
+
+  if (multiBlock && plan) {
+    const block = blockLabelForPlan(plan);
+    return `${branchKey} ${block} - ${slotLabel}`;
+  }
+  return `${branchKey} - ${slotLabel}`;
+}
+
+/** Branch key for an office slug (Chennai Block A/B share "Chennai"). */
+export function seatingBranchKeyForSlug(
+  slug: string | null | undefined,
+  plans: ReadonlyArray<FloorPlanBranchRef> = [],
+): string {
+  const normalized = normalizeOfficeSlug(slug);
+  const plan = plans.find((p) => normalizeOfficeSlug(p.slug) === normalized);
+  if (plan) return branchKeyForPlan(plan);
+  if (isChennaiOfficeSlug(normalized)) return "Chennai";
+  return normalized;
+}
+
+function branchesMatch(
+  left: string | null | undefined,
+  right: string | null | undefined,
+  plans: ReadonlyArray<FloorPlanBranchRef>,
+): boolean {
+  return (
+    seatingBranchKeyForSlug(left, plans).toLowerCase() ===
+    seatingBranchKeyForSlug(right, plans).toLowerCase()
+  );
+}
+
+/** True when the employee holds a seat/cabin in a different branch than the target office. */
+export function employeeSeatedInOtherBranch(
+  emp: Employee,
+  targetOfficeSlug: string | null | undefined,
+  plans: ReadonlyArray<FloorPlanBranchRef> = [],
+): boolean {
+  const bay = emp.bayNumber?.trim();
+  const cabin = emp.cabinId?.trim();
+  if (!bay && !cabin) return false;
+  return !branchesMatch(emp.officeSlug, targetOfficeSlug, plans);
+}
+
+/** True when the employee already occupies a seat or cabin in the target branch. */
+export function employeeOccupiesBranch(
+  emp: Employee,
+  targetOfficeSlug: string | null | undefined,
+  plans: ReadonlyArray<FloorPlanBranchRef> = [],
+): boolean {
+  const bay = emp.bayNumber?.trim();
+  const cabin = emp.cabinId?.trim();
+  if (!bay && !cabin) return false;
+  return branchesMatch(emp.officeSlug, targetOfficeSlug, plans);
+}
+
+/**
+ * Vacant-slot picker: show unassigned people plus people seated in other branches.
+ * Hide people who already hold a seat/cabin in the same branch.
+ */
+export function employeeSelectableForVacantSlot(
+  emp: Employee,
+  targetOfficeSlug: string | null | undefined,
+  plans: ReadonlyArray<FloorPlanBranchRef> = [],
+  opts?: { allowCabinId?: string | null },
+): boolean {
+  const allowCabin = opts?.allowCabinId?.trim();
+  if (
+    allowCabin &&
+    emp.cabinId?.trim() === allowCabin &&
+    branchesMatch(emp.officeSlug, targetOfficeSlug, plans)
+  ) {
+    return true;
+  }
+  return !employeeOccupiesBranch(emp, targetOfficeSlug, plans);
+}
 
 export function employeeMatchesGenderFilter(emp: Employee, gender: string): boolean {
   if (!gender || gender === "all") return true;

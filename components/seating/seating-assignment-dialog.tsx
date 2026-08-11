@@ -21,11 +21,74 @@ import {
   cabinOccupantsMap,
   isTeamCabinLabel,
 } from "@/lib/cabin-utils";
-import { employeeMatchesSearch, seatOccupancyMap } from "@/lib/seating-utils";
+import {
+  employeeMatchesSearch,
+  employeeSeatedInOtherBranch,
+  employeeSelectableForVacantSlot,
+  formatEmployeeSeatingLocation,
+  seatOccupancyMap,
+} from "@/lib/seating-utils";
 import { teamTabLabel } from "@/lib/team-utils";
 import { employeeEligibleForSeating } from "@/lib/workspace-identity";
+import type { FloorPlanSummary } from "@/models/floor-plan.model";
 import type { Employee } from "@/types";
 import { cn } from "@/lib/utils";
+
+type OfficePlanRef = Pick<FloorPlanSummary, "slug" | "name" | "city" | "building">;
+
+function AssignEmployeeRow({
+  emp,
+  officeSlug,
+  officePlans,
+  cabinLabels,
+  trailing,
+  className,
+}: {
+  emp: Employee;
+  officeSlug?: string;
+  officePlans: OfficePlanRef[];
+  cabinLabels?: ReadonlyMap<string, string>;
+  trailing?: React.ReactNode;
+  className?: string;
+}) {
+  const location = formatEmployeeSeatingLocation(emp, officePlans, { cabinLabels });
+  const isElsewhere = employeeSeatedInOtherBranch(emp, officeSlug, officePlans);
+  const role = teamTabLabel(emp.team);
+
+  return (
+    <div className={cn("flex min-w-0 items-start gap-3", className)}>
+      <Avatar className="h-9 w-9 shrink-0">
+        <AvatarImage src={emp.imageUrl} alt="" />
+        <AvatarFallback className="text-xs">{emp.name.slice(0, 2)}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium leading-snug">{emp.name}</p>
+        <div className="mt-1 flex items-start justify-between gap-2">
+          <p className="min-w-0 text-xs leading-snug text-muted-foreground">
+            <span className="font-medium text-foreground/80">{emp.employeeId}</span>
+            <span className="mx-1.5 text-border">·</span>
+            <span>{role}</span>
+          </p>
+          {location ? (
+            <Badge
+              variant="outline"
+              className={cn(
+                "max-w-[55%] shrink-0 truncate px-2 py-0 text-[11px] font-normal leading-5",
+                isElsewhere
+                  ? "border-amber-500/60 bg-amber-500/10 text-amber-950 dark:text-amber-50"
+                  : "border-border/80 bg-muted/50 text-muted-foreground",
+              )}
+              title={location}
+            >
+              {location}
+            </Badge>
+          ) : null}
+        </div>
+      </div>
+      {trailing ? <div className="shrink-0 self-center">{trailing}</div> : null}
+    </div>
+  );
+}
 
 type Props = {
   open: boolean;
@@ -36,6 +99,10 @@ type Props = {
   canAssign: boolean;
   saving: boolean;
   officeSlug?: string;
+  /** Floor plan summaries — branch/block labels and assign-list filtering. */
+  officePlans?: Pick<FloorPlanSummary, "slug" | "name" | "city" | "building">[];
+  /** Cabin id → display label from loaded floor plans. */
+  cabinLabels?: ReadonlyMap<string, string>;
   seatIds?: string[];
   cabinIds?: string[];
   elevated?: boolean;
@@ -56,6 +123,8 @@ export function SeatingAssignmentDialog({
   canAssign,
   saving,
   officeSlug,
+  officePlans = [],
+  cabinLabels,
   seatIds,
   cabinIds,
   elevated = false,
@@ -102,9 +171,24 @@ export function SeatingAssignmentDialog({
       if (!employeeEligibleForSeating(e)) return false;
       if (!isTeamCabin && occupant && e.id === occupant.id) return false;
       if (!employeeMatchesSearch(e, query)) return false;
+      if (
+        !employeeSelectableForVacantSlot(e, officeSlug, officePlans, {
+          allowCabinId: isTeamCabin ? cabinId : null,
+        })
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [employees, isTeamCabin, occupant, query]);
+  }, [
+    cabinId,
+    employees,
+    isTeamCabin,
+    occupant,
+    officePlans,
+    officeSlug,
+    query,
+  ]);
 
   const vacantForReassign = React.useMemo(() => {
     if (!onReassign || isTeamCabin) return [];
@@ -191,38 +275,38 @@ export function SeatingAssignmentDialog({
                       <li key={emp.id}>
                         <label
                           className={cn(
-                            "flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
-                            "hover:bg-muted/80",
-                            checked && "bg-accent/60",
+                            "flex w-full cursor-pointer rounded-lg border border-transparent px-3 py-3 text-left transition-colors",
+                            "hover:border-border/60 hover:bg-muted/70",
+                            checked && "border-primary/25 bg-accent/50",
                           )}
                         >
                           <input
                             type="checkbox"
-                            className="h-4 w-4 rounded border-border"
+                            className="sr-only"
                             checked={checked}
                             disabled={saving || !canAssign}
                             onChange={() => toggleSelected(emp.id)}
                           />
-                          <Avatar className="h-9 w-9">
-                            <AvatarImage src={emp.imageUrl} alt="" />
-                            <AvatarFallback className="text-xs">
-                              {emp.name.slice(0, 2)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium">{emp.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {emp.employeeId} · {teamTabLabel(emp.team)}
-                              {emp.cabinId && emp.cabinId !== cabinId
-                                ? ` · cabin ${emp.cabinId}`
-                                : emp.bayNumber
-                                  ? ` · seat ${emp.bayNumber}`
-                                  : ""}
-                            </p>
-                          </div>
-                          {checked ? (
-                            <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                          ) : null}
+                          <AssignEmployeeRow
+                            emp={emp}
+                            officeSlug={officeSlug}
+                            officePlans={officePlans}
+                            cabinLabels={cabinLabels}
+                            className="w-full"
+                            trailing={
+                              checked ? (
+                                <Check className="h-4 w-4 text-primary" aria-hidden />
+                              ) : (
+                                <span
+                                  className={cn(
+                                    "flex h-4 w-4 items-center justify-center rounded border border-border",
+                                    checked && "border-primary bg-primary",
+                                  )}
+                                  aria-hidden
+                                />
+                              )
+                            }
+                          />
                         </label>
                       </li>
                     );
@@ -246,37 +330,36 @@ export function SeatingAssignmentDialog({
         ) : (
           <>
             {occupant ? (
-              <div className="flex items-start gap-3 rounded-lg border border-border/70 bg-muted/40 p-3">
-                <Avatar className="h-11 w-11">
-                  <AvatarImage src={occupant.imageUrl} alt="" />
-                  <AvatarFallback>{occupant.name.slice(0, 2)}</AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{occupant.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {occupant.employeeId} · {teamTabLabel(occupant.team)}
-                  </p>
-                  <Badge variant="secondary" className="mt-1.5">
-                    {isCabin ? "In cabin" : `Seat ${seatId}`}
-                  </Badge>
-                </div>
-                {canAssign ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={saving}
-                    className="gap-1.5"
-                    onClick={onRemove}
-                  >
-                    {saving ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <UserMinus className="h-3.5 w-3.5" />
-                    )}
-                    Remove
-                  </Button>
-                ) : null}
+              <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
+                <AssignEmployeeRow
+                  emp={occupant}
+                  officeSlug={officeSlug}
+                  officePlans={officePlans}
+                  cabinLabels={cabinLabels}
+                  className="items-center"
+                  trailing={
+                    canAssign ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={saving}
+                        className="gap-1.5"
+                        onClick={onRemove}
+                      >
+                        {saving ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <UserMinus className="h-3.5 w-3.5" />
+                        )}
+                        Remove
+                      </Button>
+                    ) : null
+                  }
+                />
+                <Badge variant="secondary" className="mt-2">
+                  {isCabin ? "Assigned to this cabin" : `Assigned to seat ${seatId}`}
+                </Badge>
               </div>
             ) : null}
 
@@ -329,27 +412,17 @@ export function SeatingAssignmentDialog({
                             disabled={saving}
                             onClick={() => onAssign(emp.id)}
                             className={cn(
-                              "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors",
-                              "hover:bg-muted/80",
+                              "flex w-full rounded-lg border border-transparent px-3 py-3 text-left transition-colors",
+                              "hover:border-border/60 hover:bg-muted/70",
                             )}
                           >
-                            <Avatar className="h-9 w-9">
-                              <AvatarImage src={emp.imageUrl} alt="" />
-                              <AvatarFallback className="text-xs">
-                                {emp.name.slice(0, 2)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate font-medium">{emp.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {emp.employeeId} · {teamTabLabel(emp.team)}
-                                {emp.cabinId
-                                  ? ` · cabin ${emp.cabinId}`
-                                  : emp.bayNumber
-                                    ? ` · currently ${emp.bayNumber}`
-                                    : ""}
-                              </p>
-                            </div>
+                            <AssignEmployeeRow
+                              emp={emp}
+                              officeSlug={officeSlug}
+                              officePlans={officePlans}
+                              cabinLabels={cabinLabels}
+                              className="w-full"
+                            />
                           </button>
                         </li>
                       ))
