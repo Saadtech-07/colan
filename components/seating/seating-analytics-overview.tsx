@@ -93,7 +93,8 @@ export function SeatingAnalyticsOverview({
             "grid auto-rows-fr gap-3 sm:grid-cols-2",
             hideUtilization ? "lg:grid-cols-3" : "lg:grid-cols-4",
           )}
-        >          {items.map((item) => (
+        >
+          {items.map((item) => (
             <LegacyStatCard key={item.label} item={item} compact={false} />
           ))}
         </div>

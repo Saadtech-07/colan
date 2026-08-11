@@ -377,15 +377,17 @@ function mergeEmployeeDirectory(
   return hasValue ? merged : undefined;
 }
 
-export async function listEmployees(): Promise<Employee[]> {
+export async function listEmployees(opts?: {
+  includeImages?: boolean;
+}): Promise<Employee[]> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
     await ensureMongoSeed(db);
-    return listEmployeesFromDb(db);
+    return listEmployeesFromDb(db, opts);
   }
   const db = await getDb();
   if (!db) return [];
-  return listEmployeesFromDb(db);
+  return listEmployeesFromDb(db, opts);
 }
 
 async function purgeOrphanEmployeeRecords(
@@ -424,14 +426,21 @@ async function purgeOrphanEmployeeRecords(
 
 async function listEmployeesFromDb(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  opts?: { includeImages?: boolean },
 ): Promise<Employee[]> {
+  const includeImages = opts?.includeImages === true;
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const detCol = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
-  const appUsers = await db
-    .collection<AppUserDocument>(COLLECTIONS.appUsers)
-    .find({})
-    .toArray();
-  const rows = await col.find({}).sort({ name: 1 }).toArray();
+  const [appUsers, rows] = await Promise.all([
+    db.collection<AppUserDocument>(COLLECTIONS.appUsers).find({}).toArray(),
+    // Omit imageUrl at the DB layer for list payloads — huge data-URLs dominate transfer time.
+    includeImages
+      ? col.find({}).sort({ name: 1 }).toArray()
+      : col
+          .find({}, { projection: { imageUrl: 0 } })
+          .sort({ name: 1 })
+          .toArray(),
+  ]);
   const detailRows =
     rows.length === 0
       ? []
@@ -444,9 +453,10 @@ async function listEmployeesFromDb(
     .filter((row) => linkedIds.has(row._id.toHexString()))
     .map((d) => {
       const base = employeeDocToDTO(d);
+      const imageUrl = includeImages ? (base.imageUrl ?? "") : "";
       const doc = byRef.get(base.id);
       const directory = mergeEmployeeDirectory(d, doc);
-      return directory ? { ...base, directory } : base;
+      return directory ? { ...base, imageUrl, directory } : { ...base, imageUrl };
     });
 }
 
@@ -454,7 +464,7 @@ export async function getEmployeeDetailBySlugOrId(
   slugOrId: string,
 ): Promise<EmployeeDetail | null> {
   const [employees, projects] = await Promise.all([
-    listEmployees(),
+    listEmployees({ includeImages: true }),
     listProjects(),
   ]);
   const employee = findEmployeeBySlugOrId(employees, slugOrId);

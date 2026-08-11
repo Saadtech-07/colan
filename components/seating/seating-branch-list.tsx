@@ -201,12 +201,18 @@ export function SeatingBranchList({
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border/70 bg-background/80 shadow-sm">
-        <div className="hidden grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(4.5rem,1fr))_auto] gap-3 border-b border-border/60 bg-muted/40 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground md:grid">
+      <div className="overflow-x-auto rounded-2xl border border-border/70 bg-background/80 shadow-sm">
+        <div className="md:min-w-[42rem]">
+        <div
+          className={cn(
+            "hidden border-b border-border/60 bg-muted/40 px-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground md:grid md:items-center md:gap-4",
+            BRANCH_ROW_GRID,
+          )}
+        >
           <span>Branch</span>
-          <span className="text-right">Total</span>
-          <span className="text-right">Occupied</span>
-          <span className="text-right">Available</span>
+          <span className="text-center">Total</span>
+          <span className="text-center">Occupied</span>
+          <span className="text-center">Available</span>
           <span className="text-right">Action</span>
         </div>
 
@@ -214,10 +220,14 @@ export function SeatingBranchList({
           {rows.map((row) => (
             <li
               key={row.key}
-              className="grid grid-cols-1 gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30 md:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(4.5rem,1fr))_auto] md:items-center md:gap-3"
+              className={cn(
+                "grid grid-cols-1 gap-3 px-4 py-3.5 transition-colors hover:bg-muted/30",
+                "md:items-center md:gap-4",
+                BRANCH_ROW_GRID,
+              )}
             >
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted/50">
                     <MapPin className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                   </span>
@@ -233,33 +243,26 @@ export function SeatingBranchList({
                 </div>
               </div>
 
+              <StatCell icon={LayoutGrid} label="Total" value={row.stats.total} />
               <StatCell
-                className="md:justify-end"
-                icon={LayoutGrid}
-                label="Total"
-                value={row.stats.total}
-              />
-              <StatCell
-                className="md:justify-end"
                 icon={Users}
                 label="Occupied"
                 value={row.stats.occupied}
                 valueClassName="text-emerald-700 dark:text-emerald-300"
               />
               <StatCell
-                className="md:justify-end"
                 icon={Armchair}
                 label="Available"
                 value={row.stats.empty}
                 valueClassName="text-amber-700 dark:text-amber-300"
               />
 
-              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <div className="flex items-center justify-stretch gap-2 sm:justify-end">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="h-9 w-full gap-1.5 rounded-xl px-3 text-xs font-semibold sm:w-auto"
+                  className="h-9 min-w-[5.75rem] flex-1 gap-1.5 rounded-xl px-3 text-xs font-semibold sm:flex-none"
                   onClick={() => void openCabins(row)}
                 >
                   <DoorOpen className="h-3.5 w-3.5" />
@@ -268,7 +271,7 @@ export function SeatingBranchList({
                 <Button
                   type="button"
                   size="sm"
-                  className="h-9 w-full gap-1.5 rounded-xl px-3 text-xs font-semibold sm:w-auto"
+                  className="h-9 min-w-[5.75rem] flex-1 gap-1.5 rounded-xl px-3 text-xs font-semibold sm:flex-none"
                   onClick={() => onViewBranch(row.primarySlug)}
                 >
                   <Eye className="h-3.5 w-3.5" />
@@ -278,6 +281,7 @@ export function SeatingBranchList({
             </li>
           ))}
         </ul>
+        </div>
       </div>
 
       <Dialog
@@ -368,28 +372,30 @@ export function SeatingBranchList({
   );
 }
 
+/** Shared desktop columns so headers and row values stay aligned. */
+const BRANCH_ROW_GRID =
+  "md:grid-cols-[minmax(0,1.6fr)_5.5rem_5.5rem_5.5rem_minmax(12.5rem,auto)]";
+
 function StatCell({
   icon: Icon,
   label,
   value,
-  className,
   valueClassName,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string | number;
-  className?: string;
   valueClassName?: string;
 }) {
   return (
-    <div className={cn("flex items-center justify-between gap-2 md:block", className)}>
+    <div className="flex items-center justify-between gap-2 md:block md:text-center">
       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground md:hidden">
         <Icon className="h-3 w-3" />
         {label}
       </span>
       <p
         className={cn(
-          "text-sm font-semibold tabular-nums text-foreground md:text-right",
+          "text-sm font-semibold tabular-nums text-foreground md:text-center",
           valueClassName,
         )}
       >

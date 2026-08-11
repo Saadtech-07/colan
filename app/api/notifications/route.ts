@@ -42,19 +42,17 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const rawNotifications =
+  const [rawNotifications, totalCount, unreadCount] = await Promise.all([
     scopeAll && canViewAll
-      ? await listAllNotifications(limit, unreadOnly)
-      : await listNotificationsForUser(actor.id, limit, unreadOnly);
+      ? listAllNotifications(limit, unreadOnly)
+      : listNotificationsForUser(actor.id, limit, unreadOnly),
+    scopeAll && canViewAll
+      ? countAllNotifications()
+      : countNotificationsForUser(actor.id),
+    getUnreadNotificationCount(actor.id),
+  ]);
 
   const notifications = filterNotificationsForViewer(rawNotifications, actor.id);
-
-  const totalCount =
-    scopeAll && canViewAll
-      ? await countAllNotifications()
-      : await countNotificationsForUser(actor.id);
-
-  const unreadCount = await getUnreadNotificationCount(actor.id);
 
   return NextResponse.json(
     {

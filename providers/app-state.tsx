@@ -12,7 +12,8 @@ import {
 import { hydrateRoleRegistry } from "@/lib/role-registry";
 import { resolveProfileImageSrc } from "@/lib/profile-image";
 import { sanitizeSessionImageUrl } from "@/lib/session-token";
-import { workspaceSlicesForPath } from "@/lib/workspace-route-data";
+import { workspaceSlicesForPath, pathsThatWantBackgroundDbStatus } from "@/lib/workspace-route-data";
+import { scheduleIdle } from "@/lib/schedule-idle";
 import type { WorkspaceSlice } from "@/lib/workspace-slices";
 import { fetchProfileSettings } from "@/lib/profile-settings-client";
 import {
@@ -50,7 +51,10 @@ type AppStateContextValue = {
   dataSummary: DataLayerSummary | null;
   refreshData: () => Promise<void>;
   /** Ensure specific workspace slices are loaded (deduped / cached per session). */
-  ensureWorkspaceData: (slices: WorkspaceSlice[]) => Promise<void>;
+  ensureWorkspaceData: (
+    slices: WorkspaceSlice[],
+    opts?: { force?: boolean; silent?: boolean },
+  ) => Promise<void>;
   /** Apply a project mutation result locally (no workspace re-sync overlay). */
   applyProjectUpdate: (project: Project) => void;
   /** Apply profile fields already loaded elsewhere (no network). */
@@ -226,16 +230,6 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const profileSessionEmail = session?.user?.email?.trim().toLowerCase() ?? "";
 
-  React.useEffect(() => {
-    if (sessionStatus !== "authenticated" || !profileSessionEmail) {
-      setProfileAvatarUrl(undefined);
-      lastSessionSyncKeyRef.current = null;
-      return;
-    }
-
-    void refreshProfileAvatar();
-  }, [profileSessionEmail, refreshProfileAvatar, sessionStatus]);
-
   const linkedEmployeeAvatar = React.useMemo(() => {
     if (!session?.user?.email) return undefined;
     const normalized = session.user.email.toLowerCase();
@@ -359,7 +353,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   );
 
   const ensureWorkspaceData = React.useCallback(
-    async (slices: WorkspaceSlice[], opts?: { force?: boolean }) => {
+    async (slices: WorkspaceSlice[], opts?: { force?: boolean; silent?: boolean }) => {
       if (sessionStatus !== "authenticated") return;
       const email = sessionEmailRef.current;
       if (!email) return;
@@ -375,9 +369,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         ? ["roles", ...needed.filter((s) => s !== "roles")]
         : needed;
 
-      pendingRouteLoadsRef.current += 1;
-      setDataLoading(true);
-      setDataError(null);
+      const silent = opts?.silent === true;
+      if (!silent) {
+        pendingRouteLoadsRef.current += 1;
+        setDataLoading(true);
+        setDataError(null);
+      }
       try {
         for (const slice of ordered.filter((s) => s === "roles")) {
           await loadSlice(slice, email, opts?.force);
@@ -386,11 +383,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
           ordered.filter((s) => s !== "roles").map((slice) => loadSlice(slice, email, opts?.force)),
         );
       } catch (e) {
-        setDataError(e instanceof Error ? e.message : "Failed to load data");
+        if (!silent) {
+          setDataError(e instanceof Error ? e.message : "Failed to load data");
+        }
       } finally {
-        pendingRouteLoadsRef.current = Math.max(0, pendingRouteLoadsRef.current - 1);
-        if (pendingRouteLoadsRef.current === 0) {
-          setDataLoading(false);
+        if (!silent) {
+          pendingRouteLoadsRef.current = Math.max(0, pendingRouteLoadsRef.current - 1);
+          if (pendingRouteLoadsRef.current === 0) {
+            setDataLoading(false);
+          }
         }
       }
     },
@@ -431,8 +432,26 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     }
 
     const slices = workspaceSlicesForPath(pathname);
-    void ensureWorkspaceData(slices);
+    void (async () => {
+      await ensureWorkspaceData(slices);
+      if (pathsThatWantBackgroundDbStatus(pathname)) {
+        void ensureWorkspaceData(["dbStatus"], { silent: true });
+      }
+    })();
   }, [ensureWorkspaceData, pathname, session?.user?.email]);
+
+  React.useEffect(() => {
+    if (sessionStatus !== "authenticated" || !profileSessionEmail) {
+      setProfileAvatarUrl(undefined);
+      lastSessionSyncKeyRef.current = null;
+      return;
+    }
+
+    // Defer avatar fetch so roles/employees/projects can win the first network wave.
+    return scheduleIdle(() => {
+      void refreshProfileAvatar();
+    }, 2_000);
+  }, [profileSessionEmail, refreshProfileAvatar, sessionStatus]);
 
   const logout = React.useCallback(async () => {
     await signOut({ callbackUrl: "/login" });

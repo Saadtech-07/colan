@@ -53,7 +53,7 @@ export function employeeDocToDTO(doc: EmployeeDocument): Employee {
     bayNumber: doc.bayNumber,
     officeSlug: doc.officeSlug ?? undefined,
     cabinId: doc.cabinId ?? undefined,
-    imageUrl: doc.imageUrl,
+    imageUrl: doc.imageUrl ?? "",
     email: doc.email?.trim() || undefined,
   };
 }

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { NotificationListItem } from "@/components/notifications/notification-list-item";
 import { dedupeAsync } from "@/lib/dedupe-async";
+import { scheduleIdle } from "@/lib/schedule-idle";
 import { cn } from "@/lib/utils";
 import { parseApiError } from "@/providers/app-state";
 import type { NotificationDTO } from "@/models";
@@ -28,6 +29,8 @@ type NotificationsResponse = {
 };
 
 let previewCache: { at: number; data: NotificationsResponse } | null = null;
+/** Single shared bootstrap across Strict Mode remounts. */
+let previewBootstrapPromise: Promise<NotificationsResponse> | null = null;
 
 async function fetchNotificationPreview(opts?: {
   force?: boolean;
@@ -66,8 +69,21 @@ async function fetchNotificationPreview(opts?: {
   );
 }
 
+function bootstrapNotificationPreview(): Promise<NotificationsResponse> {
+  if (previewCache && Date.now() - previewCache.at < PREVIEW_TTL_MS) {
+    return Promise.resolve(previewCache.data);
+  }
+  if (!previewBootstrapPromise) {
+    previewBootstrapPromise = fetchNotificationPreview().finally(() => {
+      previewBootstrapPromise = null;
+    });
+  }
+  return previewBootstrapPromise;
+}
+
 function invalidatePreviewCache() {
   previewCache = null;
+  previewBootstrapPromise = null;
 }
 
 export function NotificationBell() {
@@ -98,21 +114,23 @@ export function NotificationBell() {
   );
 
   React.useEffect(() => {
-    // One bootstrap fetch for the header badge. Fresh data loads when the
-    // dropdown opens — no background polling on every page (including seating).
+    // Defer badge fetch until after critical workspace APIs start.
     let cancelled = false;
-    void (async () => {
-      try {
-        const data = await fetchNotificationPreview();
-        if (!cancelled) applyPreview(data);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "Failed to load notifications");
+    const cancelIdle = scheduleIdle(() => {
+      void (async () => {
+        try {
+          const data = await bootstrapNotificationPreview();
+          if (!cancelled) applyPreview(data);
+        } catch (e) {
+          if (!cancelled) {
+            setError(e instanceof Error ? e.message : "Failed to load notifications");
+          }
         }
-      }
-    })();
+      })();
+    }, 2_000);
     return () => {
       cancelled = true;
+      cancelIdle();
     };
   }, [applyPreview]);
 
@@ -155,7 +173,6 @@ export function NotificationBell() {
   const handleOpenChange = (nextOpen: boolean) => {
     setOpen(nextOpen);
     if (!nextOpen) return;
-    // Single refresh on open (removed duplicate useEffect that also refreshed).
     setLoading(true);
     void refreshNotifications({ force: true }).finally(() => setLoading(false));
   };

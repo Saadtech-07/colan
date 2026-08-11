@@ -21,14 +21,20 @@ export function workspaceSlicesForPath(pathname: string): WorkspaceSlice[] {
     return ["roles", "employees", "projects", "teams"];
   }
   if (p === "/dashboard") {
-    return ["roles", "employees", "projects", "teams", "dbStatus"];
+    // dbStatus loads in the background after core slices (non-blocking).
+    return ["roles", "employees", "projects", "teams"];
   }
   if (p.startsWith("/projects")) {
-    return ["roles", "employees", "projects", "teams", "dbStatus"];
+    return ["roles", "employees", "projects", "teams"];
   }
 
   // Unknown dashboard routes: load core directory data only (no gallery).
   return ["roles", "employees", "projects", "teams"];
+}
+
+export function pathsThatWantBackgroundDbStatus(pathname: string): boolean {
+  const p = (pathname.replace(/\/$/, "") || "/").toLowerCase();
+  return p === "/dashboard" || p.startsWith("/projects");
 }
 
 export function isChatRoute(pathname: string): boolean {

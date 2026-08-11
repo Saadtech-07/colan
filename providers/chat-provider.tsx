@@ -11,6 +11,7 @@ import {
   sortConversations,
 } from "@/lib/chat-client";
 import { dedupeAsync } from "@/lib/dedupe-async";
+import { scheduleIdle } from "@/lib/schedule-idle";
 import { isChatRoute } from "@/lib/workspace-route-data";
 import { useAppState } from "@/providers/app-state";
 import type { MessageDTO } from "@/models";
@@ -151,16 +152,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       conversationsBootstrappedRef.current = false;
       return;
     }
-    // Global chrome: unread badge only
+
+    let cancelIdle: (() => void) | undefined;
+
+    // Defer unread badge so dashboard/workspace APIs are not competing on first paint.
     if (!chatBootstrappedRef.current) {
-      chatBootstrappedRef.current = true;
-      void refreshUnreadRef.current();
+      cancelIdle = scheduleIdle(() => {
+        if (chatBootstrappedRef.current) return;
+        chatBootstrappedRef.current = true;
+        void refreshUnreadRef.current();
+      }, 2_500);
     }
-    // Full inbox only on the chat page
+
+    // Full inbox only on the chat page (immediate — user is already there).
     if (onChatPage && !conversationsBootstrappedRef.current) {
       conversationsBootstrappedRef.current = true;
       void refreshConversationsRef.current();
     }
+
+    return () => {
+      cancelIdle?.();
+    };
   }, [status, canUseChat, onChatPage]);
 
   React.useEffect(() => {

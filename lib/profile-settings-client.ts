@@ -39,7 +39,7 @@ export async function fetchProfileSettings(
     const data = (await res.json()) as ProfileSettingsDTO;
     profileCache = { email: normalized, at: Date.now(), data };
     return data;
-  });
+  }, { ttlMs: PROFILE_TTL_MS, force: opts?.force });
 }
 
 export function invalidateProfileSettingsCache() {
