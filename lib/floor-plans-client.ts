@@ -22,15 +22,19 @@ export async function fetchFloorPlanSummaries(opts?: {
 }): Promise<FloorPlanSummary[]> {
   if (!opts?.force && summaryCache) return summaryCache;
 
-  return dedupeAsync("floor-plans:list", async () => {
-    const res = await fetch("/api/floor-plans", { credentials: "include" });
-    if (!res.ok) {
-      throw new Error(`Failed to load floor plans (${res.status})`);
-    }
-    const plans = (await res.json()) as FloorPlanSummary[];
-    summaryCache = plans;
-    return plans;
-  });
+  return dedupeAsync(
+    "floor-plans:list",
+    async () => {
+      const res = await fetch("/api/floor-plans", { credentials: "include" });
+      if (!res.ok) {
+        throw new Error(`Failed to load floor plans (${res.status})`);
+      }
+      const plans = (await res.json()) as FloorPlanSummary[];
+      summaryCache = plans;
+      return plans;
+    },
+    { ttlMs: 30_000, force: opts?.force },
+  );
 }
 
 export async function fetchFloorPlanDetail(
@@ -43,21 +47,25 @@ export async function fetchFloorPlanDetail(
     return detailCache.get(key) ?? null;
   }
 
-  return dedupeAsync(`floor-plans:detail:${key}`, async () => {
-    const res = await fetch(`/api/floor-plans/${encodeURIComponent(key)}`, {
-      credentials: "include",
-    });
-    if (res.status === 404) {
-      detailCache.delete(key);
-      return null;
-    }
-    if (!res.ok) {
-      throw new Error(`Failed to load floor plan (${res.status})`);
-    }
-    const plan = (await res.json()) as FloorPlanDTO;
-    detailCache.set(key, plan);
-    return plan;
-  });
+  return dedupeAsync(
+    `floor-plans:detail:${key}`,
+    async () => {
+      const res = await fetch(`/api/floor-plans/${encodeURIComponent(key)}`, {
+        credentials: "include",
+      });
+      if (res.status === 404) {
+        detailCache.delete(key);
+        return null;
+      }
+      if (!res.ok) {
+        throw new Error(`Failed to load floor plan (${res.status})`);
+      }
+      const plan = (await res.json()) as FloorPlanDTO;
+      detailCache.set(key, plan);
+      return plan;
+    },
+    { ttlMs: 30_000, force: opts?.force },
+  );
 }
 
 export function invalidateFloorPlanClientCache(slug?: string) {

@@ -49,7 +49,6 @@ import { branchKeyForPlan, blockLabelForPlan } from "@/lib/floor-plan-branch";
 import {
   fetchFloorPlanDetail,
   fetchFloorPlanSummaries,
-  invalidateFloorPlanClientCache,
   swapFloorPlanCabinsClient,
 } from "@/lib/floor-plans-client";
 import type { FloorPlanDTO, FloorPlanSummary } from "@/models/floor-plan.model";
@@ -263,8 +262,9 @@ export default function SeatingPage() {
     (async () => {
       setPlansLoading(true);
       try {
-        invalidateFloorPlanClientCache();
-        const plans = await fetchFloorPlanSummaries({ force: true });
+        // Use client cache when warm (mutations already invalidate). Avoids
+        // duplicate cold fetches on remount / Strict Mode.
+        const plans = await fetchFloorPlanSummaries();
         if (cancelled) return;
         setOfficePlans(plans);
       } catch {
@@ -287,7 +287,7 @@ export default function SeatingPage() {
     (async () => {
       setPlanLoading(true);
       try {
-        const plan = await fetchFloorPlanDetail(officeSlug, { force: true });
+        const plan = await fetchFloorPlanDetail(officeSlug);
         if (cancelled) return;
         if (!plan) {
           setActivePlan(null);
@@ -314,7 +314,7 @@ export default function SeatingPage() {
             (p) => p.slug !== plan.slug && branchKeyForPlan(p) === branchKey,
           );
           if (sibling) {
-            const siblingPlan = await fetchFloorPlanDetail(sibling.slug, { force: true });
+            const siblingPlan = await fetchFloorPlanDetail(sibling.slug);
             if (!cancelled) setCompanionPlan(siblingPlan);
           } else if (!cancelled) {
             setCompanionPlan(null);
@@ -324,7 +324,7 @@ export default function SeatingPage() {
             officeSlug === CHENNAI_BLOCK_A_SLUG
               ? CHENNAI_BLOCK_B_SLUG
               : CHENNAI_BLOCK_A_SLUG;
-          const siblingPlan = await fetchFloorPlanDetail(siblingSlug, { force: true });
+          const siblingPlan = await fetchFloorPlanDetail(siblingSlug);
           if (!cancelled) setCompanionPlan(siblingPlan);
         } else if (!cancelled) {
           setCompanionPlan(null);

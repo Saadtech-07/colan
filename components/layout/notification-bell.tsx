@@ -17,9 +17,8 @@ import { cn } from "@/lib/utils";
 import { parseApiError } from "@/providers/app-state";
 import type { NotificationDTO } from "@/models";
 
-const POLL_MS = 45_000;
 const PREVIEW_LIMIT = 2;
-const PREVIEW_TTL_MS = 8_000;
+const PREVIEW_TTL_MS = 30_000;
 const PREVIEW_CACHE_KEY = `notifications:preview:limit=${PREVIEW_LIMIT}&unreadOnly=true`;
 
 type NotificationsResponse = {
@@ -41,26 +40,30 @@ async function fetchNotificationPreview(opts?: {
     return previewCache.data;
   }
 
-  return dedupeAsync(PREVIEW_CACHE_KEY, async () => {
-    const res = await fetch(
-      `/api/notifications?limit=${PREVIEW_LIMIT}&unreadOnly=true`,
-      {
-        credentials: "include",
-        cache: "no-store",
-      },
-    );
-    if (!res.ok) {
-      if (res.status === 401 || res.status === 403 || res.status === 404) {
-        const empty = { notifications: [], unreadCount: 0, totalCount: 0 };
-        previewCache = { at: Date.now(), data: empty };
-        return empty;
+  return dedupeAsync(
+    PREVIEW_CACHE_KEY,
+    async () => {
+      const res = await fetch(
+        `/api/notifications?limit=${PREVIEW_LIMIT}&unreadOnly=true`,
+        {
+          credentials: "include",
+          cache: "no-store",
+        },
+      );
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 404) {
+          const empty = { notifications: [], unreadCount: 0, totalCount: 0 };
+          previewCache = { at: Date.now(), data: empty };
+          return empty;
+        }
+        throw new Error(await parseApiError(res));
       }
-      throw new Error(await parseApiError(res));
-    }
-    const data = (await res.json()) as NotificationsResponse;
-    previewCache = { at: Date.now(), data };
-    return data;
-  });
+      const data = (await res.json()) as NotificationsResponse;
+      previewCache = { at: Date.now(), data };
+      return data;
+    },
+    { ttlMs: PREVIEW_TTL_MS, force: opts?.force },
+  );
 }
 
 function invalidatePreviewCache() {
@@ -95,12 +98,23 @@ export function NotificationBell() {
   );
 
   React.useEffect(() => {
-    void refreshNotifications();
-    const timer = window.setInterval(() => {
-      void refreshNotifications({ force: true });
-    }, POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [refreshNotifications]);
+    // One bootstrap fetch for the header badge. Fresh data loads when the
+    // dropdown opens — no background polling on every page (including seating).
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await fetchNotificationPreview();
+        if (!cancelled) applyPreview(data);
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load notifications");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyPreview]);
 
   const removeFromPopup = React.useCallback((notificationId: string) => {
     setNotifications((prev) => prev.filter((item) => item.id !== notificationId));
