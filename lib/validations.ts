@@ -640,4 +640,40 @@ export const chatMarkReadSchema = z.object({
   conversationId: z.string().trim().min(1).optional(),
 });
 
+const seatingChangeKindSchema = z.enum([
+  "assign-seat",
+  "clear-seat",
+  "move-seat",
+  "swap-seats",
+  "assign-cabin",
+  "clear-cabin",
+  "set-cabin-members",
+  "swap-cabins",
+]);
+
+export const seatingChangeRecordSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  kind: seatingChangeKindSchema,
+  officeSlug: z.string().trim().min(1).max(64),
+  summary: z.string().trim().min(1).max(400),
+  seatId: z.string().trim().min(1).max(32).optional(),
+  fromSeatId: z.string().trim().min(1).max(32).optional(),
+  toSeatId: z.string().trim().min(1).max(32).optional(),
+  cabinId: z.string().trim().min(1).max(64).optional(),
+  fromCabinId: z.string().trim().min(1).max(64).optional(),
+  toCabinId: z.string().trim().min(1).max(64).optional(),
+  fromCabinLabel: z.string().trim().max(80).optional(),
+  toCabinLabel: z.string().trim().max(80).optional(),
+  employeeId: z.string().trim().min(1).max(40).nullable().optional(),
+  employeeIds: z.array(z.string().trim().min(1).max(40)).max(40).optional(),
+  employeeName: z.string().trim().max(120).optional(),
+  fromEmployeeName: z.string().trim().max(120).optional(),
+  toEmployeeName: z.string().trim().max(120).optional(),
+});
+
+export const seatingVersionSaveSchema = z.object({
+  officeSlug: z.string().trim().min(1).max(64),
+  changes: z.array(seatingChangeRecordSchema).min(1).max(80),
+});
+
 

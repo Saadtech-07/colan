@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Bell, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +15,7 @@ import {
 import { NotificationListItem } from "@/components/notifications/notification-list-item";
 import { dedupeAsync } from "@/lib/dedupe-async";
 import { scheduleIdle } from "@/lib/schedule-idle";
+import { isSeatingRoute } from "@/lib/workspace-route-data";
 import { cn } from "@/lib/utils";
 import { parseApiError } from "@/providers/app-state";
 import type { NotificationDTO } from "@/models";
@@ -87,6 +89,7 @@ function invalidatePreviewCache() {
 }
 
 export function NotificationBell() {
+  const pathname = usePathname();
   const [notifications, setNotifications] = React.useState<NotificationDTO[]>([]);
   const [unreadCount, setUnreadCount] = React.useState(0);
   const [totalCount, setTotalCount] = React.useState(0);
@@ -114,6 +117,9 @@ export function NotificationBell() {
   );
 
   React.useEffect(() => {
+    // Seating loads occupancy first; badge waits until the bell is opened.
+    if (isSeatingRoute(pathname)) return;
+
     // Defer badge fetch until after critical workspace APIs start.
     let cancelled = false;
     const cancelIdle = scheduleIdle(() => {
@@ -132,7 +138,7 @@ export function NotificationBell() {
       cancelled = true;
       cancelIdle();
     };
-  }, [applyPreview]);
+  }, [applyPreview, pathname]);
 
   const removeFromPopup = React.useCallback((notificationId: string) => {
     setNotifications((prev) => prev.filter((item) => item.id !== notificationId));
@@ -274,7 +280,7 @@ export function NotificationBell() {
               className="h-11 w-full rounded-full border-border/70 text-sm font-normal"
               asChild
             >
-              <Link href="/notifications" onClick={() => setOpen(false)}>
+              <Link href="/notifications" prefetch={false} onClick={() => setOpen(false)}>
                 View all
               </Link>
             </Button>

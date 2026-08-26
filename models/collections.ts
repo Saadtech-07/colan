@@ -10,6 +10,7 @@ export const COLLECTIONS = {
   companyRoles: "company_roles",
   seatingBays: "seating_bays",
   seatingAssignments: "seating_assignments",
+  seatingVersions: "seating_versions",
   floorPlans: "floor_plans",
   teamMembers: "team_members",
   projects: "projects",

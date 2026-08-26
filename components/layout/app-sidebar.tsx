@@ -83,6 +83,7 @@ function SidebarNavItem({
     <div className="group/nav relative">
       <Link
         href={href}
+        prefetch={false}
         onClick={onNavigate}
         title={collapsed ? label : undefined}
         className={cn(
@@ -286,6 +287,7 @@ export function AppSidebar() {
           {showExpandedChrome ? (
             <Link
               href="/dashboard"
+              prefetch={false}
               onClick={() => setMobileOpen(false)}
               className="flex h-full items-center gap-2.5 px-2.5 transition-colors hover:bg-sidebar-accent/40"
               title="Go to Dashboard"
@@ -310,6 +312,7 @@ export function AppSidebar() {
             <div className="flex h-full items-center justify-center px-2">
               <Link
                 href="/dashboard"
+                prefetch={false}
                 className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 ring-1 ring-white/10 transition-colors hover:bg-sidebar-accent/80"
                 title="Go to Dashboard"
               >

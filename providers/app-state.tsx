@@ -12,7 +12,11 @@ import {
 import { hydrateRoleRegistry } from "@/lib/role-registry";
 import { resolveProfileImageSrc } from "@/lib/profile-image";
 import { sanitizeSessionImageUrl } from "@/lib/session-token";
-import { workspaceSlicesForPath, pathsThatWantBackgroundDbStatus } from "@/lib/workspace-route-data";
+import {
+  workspaceSlicesForPath,
+  pathsThatWantBackgroundDbStatus,
+  isSeatingRoute,
+} from "@/lib/workspace-route-data";
 import { scheduleIdle } from "@/lib/schedule-idle";
 import type { WorkspaceSlice } from "@/lib/workspace-slices";
 import { fetchProfileSettings } from "@/lib/profile-settings-client";
@@ -57,6 +61,8 @@ type AppStateContextValue = {
   ) => Promise<void>;
   /** Apply a project mutation result locally (no workspace re-sync overlay). */
   applyProjectUpdate: (project: Project) => void;
+  /** Replace the employee directory after a seating save. */
+  applyEmployeesUpdate: (next: Employee[]) => void;
   /** Apply profile fields already loaded elsewhere (no network). */
   applyProfileSnapshot: (profile: ProfileSessionSync & { imageUrl?: string }) => Promise<void>;
   /** Load profile image from the server (session omits large data URLs). */
@@ -447,11 +453,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // Seating only needs occupancy; session avatar is enough for the header.
+    if (isSeatingRoute(pathname)) return;
+
     // Defer avatar fetch so roles/employees/projects can win the first network wave.
     return scheduleIdle(() => {
       void refreshProfileAvatar();
     }, 2_000);
-  }, [profileSessionEmail, refreshProfileAvatar, sessionStatus]);
+  }, [pathname, profileSessionEmail, refreshProfileAvatar, sessionStatus]);
 
   const logout = React.useCallback(async () => {
     await signOut({ callbackUrl: "/login" });
@@ -536,6 +545,11 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     const created = (await res.json()) as Project;
     setProjects((prev) => [...prev, created]);
     return created;
+  }, []);
+
+  const applyEmployeesUpdate = React.useCallback((next: Employee[]) => {
+    invalidateWorkspaceApiCache("workspace:GET:/api/employees");
+    setEmployees(next);
   }, []);
 
   const applyProjectUpdate = React.useCallback((project: Project) => {
@@ -646,6 +660,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       refreshData,
       ensureWorkspaceData,
       applyProjectUpdate,
+      applyEmployeesUpdate,
       applyProfileSnapshot,
       refreshProfileAvatar,
       addEmployee,
@@ -680,6 +695,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       refreshData,
       ensureWorkspaceData,
       applyProjectUpdate,
+      applyEmployeesUpdate,
       applyProfileSnapshot,
       refreshProfileAvatar,
       addEmployee,

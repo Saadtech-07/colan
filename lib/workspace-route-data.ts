@@ -8,7 +8,9 @@ export function workspaceSlicesForPath(pathname: string): WorkspaceSlice[] {
   const p = (pathname.replace(/\/$/, "") || "/").toLowerCase();
 
   if (p === "/gallery") return ["roles", "gallery"];
-  if (p.startsWith("/seating")) return ["roles", "employees", "teams"];
+  // Create/edit floor only needs RBAC. Occupancy comes from employees on /seating.
+  if (p.startsWith("/seating/floors")) return ["roles"];
+  if (p.startsWith("/seating")) return ["roles", "employees"];
   if (p === "/roles" || p.startsWith("/organization/roles")) return ["roles"];
   if (p.startsWith("/chat") || p.startsWith("/notifications")) return ["roles"];
   if (p.startsWith("/profile-settings")) return ["roles"];
@@ -40,4 +42,9 @@ export function pathsThatWantBackgroundDbStatus(pathname: string): boolean {
 export function isChatRoute(pathname: string): boolean {
   const p = (pathname.replace(/\/$/, "") || "/").toLowerCase();
   return p === "/chat" || p.startsWith("/chat/");
+}
+
+export function isSeatingRoute(pathname: string): boolean {
+  const p = (pathname.replace(/\/$/, "") || "/").toLowerCase();
+  return p === "/seating" || p.startsWith("/seating/");
 }

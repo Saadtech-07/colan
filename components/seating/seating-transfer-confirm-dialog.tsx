@@ -219,6 +219,9 @@ export function SeatingTransferConfirmDialog({
           </DialogHeader>
         </div>
 
+        <p className="px-6 pb-1 text-center text-[11px] text-muted-foreground">
+          This stays pending until you click Save Changes.
+        </p>
         <DialogFooter className="flex-row justify-center gap-3 border-t border-border/60 bg-muted/20 px-6 py-5 sm:justify-center">
           <Button
             type="button"

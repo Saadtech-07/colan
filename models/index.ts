@@ -8,6 +8,7 @@ export * from "./company-role.model";
 export type { WorkspaceRole } from "./company-role.model";
 export * from "./seating-bay.model";
 export * from "./seating-assignment.model";
+export * from "./seating-version.model";
 export * from "./floor-plan.model";
 export * from "./team-member.model";
 export * from "./project.model";

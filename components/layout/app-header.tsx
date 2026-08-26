@@ -210,7 +210,9 @@ export function AppHeader() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/profile-settings">Profile settings</Link>
+              <Link href="/profile-settings" prefetch={false}>
+                Profile settings
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={logout} className="gap-2 text-destructive focus:text-destructive">
               <LogOut className="h-4 w-4" />

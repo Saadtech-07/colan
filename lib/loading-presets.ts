@@ -52,6 +52,10 @@ export const LOADING_PRESETS = {
     title: "Updating seating",
     description: "Updating seat assignment...",
   },
+  seatingSaveVersion: {
+    title: "Saving seating",
+    description: "Applying pending seat changes and creating a version...",
+  },
   seatingAiGenerate: {
     title: "Generating seating layout",
     description: "Building seat suggestions...",
@@ -106,6 +110,7 @@ export const LOADING_KEY_PRIORITY = [
   "employee-projects",
   "project-create",
   "seating-assign",
+  "seating-save-version",
   "seating-ai-generate",
   "seating-layout-edit",
   "seating-ai-apply",

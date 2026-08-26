@@ -12,7 +12,7 @@ import {
 } from "@/lib/chat-client";
 import { dedupeAsync } from "@/lib/dedupe-async";
 import { scheduleIdle } from "@/lib/schedule-idle";
-import { isChatRoute } from "@/lib/workspace-route-data";
+import { isChatRoute, isSeatingRoute } from "@/lib/workspace-route-data";
 import { useAppState } from "@/providers/app-state";
 import type { MessageDTO } from "@/models";
 import type { ChatConversationSummary } from "@/types/chat";
@@ -39,6 +39,7 @@ const ChatContext = React.createContext<ChatContextValue | null>(null);
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const onChatPage = isChatRoute(pathname);
+  const onSeatingPage = isSeatingRoute(pathname);
   const { data: session, status } = useSession();
   const { access } = useAppState();
   const canUseChat = !!access && canAccessChat(access.role);
@@ -155,8 +156,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     let cancelIdle: (() => void) | undefined;
 
-    // Defer unread badge so dashboard/workspace APIs are not competing on first paint.
-    if (!chatBootstrappedRef.current) {
+    // Seating should not compete with floor-plan APIs for the unread badge.
+    if (!onSeatingPage && !chatBootstrappedRef.current) {
       cancelIdle = scheduleIdle(() => {
         if (chatBootstrappedRef.current) return;
         chatBootstrappedRef.current = true;
@@ -173,7 +174,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelIdle?.();
     };
-  }, [status, canUseChat, onChatPage]);
+  }, [status, canUseChat, onChatPage, onSeatingPage]);
 
   React.useEffect(() => {
     if (!onChatPage) {
@@ -192,7 +193,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [activeConversationId, loadMessages, onChatPage]);
 
   React.useEffect(() => {
-    if (status !== "authenticated" || !canUseChat || !session?.user) return;
+    if (status !== "authenticated" || !canUseChat || !session?.user || !onChatPage) return;
 
     const instance = io({
       path: "/api/socket/io",
@@ -273,7 +274,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       setSocket(null);
       setConnected(false);
     };
-  }, [status, canUseChat, session?.user?.email]);
+  }, [status, canUseChat, session?.user?.email, onChatPage]);
 
   const sendMessage = React.useCallback(
     async (text: string) => {
