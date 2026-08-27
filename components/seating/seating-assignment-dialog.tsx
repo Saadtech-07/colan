@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Loader2, Search, UserMinus } from "lucide-react";
+import { Check, History, Loader2, Search, UserMinus } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -112,6 +112,7 @@ type Props = {
   onAssignMany?: (employeeIds: string[]) => void;
   onRemove: () => void;
   onReassign?: (targetId: string) => void;
+  onViewHistory?: () => void;
 };
 
 export function SeatingAssignmentDialog({
@@ -133,6 +134,7 @@ export function SeatingAssignmentDialog({
   onAssignMany,
   onRemove,
   onReassign,
+  onViewHistory,
 }: Props) {
   const isCabin = !!cabinId;
   const isTeamCabin = isCabin && isTeamCabinLabel(cabinLabel);
@@ -233,8 +235,12 @@ export function SeatingAssignmentDialog({
                   ? "View assignment, move to another cabin, or remove."
                   : "View assignment, move to another seat, or remove."
                 : isCabin
-                  ? "Search and assign one person to this cabin (CFO, Manager, CEO, …)."
-                  : "Search and assign a team member to this seat."}
+                  ? canAssign
+                    ? "Search and assign one person to this cabin (CFO, Manager, CEO, …)."
+                    : "View this cabin’s current assignment."
+                  : canAssign
+                    ? "Search and assign a team member to this seat."
+                    : "View this seat’s assignment history."}
           </DialogDescription>
         </DialogHeader>
 
@@ -432,7 +438,15 @@ export function SeatingAssignmentDialog({
               </div>
             ) : null}
 
-            <DialogFooter>
+            <DialogFooter className="gap-2 sm:justify-between">
+              {onViewHistory && !isCabin ? (
+                <Button type="button" variant="outline" disabled={saving} onClick={onViewHistory} className="gap-1.5">
+                  <History className="h-4 w-4" />
+                  View History
+                </Button>
+              ) : (
+                <span />
+              )}
               <Button type="button" variant="outline" disabled={saving} onClick={onClose}>
                 Close
               </Button>

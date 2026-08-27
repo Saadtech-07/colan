@@ -1,7 +1,5 @@
 export const AUTH_COOKIE_NAME = "colan_token";
-
-/** 30 days */
-export const AUTH_MAX_AGE_SEC = 30 * 24 * 60 * 60;
+export const AUTH_MAX_AGE_SEC = 24 * 60 * 60; // 24 hours
 
 export function getAuthSecret(): string {
   const secret = process.env.AUTH_SECRET?.trim();

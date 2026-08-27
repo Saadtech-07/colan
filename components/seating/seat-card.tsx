@@ -1,6 +1,6 @@
 "use client";
 
-import * as React from "react";
+import { History } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { teamColorClasses } from "@/lib/seating-utils";
 import { SeatingSeatBlock } from "@/components/seating/seating-3d";
@@ -18,6 +18,7 @@ type Props = {
   inLayoutCanvas?: boolean;
   canAssign: boolean;
   onSelect: () => void;
+  onViewHistory?: () => void;
   onDragStart?: (employeeId: string) => void;
   onDrop?: () => void;
 };
@@ -32,6 +33,7 @@ export function SeatCard({
   inLayoutCanvas = false,
   canAssign,
   onSelect,
+  onViewHistory,
   onDragStart,
   onDrop,
 }: Props) {
@@ -43,7 +45,6 @@ export function SeatCard({
     <SeatingSeatBlock occupied={occupied} emphasized={emphasized}>
       <button
         type="button"
-        disabled={!canAssign && !occupied}
         draggable={canAssign && occupied}
         onDragStart={(e) => {
           if (!occupant || !canAssign) return;
@@ -87,7 +88,7 @@ export function SeatCard({
             !occupied &&
             "border-violet-300/70 ring-2 ring-violet-400/50 ring-offset-2 ring-offset-white",
           dimmed && "opacity-35 saturate-[0.75]",
-          !canAssign && "cursor-default",
+          !canAssign && "cursor-pointer",
         )}
         title={
           layoutZoneLabel && !occupied
@@ -164,6 +165,21 @@ export function SeatCard({
           </div>
         )}
       </button>
+      {onViewHistory ? (
+        <button
+          type="button"
+          className="absolute right-1.5 top-1.5 z-40 inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200/80 bg-white/95 text-slate-500 shadow-sm transition-colors hover:bg-white hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`View history for seat ${seatId}`}
+          title="View history"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onViewHistory();
+          }}
+        >
+          <History className="h-3 w-3" />
+        </button>
+      ) : null}
     </SeatingSeatBlock>
   );
 }

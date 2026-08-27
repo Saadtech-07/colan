@@ -42,6 +42,7 @@ type SharedFloorProps = {
   viewMode: "all" | "occupied" | "available";
   canAssign: boolean;
   onSeatClick: (seatId: string, officeSlug: string) => void;
+  onViewSeatHistory?: (seatId: string, officeSlug: string) => void;
   onCabinClick?: (cabinId: string, officeSlug: string) => void;
   onAssignSeat: (seatId: string, employeeId: string, officeSlug: string) => void;
   onSwapSeats?: (fromSeatId: string, toSeatId: string, officeSlug: string) => void;
@@ -80,6 +81,7 @@ export function SeatingFloorPlanFullscreen({
   viewMode,
   canAssign,
   onSeatClick,
+  onViewSeatHistory,
   onCabinClick,
   onAssignSeat,
   onSwapSeats,
@@ -211,6 +213,11 @@ export function SeatingFloorPlanFullscreen({
                     : undefined
                 }
                 onSeatClick={(seatId) => onSeatClick(seatId, block.officeSlug)}
+                onViewSeatHistory={
+                  onViewSeatHistory
+                    ? (seatId) => onViewSeatHistory(seatId, block.officeSlug)
+                    : undefined
+                }
                 onAssignSeat={(seatId, employeeId) =>
                   onAssignSeat(seatId, employeeId, block.officeSlug)
                 }
