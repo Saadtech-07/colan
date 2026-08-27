@@ -32,6 +32,7 @@ function renderCell(
     hideSeat: (seatId: string, emp: Employee | null) => boolean;
     canAssign: boolean;
     onSeatClick: (seatId: string) => void;
+    onViewSeatHistory?: (seatId: string) => void;
     onSeatDrop: (seatId: string) => void;
     dragEmployeeId: string | null;
     onDragStart: (employeeId: string) => void;
@@ -127,6 +128,9 @@ function renderCell(
           layoutZoneLabel={ctx.zoneBySeat.get(cell.id) ?? null}
           canAssign={ctx.canAssign}
           onSelect={() => ctx.onSeatClick(cell.id)}
+          onViewHistory={
+            ctx.onViewSeatHistory ? () => ctx.onViewSeatHistory?.(cell.id) : undefined
+          }
           onDragStart={ctx.onDragStart}
           onDrop={() => ctx.onSeatDrop(cell.id)}
         />
@@ -150,6 +154,7 @@ type Props = {
   hideSeat: (seatId: string, emp: Employee | null) => boolean;
   canAssign: boolean;
   onSeatClick: (seatId: string) => void;
+  onViewSeatHistory?: (seatId: string) => void;
   onSeatDrop: (seatId: string) => void;
   dragEmployeeId: string | null;
   onDragStart: (employeeId: string) => void;

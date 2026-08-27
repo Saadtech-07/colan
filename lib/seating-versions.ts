@@ -13,6 +13,7 @@ import {
 import { getFloorPlanBySlug, swapFloorPlanCabins } from "@/lib/floor-plans";
 import { normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
 import { snapshotFromPlan } from "@/lib/seating-draft";
+import { recordSeatHistoryForChanges } from "@/lib/seating-seat-history";
 import type { SeatingPendingChange } from "@/lib/seating-draft";
 import type {
   SeatingVersionActor,
@@ -179,11 +180,18 @@ export async function saveSeatingVersion(input: {
     throw new Error("No seating changes to save.");
   }
 
+  let employees = await listEmployees();
+  await recordSeatHistoryForChanges({
+    employees,
+    changes,
+    actor: input.actor,
+  });
+
   for (const change of changes) {
     await applyChangeOnServer(change);
   }
 
-  let employees = await listEmployees();
+  employees = await listEmployees();
   const offices = [...new Set(changes.map((change) => normalizeOfficeSlug(change.officeSlug)))];
   const versions: SeatingVersionDTO[] = [];
 

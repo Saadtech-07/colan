@@ -52,6 +52,7 @@ type Props = {
   selectedCabinId?: string | null;
   onCabinClick?: (cabinId: string) => void;
   onSeatClick: (seatId: string) => void;
+  onViewSeatHistory?: (seatId: string) => void;
   onAssignSeat: (seatId: string, employeeId: string) => void;
   /** Drag an occupied seat onto another occupied seat to swap. */
   onSwapSeats?: (fromSeatId: string, toSeatId: string) => void;
@@ -91,6 +92,7 @@ export const SeatingFloorPlan = React.forwardRef<SeatingFloorPlanHandle, Props>(
       selectedCabinId = null,
       onCabinClick,
       onSeatClick,
+      onViewSeatHistory,
       onAssignSeat,
       onSwapSeats,
       onSwapCabins,
@@ -255,6 +257,7 @@ export const SeatingFloorPlan = React.forwardRef<SeatingFloorPlanHandle, Props>(
                   hideSeat={hideSeat}
                   canAssign={canAssign}
                   onSeatClick={onSeatClick}
+                  onViewSeatHistory={onViewSeatHistory}
                   onSeatDrop={(seatId) => {
                     if (!dragEmployeeId || !dragSourceSeatId) return;
                     if (seatId === dragSourceSeatId) {
