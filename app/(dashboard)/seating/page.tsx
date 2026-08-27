@@ -32,6 +32,7 @@ import { SeatingToolbar, SeatingZoomControls } from "@/components/seating/seatin
 import { SeatingOfficeSelect } from "@/components/seating/seating-office-select";
 import { SeatingPendingBar } from "@/components/seating/seating-pending-bar";
 import { SeatingVersionHistory } from "@/components/seating/seating-version-history";
+import { SeatingSeatHistorySheet } from "@/components/seating/seating-seat-history-sheet";
 import type { SeatingAiSuggestion } from "@/lib/seating-ai-types";
 import type { Employee } from "@/types";
 import { layoutSeatSet, zoneLabelBySeat } from "@/lib/seating-ai-layout-builder";
@@ -241,6 +242,10 @@ export default function SeatingPage() {
   const [pendingChanges, setPendingChanges] = React.useState<SeatingPendingChange[]>([]);
   const [viewingVersion, setViewingVersion] = React.useState<SeatingVersionDTO | null>(null);
   const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [seatHistory, setSeatHistory] = React.useState<{
+    officeSlug: string;
+    seatId: string;
+  } | null>(null);
   const [planLoading, setPlanLoading] = React.useState(false);
   const [dialogOfficeSlug, setDialogOfficeSlug] = React.useState(DEFAULT_OFFICE_SLUG);
   const [seatTransferPending, setSeatTransferPending] =
@@ -931,8 +936,15 @@ export default function SeatingPage() {
     setSelectedCabinId(null);
     setDialogCabinId(null);
     setDialogOfficeSlug(targetOfficeSlug);
-    if (allowAssign) setDialogSeat(seatId);
+    setDialogSeat(seatId);
   };
+
+  const openSeatHistory = React.useCallback(
+    (seatId: string, targetOfficeSlug = officeSlug) => {
+      setSeatHistory({ officeSlug: targetOfficeSlug, seatId });
+    },
+    [officeSlug],
+  );
 
   const handleCabinClick = (cabinId: string, targetOfficeSlug = officeSlug) => {
     if (layoutMode || promptLayoutActive) return;
@@ -1586,6 +1598,7 @@ export default function SeatingPage() {
             selectedCabinId={selectedCabinId}
             onCabinClick={handleCabinClick}
             onSeatClick={handleSeatClick}
+            onViewSeatHistory={openSeatHistory}
             onAssignSeat={(seatId, employeeId) =>
               requestMoveSeat(seatId, employeeId)
             }
@@ -1642,6 +1655,7 @@ export default function SeatingPage() {
         viewMode={viewMode}
         canAssign={allowAssign && !promptLayoutActive}
         onSeatClick={handleSeatClick}
+        onViewSeatHistory={openSeatHistory}
         onCabinClick={handleCabinClick}
         onAssignSeat={(seatId, employeeId, slug) =>
           requestMoveSeat(seatId, employeeId, slug)
@@ -1692,6 +1706,15 @@ export default function SeatingPage() {
           setDialogSeat(null);
           setDialogCabinId(null);
         }}
+        onViewHistory={
+          dialogSeat
+            ? () => {
+                openSeatHistory(dialogSeat, dialogOfficeSlug);
+                setDialogSeat(null);
+                setDialogCabinId(null);
+              }
+            : undefined
+        }
         onAssign={(employeeId) => {
           if (dialogCabinId) {
             void runAssignCabin(dialogCabinId, employeeId, dialogOfficeSlug);
@@ -1750,6 +1773,16 @@ export default function SeatingPage() {
         selectedVersionId={viewingVersion?.id ?? null}
         onOpenChange={setHistoryOpen}
         onViewVersion={setViewingVersion}
+        elevated={fullscreenOpen}
+      />
+
+      <SeatingSeatHistorySheet
+        open={!listMode && !!seatHistory}
+        officeSlug={seatHistory?.officeSlug ?? officeSlug}
+        seatId={seatHistory?.seatId ?? null}
+        onOpenChange={(open) => {
+          if (!open) setSeatHistory(null);
+        }}
         elevated={fullscreenOpen}
       />
     </div>

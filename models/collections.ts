@@ -11,6 +11,7 @@ export const COLLECTIONS = {
   seatingBays: "seating_bays",
   seatingAssignments: "seating_assignments",
   seatingVersions: "seating_versions",
+  seatingSeatHistory: "seating_seat_history",
   floorPlans: "floor_plans",
   teamMembers: "team_members",
   projects: "projects",

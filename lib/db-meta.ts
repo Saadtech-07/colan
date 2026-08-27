@@ -13,6 +13,7 @@ const COLLECTION_LABELS = {
   [COLLECTIONS.seatingBays]: "Seating bays",
   [COLLECTIONS.seatingAssignments]: "Seating assignments",
   [COLLECTIONS.seatingVersions]: "Seating versions",
+  [COLLECTIONS.seatingSeatHistory]: "Seating seat history",
   [COLLECTIONS.floorPlans]: "Floor plans",
   [COLLECTIONS.teamMembers]: "Team members",
   [COLLECTIONS.projects]: "Projects",
