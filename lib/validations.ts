@@ -1,0 +1,679 @@
+import { z } from "zod";
+import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
+
+import { COMPANY_ROLES } from "@/lib/constants";
+
+import { RBAC_MODULES, normalizeModulePermissions } from "@/lib/rbac-modules";
+
+import type { CompanyRole, ProjectStatus } from "@/types";
+
+
+
+const roleEnum = COMPANY_ROLES as unknown as [CompanyRole, ...CompanyRole[]];
+
+
+
+const projectStatuses: [ProjectStatus, ...ProjectStatus[]] = [
+
+  "Yet To Start",
+
+  "In Progress",
+
+  "Completed",
+
+];
+
+
+
+export const teamNameSchema = z.string().trim().min(1).max(80);
+
+export const teamCodeSchema = z
+  .string()
+  .trim()
+  .max(24, "Team code must be at most 24 characters")
+  .regex(/^[A-Za-z0-9-]*$/, "Team code may only contain letters, numbers, and hyphens")
+  .optional()
+  .transform((value) => (value && value.length > 0 ? value : undefined));
+
+const optionalEmployeeRefSchema = z.preprocess(
+  (value) => (value === null || value === undefined ? null : value),
+  z
+    .union([z.string(), z.null()])
+    .transform((value) => {
+      if (value === null) return null;
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }),
+);
+
+export const genderSchema = z.enum(["male", "female", "other"]);
+
+
+
+export const teamCreateSchema = z.object({
+
+  name: teamNameSchema,
+  code: teamCodeSchema,
+  teamLeadId: optionalEmployeeRefSchema,
+  teamManagerId: optionalEmployeeRefSchema,
+
+});
+
+export const teamUpdateSchema = z.object({
+  name: teamNameSchema,
+  code: teamCodeSchema,
+  teamLeadId: optionalEmployeeRefSchema,
+  teamManagerId: optionalEmployeeRefSchema,
+});
+
+
+
+const modulePermissionSchema = z.object({
+
+  view: z.boolean().optional(),
+
+  manage: z.boolean().optional(),
+
+  actions: z.record(z.string(), z.boolean()).optional(),
+
+});
+
+
+
+const permissionsSchema = z
+
+  .object(
+
+    RBAC_MODULES.reduce(
+
+      (acc, mod) => {
+
+        acc[mod] = modulePermissionSchema.optional();
+
+        return acc;
+
+      },
+
+      {} as Record<(typeof RBAC_MODULES)[number], z.ZodOptional<typeof modulePermissionSchema>>,
+
+    ),
+
+  )
+
+  .partial();
+
+
+
+export const workspaceRoleCreateSchema = z.object({
+
+  name: z.string().trim().min(1).max(80),
+
+  description: z.string().trim().max(500).optional().default(""),
+
+  color: z
+
+    .string()
+
+    .regex(/^#[0-9A-Fa-f]{6}$/, "Use a hex color like #2563eb"),
+
+  permissions: permissionsSchema,
+
+  responsibilities: z.array(z.string().trim().min(1)).optional().default([]),
+
+  scopes: z.array(z.string().trim().min(1)).optional().default([]),
+
+  teamScopedProjects: z.boolean().optional(),
+
+  teamScopedSeating: z.boolean().optional(),
+
+});
+
+
+
+export const workspaceRoleUpdateSchema = workspaceRoleCreateSchema.partial();
+
+
+
+export const employeeCreateSchema = z.object({
+
+  employeeId: z.string().min(1),
+
+  name: z.string().min(1),
+
+  team: teamNameSchema,
+
+  role: z.enum(roleEnum),
+
+  gender: genderSchema.optional().default("male"),
+
+  bayNumber: z.string().optional().default(""),
+
+  imageUrl: z.string().optional().default(""),
+
+});
+
+
+
+const optionalEmployeeIdSchema = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().trim().min(1).optional(),
+);
+
+export const appUserImageSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) =>
+      value === "" ||
+      /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value) ||
+      /^https?:\/\//.test(value),
+    "Use an image URL or upload an image file.",
+  );
+
+export const resumeDocumentSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) =>
+      value === "" ||
+      /^data:application\/pdf;base64,/.test(value) ||
+      /^https?:\/\/.+\.pdf(?:[?#].*)?$/i.test(value) ||
+      /^https?:\/\//.test(value),
+    "Upload a PDF resume or use a valid PDF URL.",
+  );
+
+export const resumeFileNameSchema = z.string().trim().max(120).optional();
+
+export const appUserCreateSchema = z
+  .object({
+    email: z.string().email(),
+    personalEmail: z.string().email(),
+    password: z.union([z.string().min(6), z.literal("")]).optional(),
+    name: z.string().min(1),
+    appRole: z.string().trim().min(1),
+    team: z.union([teamNameSchema, z.literal("")]).optional(),
+    employeeId: z.union([z.string().trim().min(1), z.literal("")]).optional(),
+    imageUrl: appUserImageSchema.optional(),
+    workEmail: z.union([z.string().email(), z.literal("")]).optional(),
+    phone: z.string().optional(),
+    location: z.string().optional(),
+    fullAddress: z.string().optional(),
+    currentAddress: z.string().optional(),
+    permanentAddress: z.string().optional(),
+    joinedDate: z.string().optional(),
+    notes: z.string().optional(),
+    bayNumber: z.string().optional(),
+    gender: genderSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.employeeId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["employeeId"],
+        message: "User ID is required.",
+      });
+    }
+
+    if (!roleNeedsEmployeeIdentity(value.appRole)) return;
+
+    if (!value.team?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["team"],
+        message: "Team is required for this role.",
+      });
+    }
+  });
+
+
+
+export const appUserUpdateSchema = z.object({
+
+  password: z.string().min(6).optional(),
+
+  name: z.string().min(1).optional(),
+
+  appRole: z.string().trim().min(1).optional(),
+
+  team: teamNameSchema.optional(),
+
+  employeeId: optionalEmployeeIdSchema,
+
+  imageUrl: appUserImageSchema.optional(),
+
+  workEmail: z.union([z.string().email(), z.literal("")]).optional(),
+
+  personalEmail: z.union([z.string().email(), z.literal("")]).optional(),
+
+  phone: z.string().optional(),
+
+  location: z.string().optional(),
+
+  fullAddress: z.string().optional(),
+
+  currentAddress: z.string().optional(),
+
+  permanentAddress: z.string().optional(),
+
+  joinedDate: z.string().optional(),
+
+  bayNumber: z.string().optional(),
+
+  gender: genderSchema.optional(),
+
+});
+
+const profileImageSchema = appUserImageSchema;
+
+export const profileSettingsUpdateSchema = z
+  .object({
+    imageUrl: profileImageSchema.optional(),
+    resumeUrl: resumeDocumentSchema.optional(),
+    resumeFileName: resumeFileNameSchema,
+    resumeMimeType: z.string().trim().optional(),
+    currentPassword: z.string().optional().default(""),
+    newPassword: z.string().optional().default(""),
+    confirmNewPassword: z.string().optional().default(""),
+  })
+  .superRefine((value, ctx) => {
+    const wantsPasswordChange = value.newPassword.trim().length > 0;
+    if (!wantsPasswordChange) return;
+
+    if ((value.currentPassword ?? "").trim().length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["currentPassword"],
+        message: "Current password is required.",
+      });
+    }
+
+    if (value.newPassword!.trim().length < 6) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["newPassword"],
+        message: "New password must be at least 6 characters.",
+      });
+    }
+
+    if ((value.confirmNewPassword ?? "").trim() !== value.newPassword!.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmNewPassword"],
+        message: "Confirm password must match the new password.",
+      });
+    }
+  });
+
+
+
+export const projectCreateSchema = z.object({
+
+  name: z.string().min(1),
+
+  clientName: z.string().min(1),
+
+  projectManagerId: z.string().min(1),
+
+  teamLeadId: z.string().optional(),
+
+  teams: z.array(teamNameSchema).min(1),
+
+  assignedDate: z.string().min(1),
+
+  lastDate: z.string().min(1),
+
+  status: z.enum(projectStatuses),
+
+  description: z.string().optional(),
+
+  memberIds: z.array(z.string()).optional(),
+
+});
+
+
+
+export const projectUpdateSchema = z.object({
+
+  name: z.string().min(1).optional(),
+
+  teams: z.array(teamNameSchema).min(1).optional(),
+
+  assignedDate: z.string().min(1).optional(),
+
+  lastDate: z.string().min(1).optional(),
+
+  status: z.enum(projectStatuses).optional(),
+
+  description: z.string().optional(),
+
+  clientName: z.string().min(1).optional(),
+
+  projectManagerId: z.string().min(1).optional(),
+
+  memberIds: z.array(z.string()).optional(),
+
+  teamLeadId: z.string().optional(),
+
+});
+
+
+
+const taskStatuses = ["Todo", "In Progress", "Review", "Done"] as const;
+const taskPriorities = ["Low", "Medium", "High", "Critical"] as const;
+
+export const taskCreateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  description: z.string().max(5000).optional(),
+  projectId: z.string().min(1),
+  assigneeId: z.string().optional(),
+  status: z.enum(taskStatuses).optional(),
+  priority: z.enum(taskPriorities).optional(),
+  dueDate: z.string().optional(),
+  comment: z.string().max(2000).optional(),
+});
+
+export const taskUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().max(5000).optional(),
+  projectId: z.string().min(1).optional(),
+  assigneeId: z.string().nullable().optional(),
+  status: z.enum(taskStatuses).optional(),
+  priority: z.enum(taskPriorities).optional(),
+  dueDate: z.string().nullable().optional(),
+  comment: z.string().max(2000).optional(),
+});
+
+export const taskStatusPatchSchema = z.object({
+  status: z.enum(taskStatuses),
+  comment: z.string().max(2000).optional(),
+});
+
+export const dailyUpdateCreateSchema = z.object({
+  projectId: z.string().min(1),
+  date: z.string().min(1),
+  workDone: z.string().trim().min(1).max(5000),
+  blockers: z.string().max(5000).optional(),
+  tomorrowPlan: z.string().trim().min(1).max(5000),
+});
+
+
+
+export const galleryCreateSchema = z.object({
+
+  title: z.string().min(1),
+
+  url: z.string().min(1),
+
+  caption: z.string().optional(),
+
+  uploadedAt: z.string().min(1),
+
+});
+
+
+
+export const bayAssignSchema = z
+  .object({
+    bayId: z.string().min(1).optional(),
+    cabinId: z.string().min(1).optional(),
+    /** Swap occupants between these two seats (same office). */
+    swapBayIds: z.tuple([z.string().min(1), z.string().min(1)]).optional(),
+    employeeId: z.string().min(1).nullable().optional(),
+    /** Team cabins: set exact membership (may be empty to clear). */
+    employeeIds: z.array(z.string().min(1)).optional(),
+    officeSlug: z.string().trim().min(1).max(64).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasBay = !!value.bayId?.trim();
+    const hasCabin = !!value.cabinId?.trim();
+    const hasSwap = Array.isArray(value.swapBayIds) && value.swapBayIds.length === 2;
+    const modes = [hasBay, hasCabin, hasSwap].filter(Boolean).length;
+    if (modes !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide exactly one of bayId, cabinId, or swapBayIds",
+        path: hasSwap ? ["swapBayIds"] : hasBay ? ["cabinId"] : ["bayId"],
+      });
+      return;
+    }
+    if (hasBay && value.employeeId === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "employeeId is required for bay assignment",
+        path: ["employeeId"],
+      });
+    }
+    if (hasCabin && value.employeeId === undefined && value.employeeIds === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "employeeId or employeeIds is required for cabin assignment",
+        path: ["employeeId"],
+      });
+    }
+    if (hasSwap && value.swapBayIds![0] === value.swapBayIds![1]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "swapBayIds must be two different seats",
+        path: ["swapBayIds"],
+      });
+    }
+  });
+
+const floorCellSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("label"), text: z.string() }),
+  z.object({ kind: z.literal("seat"), id: z.string().min(1) }),
+  z.object({ kind: z.literal("pillar") }),
+  z.object({
+    kind: z.literal("entrance"),
+    text: z.string(),
+    span: z.number().int().min(1).max(8).optional(),
+  }),
+  z.object({
+    kind: z.literal("gap"),
+    span: z.number().int().min(1).max(8).optional(),
+  }),
+]);
+
+const seatingRowSchema = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  seatCount: z.number().int().nonnegative(),
+  floorKey: z.string().optional(),
+  top: z.array(floorCellSchema),
+  bottom: z.array(floorCellSchema),
+});
+
+const seatingCabinSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  placement: z.enum(["before-A", "after-G"]),
+});
+
+export const floorPlanCreateSchema = z.object({
+  slug: z
+    .string()
+    .trim()
+    .min(2)
+    .max(64)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug must be lowercase kebab-case"),
+  name: z.string().trim().min(2).max(120),
+  city: z.string().trim().max(80).optional(),
+  building: z.string().trim().max(120).optional(),
+  floors: z
+    .array(z.object({ key: z.string().min(1), label: z.string().min(1) }))
+    .optional(),
+  rows: z.array(seatingRowSchema).min(1),
+  cabins: z
+    .object({
+      beforeA: z.array(seatingCabinSchema).default([]),
+      afterG: z.array(seatingCabinSchema).default([]),
+      sideCabins: z
+        .object({
+          hrManager: z.string(),
+          manager: z.string(),
+        })
+        .optional(),
+    })
+    .optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export const floorPlanUpdateSchema = floorPlanCreateSchema
+  .omit({ slug: true })
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one field is required",
+  });
+
+export const floorPlanCabinSwapSchema = z.object({
+  cabinIds: z.tuple([z.string().trim().min(1), z.string().trim().min(1)]).refine(
+    ([a, b]) => a !== b,
+    { message: "Choose two different cabins to swap" },
+  ),
+});
+
+export const floorPlanImportSchema = z.object({
+  plans: z.array(floorPlanCreateSchema).min(1).max(50),
+});
+
+export const seatingAiGenerateSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("text"),
+    prompt: z.string().trim().min(10).max(2000),
+  }),
+  z.object({
+    mode: z.literal("image"),
+    imageBase64: z.string().min(64).max(7_000_000),
+    mimeType: z.enum(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]),
+    notes: z.string().trim().max(500).optional(),
+  }),
+]);
+
+export const seatingLayoutEditSchema = z.object({
+  prompt: z.string().trim().min(3).max(2000),
+  layout: z.object({
+    rows: z.array(z.any()),
+    cabinsBeforeA: z.array(z.object({
+      id: z.string(),
+      label: z.string(),
+      placement: z.enum(["before-A", "after-G"]),
+    })),
+    cabinsAfterG: z.array(z.object({
+      id: z.string(),
+      label: z.string(),
+      placement: z.enum(["before-A", "after-G"]),
+    })),
+    sideCabins: z.object({
+      hrManager: z.string(),
+      manager: z.string(),
+    }),
+  }),
+});
+
+
+
+const directoryPatchSchema = z.object({
+  workEmail: z.union([z.string().email(), z.literal("")]).optional(),
+  phone: z.string().optional(),
+  location: z.string().optional(),
+  joinedDate: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export const employeeUpdateSchema = z.object({
+  employeeId: z.string().min(1).optional(),
+  name: z.string().min(1).optional(),
+  team: teamNameSchema.optional(),
+  role: z.enum(roleEnum).optional(),
+  gender: genderSchema.optional(),
+  bayNumber: z.string().optional(),
+  imageUrl: z.string().optional(),
+  directory: directoryPatchSchema.optional(),
+});
+
+
+
+export const employeeProjectsUpdateSchema = z.object({
+
+  projectIds: z.array(z.string().min(1)),
+
+});
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address."),
+});
+
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().trim().min(1, "Reset link is invalid."),
+    password: z.string().min(6, "Password must be at least 6 characters."),
+    confirmPassword: z.string().min(6, "Confirm your new password."),
+  })
+  .superRefine((value, ctx) => {
+    if (value.password !== value.confirmPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["confirmPassword"],
+        message: "Passwords do not match.",
+      });
+    }
+  });
+
+
+
+export function parseRolePermissionsInput(
+
+  permissions: z.infer<typeof permissionsSchema>,
+
+) {
+
+  return normalizeModulePermissions(permissions);
+
+}
+
+export const chatSendMessageSchema = z.object({
+  text: z.string().trim().min(1, "Message is required.").max(4000),
+});
+
+export const chatMarkReadSchema = z.object({
+  conversationId: z.string().trim().min(1).optional(),
+});
+
+const seatingChangeKindSchema = z.enum([
+  "assign-seat",
+  "clear-seat",
+  "move-seat",
+  "swap-seats",
+  "assign-cabin",
+  "clear-cabin",
+  "set-cabin-members",
+  "swap-cabins",
+]);
+
+export const seatingChangeRecordSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  kind: seatingChangeKindSchema,
+  officeSlug: z.string().trim().min(1).max(64),
+  summary: z.string().trim().min(1).max(400),
+  seatId: z.string().trim().min(1).max(32).optional(),
+  fromSeatId: z.string().trim().min(1).max(32).optional(),
+  toSeatId: z.string().trim().min(1).max(32).optional(),
+  cabinId: z.string().trim().min(1).max(64).optional(),
+  fromCabinId: z.string().trim().min(1).max(64).optional(),
+  toCabinId: z.string().trim().min(1).max(64).optional(),
+  fromCabinLabel: z.string().trim().max(80).optional(),
+  toCabinLabel: z.string().trim().max(80).optional(),
+  employeeId: z.string().trim().min(1).max(40).nullable().optional(),
+  employeeIds: z.array(z.string().trim().min(1).max(40)).max(40).optional(),
+  employeeName: z.string().trim().max(120).optional(),
+  fromEmployeeName: z.string().trim().max(120).optional(),
+  toEmployeeName: z.string().trim().max(120).optional(),
+});
+
+export const seatingVersionSaveSchema = z.object({
+  officeSlug: z.string().trim().min(1).max(64),
+  changes: z.array(seatingChangeRecordSchema).min(1).max(80),
+});
+
+

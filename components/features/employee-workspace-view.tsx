@@ -1,0 +1,434 @@
+"use client";
+
+import Link from "next/link";
+import {
+  Briefcase,
+  Building2,
+  Calendar,
+  CheckSquare,
+  Download,
+  Eye,
+  FileText,
+  Mail,
+  MapPin,
+  Pencil,
+  UserPlus,
+  Users,
+} from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { projectStatusVariant } from "@/lib/project-assignments";
+import { addressesFromDirectory } from "@/lib/employee-address";
+import { formatWorkspaceDate, parseSeatAllocation } from "@/lib/employee-workspace-ui";
+import { buildWorkforceAccess } from "@/lib/team-members-ui";
+import { appUserEditHref } from "@/lib/app-user-navigation";
+import { EntityTasksPanel } from "@/components/features/tasks/entity-tasks-panel";
+import {
+  downloadResumeDocument,
+  formatResumeUploadedAt,
+  hasResumeDocument,
+  resolveResumeFileName,
+  viewResumeDocument,
+} from "@/lib/resume-document";
+import type { AccessContext } from "@/lib/permissions";
+import { profileNameInitial } from "@/lib/profile-image";
+import { cn } from "@/lib/utils";
+import type { EmployeeDetail, Project } from "@/types";
+
+type Props = {
+  employee: EmployeeDetail;
+  projects: Project[];
+  access: AccessContext | null;
+};
+
+export function EmployeeWorkspaceView({ employee, projects, access }: Props) {
+  const directory = employee.directory;
+  const workforceAccess = buildWorkforceAccess(access);
+  const seat = parseSeatAllocation(employee.bayNumber);
+  const joinedDate = formatWorkspaceDate(directory?.joinedDate);
+  const loginEmail = employee.email?.trim() || "";
+  const workEmail = directory?.workEmail?.trim() || "";
+  const canAssignTask =
+    !!access &&
+    (access.canManageProjects ||
+      access.has("projects:manage") ||
+      access.has("projects:manage_team") ||
+      access.role === "admin" ||
+      access.role === "manager");
+  const phone = directory?.phone?.trim() || "";
+  const { currentAddress, permanentAddress } = addressesFromDirectory(directory);
+  const resumeFields = {
+    resumeUrl: directory?.resumeUrl,
+    resumeFileName: directory?.resumeFileName,
+    resumeMimeType: directory?.resumeMimeType,
+    resumeUploadedAt: directory?.resumeUploadedAt,
+  };
+  const hasResume = hasResumeDocument(resumeFields);
+  const resumeFileName = resolveResumeFileName(
+    resumeFields,
+    `${employee.name.replace(/\s+/g, "_")}_Resume.pdf`,
+  );
+
+  const assignedProjects =
+    employee.assignedProjects.length > 0
+      ? employee.assignedProjects
+      : projects.filter((project) => project.memberIds?.includes(employee.id));
+
+  const initials = profileNameInitial(employee.name, employee.email);
+
+  return (
+    <div className="w-full space-y-5">
+      <section className="relative overflow-hidden rounded-2xl border border-border/60 bg-card shadow-[0_20px_60px_-32px_rgba(15,23,42,0.45)]">
+        <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(99,102,241,0.08)_0%,rgba(14,165,233,0.06)_45%,transparent_70%)]" />
+        <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/10 blur-3xl" />
+
+        <div className="relative px-6 py-7 sm:px-8 lg:px-10">
+          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-start">
+              <div className="shrink-0">
+                <div className="rounded-full bg-gradient-to-br from-primary/20 via-indigo-400/15 to-sky-400/20 p-1 shadow-[0_12px_40px_-16px_rgba(59,130,246,0.55)]">
+                  <Avatar className="h-[120px] w-[120px] border-[3px] border-background bg-background">
+                    <AvatarImage
+                      src={employee.imageUrl}
+                      alt={employee.name}
+                      className="object-cover object-center"
+                    />
+                    <AvatarFallback className="bg-muted text-3xl font-semibold text-primary">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
+              </div>
+
+              <div className="min-w-0 space-y-3 pt-1">
+                <div>
+                  <h1 className="text-3xl font-bold tracking-tight text-foreground sm:text-[2rem]">
+                    {employee.name}
+                  </h1>
+                  <p className="mt-1 font-mono text-sm text-muted-foreground">
+                    User ID · {employee.employeeId}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <MetaChip icon={Users} label="Team" value={employee.team} />
+                  <MetaChip icon={Calendar} label="Joined" value={joinedDate} />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 xl:max-w-md xl:justify-end">
+              {workforceAccess.canManageEmployees ? (
+                <Button variant="outline" size="sm" className="h-9 rounded-lg bg-background/80" asChild>
+                  <Link href={appUserEditHref(employee.employeeId)}>
+                    <Pencil className="mr-1.5 h-4 w-4" />
+                    Edit employee
+                  </Link>
+                </Button>
+              ) : null}
+              {workforceAccess.canAssignProjects ? (
+                <Button size="sm" className="h-9 rounded-lg shadow-sm" asChild>
+                  <Link href="/projects">
+                    <UserPlus className="mr-1.5 h-4 w-4" />
+                    Assign project
+                  </Link>
+                </Button>
+              ) : null}
+              {canAssignTask ? (
+                <Button variant="outline" size="sm" className="h-9 rounded-lg bg-background/80" asChild>
+                  <Link href={`/projects/tasks?assignee=${employee.id}&create=1`}>
+                    <CheckSquare className="mr-1.5 h-4 w-4" />
+                    Assign task
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <RecordPanel
+        title="Project assignments"
+        icon={Briefcase}
+        description="Active project memberships for this employee"
+      >
+        {assignedProjects.length === 0 ? (
+          <div className="bg-background px-6 py-10 text-center">
+            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-muted/60">
+              <Briefcase className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <p className="mt-4 text-sm font-medium text-foreground">No projects assigned</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Assign this employee from Team Projects.
+            </p>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              "overflow-y-auto overscroll-contain",
+              assignedProjects.length > 1 && "max-h-60 sm:max-h-72",
+            )}
+          >
+            <ul className="divide-y divide-border/60">
+              {assignedProjects.map((project) => (
+                <li key={project.id}>
+                  <Link
+                    href={`/projects/${project.slug}`}
+                    className="group flex flex-wrap items-center justify-between gap-3 bg-background px-6 py-4 transition-colors hover:bg-muted/40"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground transition-colors group-hover:text-primary">
+                        {project.name}
+                      </p>
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        Assigned {formatWorkspaceDate(project.assignedDate)}
+                      </p>
+                    </div>
+                    <Badge variant={projectStatusVariant(project.status)} className="shrink-0">
+                      {project.status}
+                    </Badge>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </RecordPanel>
+
+      <EntityTasksPanel
+        assigneeId={employee.id}
+        title="Assigned tasks"
+        description="Tasks currently assigned to this employee"
+        emptyMessage="No tasks assigned to this employee yet."
+      />
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <RecordPanel
+          title="Employee details"
+          icon={Users}
+          description="Core profile information from App Users"
+        >
+          <InfoGrid>
+            <InfoRow label="Full name" value={employee.name} />
+            <InfoRow label="User ID" value={employee.employeeId} mono />
+            <InfoRow label="Role" value={employee.role} />
+            <InfoRow label="Team" value={employee.team} />
+            <InfoRow label="Joined date" value={joinedDate} last />
+          </InfoGrid>
+        </RecordPanel>
+
+        <RecordPanel
+          title="Contact & location"
+          icon={Mail}
+          description="Reachability and office address"
+        >
+          <InfoGrid>
+            <InfoRow
+              label="Work email"
+              value={workEmail}
+              href={workEmail ? `mailto:${workEmail}` : undefined}
+            />
+            <InfoRow
+              label="Login email"
+              value={loginEmail}
+              href={loginEmail ? `mailto:${loginEmail}` : undefined}
+            />
+            <InfoRow label="Phone number" value={phone} />
+            <InfoRow label="Current address" value={currentAddress} icon={MapPin} />
+            <InfoRow label="Permanent address" value={permanentAddress} last />
+          </InfoGrid>
+        </RecordPanel>
+      </div>
+
+      <RecordPanel
+        title="Resume"
+        icon={FileText}
+        description="Employee resume document"
+      >
+        {hasResume ? (
+          <div className="space-y-4 px-6 py-5">
+            <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-4">
+              <p className="truncate text-sm font-semibold text-foreground">{resumeFileName}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Uploaded {formatResumeUploadedAt(resumeFields.resumeUploadedAt)}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2 rounded-xl"
+                onClick={() => viewResumeDocument(resumeFields.resumeUrl!)}
+              >
+                <Eye className="h-4 w-4" />
+                View resume
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-2 rounded-xl"
+                onClick={() =>
+                  downloadResumeDocument(resumeFields.resumeUrl!, resumeFileName)
+                }
+              >
+                <Download className="h-4 w-4" />
+                Download resume
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="px-6 py-8 text-center">
+            <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
+            <p className="mt-3 text-sm font-medium text-foreground">No resume uploaded yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The employee can upload a PDF resume from Profile settings.
+            </p>
+          </div>
+        )}
+      </RecordPanel>
+
+      <RecordPanel
+        title="Workspace allocation"
+        icon={Building2}
+        description="Assigned desk and floor plan location"
+      >
+        <InfoGrid columns={2}>
+          <InfoRow label="Building" value={seat.isAssigned ? seat.building : ""} />
+          <InfoRow label="Floor" value={seat.isAssigned ? seat.floor : ""} />
+          <InfoRow label="Bay" value={seat.isAssigned ? seat.bay : ""} />
+          <InfoRow
+            label="Seat number"
+            value={seat.isAssigned ? seat.seatNumber : ""}
+            last
+          />
+        </InfoGrid>
+      </RecordPanel>
+    </div>
+  );
+}
+
+function MetaChip({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-xs shadow-sm backdrop-blur-sm">
+      <Icon className="h-3.5 w-3.5 text-primary" />
+      <span className="font-medium text-muted-foreground">{label}</span>
+      <span className="font-semibold text-foreground">{value}</span>
+    </div>
+  );
+}
+
+function RecordPanel({
+  title,
+  description,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  description?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-border/70 bg-background shadow-sm">
+      <header className="flex items-start gap-3 border-b border-border/60 bg-background px-5 py-4">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+          <Icon className="h-4 w-4 text-primary" />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-base font-bold tracking-tight text-foreground">{title}</h2>
+          {description ? (
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</p>
+          ) : null}
+        </div>
+      </header>
+      <div className="bg-background">{children}</div>
+    </section>
+  );
+}
+
+function InfoGrid({
+  children,
+  columns = 1,
+}: {
+  children: React.ReactNode;
+  columns?: 1 | 2;
+}) {
+  return (
+    <dl
+      className={cn(
+        "bg-background p-1 sm:p-2",
+        columns === 2 && "grid gap-0 sm:grid-cols-2",
+      )}
+    >
+      {children}
+    </dl>
+  );
+}
+
+function InfoRow({
+  label,
+  value,
+  href,
+  mono,
+  last,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  href?: string;
+  mono?: boolean;
+  last?: boolean;
+  icon?: React.ComponentType<{ className?: string }>;
+}) {
+  const display = value.trim() || "Not provided";
+  const isEmpty = display === "Not provided";
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border border-transparent bg-background px-4 py-3.5 transition-colors",
+        "hover:border-border/50 hover:bg-muted/20",
+        !last && "mb-0.5",
+      )}
+    >
+      <div className="grid gap-1.5 sm:grid-cols-[minmax(0,140px)_1fr] sm:items-baseline sm:gap-4">
+        <dt className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          {label}
+        </dt>
+        <dd
+          className={cn(
+            "flex items-center gap-1.5 text-sm font-semibold text-foreground",
+            mono && !isEmpty && "font-mono text-[13px]",
+            isEmpty && "font-normal text-muted-foreground/80",
+          )}
+        >
+          {Icon && !isEmpty ? (
+            <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          ) : null}
+          {href && !isEmpty ? (
+            <a
+              href={href}
+              className="text-foreground underline-offset-2 hover:text-primary hover:underline"
+            >
+              {display}
+            </a>
+          ) : (
+            display
+          )}
+        </dd>
+      </div>
+    </div>
+  );
+}
+
