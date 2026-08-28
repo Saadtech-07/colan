@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import { canManageModule, normalizeAppRole } from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { updateWorkspaceRole } from "@/lib/roles-data";
@@ -23,12 +23,10 @@ const permissionsPutSchema = z.object({
 });
 
 export async function PUT(req: Request, { params }: Params) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (!canManageModule(roleKey, "roles")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -57,7 +55,7 @@ export async function PUT(req: Request, { params }: Params) {
     base[module] = accessLevelToModulePermission(module, level, base[module]);
   }
 
-  const updated = await updateWorkspaceRole(roleId, { permissions: base });
+  const updated = await updateWorkspaceRole(ctx.companyId, roleId, { permissions: base });
   if (!updated) {
     return NextResponse.json({ error: "Role not found" }, { status: 404 });
   }

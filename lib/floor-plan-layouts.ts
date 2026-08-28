@@ -290,7 +290,7 @@ export function catalogRowsForSlug(slug: string): SeatingRowConfig[] | null {
   return null;
 }
 
-export type FloorPlanSeed = Omit<FloorPlanDocument, "_id">;
+export type FloorPlanSeed = Omit<FloorPlanDocument, "_id" | "companyId">;
 
 export function buildFloorPlanSeeds(): FloorPlanSeed[] {
   const chennaiBlockARows = cloneChennaiRows();

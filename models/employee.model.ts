@@ -7,6 +7,7 @@ export const EMPLOYEE_COLLECTION = COLLECTIONS.employees;
 /** Stored shape in MongoDB (API uses string `id` from `_id`). */
 export type EmployeeDocument = {
   _id: ObjectId;
+  companyId: ObjectId;
   employeeId: string;
   name: string;
   team: TeamName;
@@ -60,7 +61,7 @@ export function employeeDocToDTO(doc: EmployeeDocument): Employee {
 
 export function employeeInputToDocFields(
   input: Omit<Employee, "id">,
-): Omit<EmployeeDocument, "_id"> {
+): Omit<EmployeeDocument, "_id" | "companyId"> {
   return {
     employeeId: input.employeeId,
     name: input.name,

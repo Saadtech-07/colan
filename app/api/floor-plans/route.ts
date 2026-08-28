@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import {
   createFloorPlan,
   listFloorPlans,
@@ -13,12 +13,10 @@ import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { floorPlanCreateSchema } from "@/lib/validations";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
   try {
-    const plans = await listFloorPlans();
+    const plans = await listFloorPlans(ctx.companyId);
     return NextResponse.json(plans);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to list floor plans";
@@ -27,12 +25,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (!canAssignSeating(roleKey) && !canManageModule(roleKey, "seating")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -53,7 +49,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const created = await createFloorPlan(parsed.data);
+    const created = await createFloorPlan(ctx.companyId, parsed.data);
     return NextResponse.json(created, { status: 201 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Create failed";

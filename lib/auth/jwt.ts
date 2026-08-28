@@ -13,6 +13,7 @@ export async function signAuthToken(payload: JwtPayload): Promise<string> {
     picture: payload.picture,
     appRole: payload.appRole,
     team: payload.team,
+    companyId: payload.companyId,
     isProfileCompleted: payload.isProfileCompleted,
   })
     .setProtectedHeader({ alg: "HS256" })
@@ -40,6 +41,10 @@ export async function verifyAuthToken(token: string): Promise<JwtPayload | null>
       picture: typeof payload.picture === "string" ? payload.picture : undefined,
       appRole: (payload.appRole as JwtPayload["appRole"]) ?? "employee",
       team: payload.team as JwtPayload["team"],
+      companyId:
+        typeof payload.companyId === "string" && payload.companyId.trim()
+          ? payload.companyId.trim()
+          : "",
       isProfileCompleted: payload.isProfileCompleted !== false,
     };
   } catch {

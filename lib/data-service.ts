@@ -47,6 +47,7 @@ import {
 import { ensureAppUsersSeed, getAppUserPublicById } from "@/lib/app-users";
 import { collectLinkedEmployeeIds } from "@/lib/employee-app-user-link";
 import { isProjectManagerAppRole } from "@/lib/project-managers";
+import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import {
   MOCK_EMPLOYEES,
   MOCK_GALLERY,
@@ -231,10 +232,12 @@ async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof get
   const { ensureTeamsSeed } = await import("@/lib/teams-data");
   const { ensureRolesSeed } = await import("@/lib/roles-data");
   const { listFloorPlans } = await import("@/lib/floor-plans");
+  const { resolveDefaultCompanyId } = await import("@/lib/companies");
+  const defaultCompanyId = await resolveDefaultCompanyId();
   await ensureAppUsersSeed(db);
   await ensureTeamsSeed(db);
   await ensureRolesSeed(db);
-  await listFloorPlans();
+  await listFloorPlans(defaultCompanyId);
 
   if (isDemoSeedEnabled() && (await em.countDocuments()) === 0) {
     await safeSeedInsert(() =>
@@ -377,17 +380,18 @@ function mergeEmployeeDirectory(
   return hasValue ? merged : undefined;
 }
 
-export async function listEmployees(opts?: {
+export async function listEmployees(opts: {
+  companyId: string;
   includeImages?: boolean;
 }): Promise<Employee[]> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
     await ensureMongoSeed(db);
-    return listEmployeesFromDb(db, opts);
+    return listEmployeesFromDb(db, opts.companyId, opts);
   }
   const db = await getDb();
   if (!db) return [];
-  return listEmployeesFromDb(db, opts);
+  return listEmployeesFromDb(db, opts.companyId, opts);
 }
 
 async function purgeOrphanEmployeeRecords(
@@ -426,18 +430,19 @@ async function purgeOrphanEmployeeRecords(
 
 async function listEmployeesFromDb(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  companyId: string,
   opts?: { includeImages?: boolean },
 ): Promise<Employee[]> {
   const includeImages = opts?.includeImages === true;
+  const scope = { companyId: toCompanyObjectId(companyId) };
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const detCol = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
   const [appUsers, rows] = await Promise.all([
-    db.collection<AppUserDocument>(COLLECTIONS.appUsers).find({}).toArray(),
-    // Omit imageUrl at the DB layer for list payloads — huge data-URLs dominate transfer time.
+    db.collection<AppUserDocument>(COLLECTIONS.appUsers).find(scope).toArray(),
     includeImages
-      ? col.find({}).sort({ name: 1 }).toArray()
+      ? col.find(scope).sort({ name: 1 }).toArray()
       : col
-          .find({}, { projection: { imageUrl: 0 } })
+          .find(scope, { projection: { imageUrl: 0 } })
           .sort({ name: 1 })
           .toArray(),
   ]);
@@ -461,10 +466,11 @@ async function listEmployeesFromDb(
 }
 
 export async function getEmployeeDetailBySlugOrId(
+  companyId: string,
   slugOrId: string,
 ): Promise<EmployeeDetail | null> {
   const [employees, projects] = await Promise.all([
-    listEmployees({ includeImages: true }),
+    listEmployees({ companyId, includeImages: true }),
     listProjects(),
   ]);
   const employee = findEmployeeBySlugOrId(employees, slugOrId);
@@ -482,15 +488,21 @@ export async function getEmployeeDetailBySlugOrId(
 
 async function createEmployeeInDb(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  companyId: string,
   input: Omit<Employee, "id">,
 ): Promise<Employee> {
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const scope = companyScope<EmployeeDocument>(companyId);
   const { isValidSeatId } = await import("@/lib/seating-layout");
   if (input.bayNumber && isValidSeatId(input.bayNumber)) {
-    await col.updateMany({ bayNumber: input.bayNumber }, { $set: { bayNumber: "" } });
+    await col.updateMany({ ...scope, bayNumber: input.bayNumber }, { $set: { bayNumber: "" } });
   }
   const _id = new ObjectId();
-  const doc: EmployeeDocument = { _id, ...employeeInputToDocFields(input) };
+  const doc: EmployeeDocument = {
+    _id,
+    companyId: toCompanyObjectId(companyId),
+    ...employeeInputToDocFields(input),
+  };
   await col.insertOne(doc);
   const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
   const detailDoc: EmployeeDetailsDocument = {
@@ -508,12 +520,13 @@ async function createEmployeeInDb(
 }
 
 export async function createEmployee(
+  companyId: string,
   input: Omit<Employee, "id">,
 ): Promise<Employee> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
     await ensureMongoSeed(db);
-    return createEmployeeInDb(db, input);
+    return createEmployeeInDb(db, companyId, input);
   }
   const db = await getDb();
   if (!db) {
@@ -533,7 +546,7 @@ export async function createEmployee(
     return row;
   }
   await ensureMongoSeed(db);
-  return createEmployeeInDb(db, input);
+  return createEmployeeInDb(db, companyId, input);
 }
 
 async function upsertEmployeeDirectory(
@@ -602,6 +615,7 @@ async function upsertEmployeeDirectory(
 }
 
 export async function updateEmployee(
+  companyId: string,
   id: string,
   patch: Partial<Omit<Employee, "id">> & { directory?: Partial<EmployeeDirectoryInfo> },
 ): Promise<Employee> {
@@ -624,12 +638,15 @@ export async function updateEmployee(
     }
     if (db) {
       if (bay) {
-        await assignEmployeeToBay(bay, normalizedId);
+        await assignEmployeeToBay(companyId, bay, normalizedId);
       } else {
         await ensureMongoSeed(db);
         await db
           .collection<EmployeeDocument>(COLLECTIONS.employees)
-          .updateOne({ _id: new ObjectId(normalizedId) }, { $set: { bayNumber: "" } });
+          .updateOne(
+            { _id: new ObjectId(normalizedId), ...companyScope<EmployeeDocument>(companyId) },
+            { $set: { bayNumber: "" } },
+          );
       }
     }
     employeePatch.bayNumber = bay;
@@ -707,6 +724,7 @@ export async function updateEmployee(
   await ensureMongoSeed(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const oid = new ObjectId(normalizedId);
+  const scope = companyScope<EmployeeDocument>(companyId);
   const updates: Partial<EmployeeDocument> = { updatedAt: new Date() };
   if (employeePatch.employeeId !== undefined) updates.employeeId = employeePatch.employeeId;
   if (employeePatch.name !== undefined) updates.name = employeePatch.name;
@@ -824,6 +842,7 @@ export async function deleteEmployee(id: string): Promise<void> {
 }
 
 export async function assignEmployeeToBay(
+  companyId: string,
   bayId: string,
   employeeId: string | null,
   officeSlug?: string | null,
@@ -832,7 +851,7 @@ export async function assignEmployeeToBay(
     "@/lib/floor-plans"
   );
   const office = normalizeOfficeSlug(officeSlug);
-  const plan = await getFloorPlanBySlug(office);
+  const plan = await getFloorPlanBySlug(companyId, office);
   if (!plan || !plan.isActive) {
     throw new Error(`Unknown office floor plan "${office}".`);
   }
@@ -868,10 +887,10 @@ export async function assignEmployeeToBay(
   }
   await ensureMongoSeed(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const scope = companyScope<EmployeeDocument>(companyId);
 
-  // Clear current occupants of this seat on this office (legacy null slug = chennai).
   const occupants = await col
-    .find({ bayNumber: bayId })
+    .find({ ...scope, bayNumber: bayId })
     .project({ _id: 1, officeSlug: 1 })
     .toArray();
   const clearIds = occupants
@@ -889,7 +908,7 @@ export async function assignEmployeeToBay(
       throw new Error("Invalid employee id");
     }
     await col.updateOne(
-      { _id: new ObjectId(employeeId) },
+      { _id: new ObjectId(employeeId), ...scope },
       {
         $set: {
           bayNumber: bayId,
@@ -900,11 +919,12 @@ export async function assignEmployeeToBay(
       },
     );
   }
-  return listEmployees();
+  return listEmployees({ companyId });
 }
 
 /** Swap (or move) seating between two bays on the same office floor plan. */
 export async function swapEmployeesBetweenBays(
+  companyId: string,
   fromBayId: string,
   toBayId: string,
   officeSlug?: string | null,
@@ -912,13 +932,13 @@ export async function swapEmployeesBetweenBays(
   const from = fromBayId.trim();
   const to = toBayId.trim();
   if (!from || !to) throw new Error("Both seats are required to swap.");
-  if (from === to) return listEmployees();
+  if (from === to) return listEmployees({ companyId });
 
   const { getFloorPlanBySlug, isSeatOnPlan, normalizeOfficeSlug } = await import(
     "@/lib/floor-plans"
   );
   const office = normalizeOfficeSlug(officeSlug);
-  const plan = await getFloorPlanBySlug(office);
+  const plan = await getFloorPlanBySlug(companyId, office);
   if (!plan || !plan.isActive) {
     throw new Error(`Unknown office floor plan "${office}".`);
   }
@@ -958,8 +978,9 @@ export async function swapEmployeesBetweenBays(
 
   await ensureMongoSeed(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const scope = companyScope<EmployeeDocument>(companyId);
   const seated = await col
-    .find({ bayNumber: { $in: [from, to] } })
+    .find({ ...scope, bayNumber: { $in: [from, to] } })
     .project({ _id: 1, bayNumber: 1, officeSlug: 1 })
     .toArray();
 
@@ -1021,10 +1042,11 @@ export async function swapEmployeesBetweenBays(
     ]);
   }
 
-  return listEmployees();
+  return listEmployees({ companyId });
 }
 
 export async function assignEmployeeToCabin(
+  companyId: string,
   cabinId: string,
   employeeId: string | null,
   officeSlug?: string | null,
@@ -1032,7 +1054,7 @@ export async function assignEmployeeToCabin(
   const { getFloorPlanBySlug, normalizeOfficeSlug } = await import("@/lib/floor-plans");
   const { isCabinOnPlan } = await import("@/lib/cabin-utils");
   const office = normalizeOfficeSlug(officeSlug);
-  const plan = await getFloorPlanBySlug(office);
+  const plan = await getFloorPlanBySlug(companyId, office);
   if (!plan || !plan.isActive) {
     throw new Error(`Unknown office floor plan "${office}".`);
   }
@@ -1069,9 +1091,10 @@ export async function assignEmployeeToCabin(
   }
   await ensureMongoSeed(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const scope = companyScope<EmployeeDocument>(companyId);
 
   const occupants = await col
-    .find({ cabinId: cabin })
+    .find({ ...scope, cabinId: cabin })
     .project({ _id: 1, officeSlug: 1 })
     .toArray();
   const clearIds = occupants
@@ -1089,7 +1112,7 @@ export async function assignEmployeeToCabin(
       throw new Error("Invalid employee id");
     }
     await col.updateOne(
-      { _id: new ObjectId(employeeId) },
+      { _id: new ObjectId(employeeId), ...scope },
       {
         $set: {
           cabinId: cabin,
@@ -1100,11 +1123,12 @@ export async function assignEmployeeToCabin(
       },
     );
   }
-  return listEmployees();
+  return listEmployees({ companyId });
 }
 
 /** Set exact membership for a cabin (team cabins / clear-all with []). */
 export async function setCabinEmployees(
+  companyId: string,
   cabinId: string,
   employeeIds: string[],
   officeSlug?: string | null,
@@ -1112,7 +1136,7 @@ export async function setCabinEmployees(
   const { getFloorPlanBySlug, normalizeOfficeSlug } = await import("@/lib/floor-plans");
   const { isCabinOnPlan } = await import("@/lib/cabin-utils");
   const office = normalizeOfficeSlug(officeSlug);
-  const plan = await getFloorPlanBySlug(office);
+  const plan = await getFloorPlanBySlug(companyId, office);
   if (!plan || !plan.isActive) {
     throw new Error(`Unknown office floor plan "${office}".`);
   }
@@ -1155,8 +1179,9 @@ export async function setCabinEmployees(
 
   await ensureMongoSeed(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
+  const scope = companyScope<EmployeeDocument>(companyId);
   const occupants = await col
-    .find({ cabinId: cabin })
+    .find({ ...scope, cabinId: cabin })
     .project({ _id: 1, officeSlug: 1 })
     .toArray();
   const clearIds = occupants
@@ -1170,7 +1195,7 @@ export async function setCabinEmployees(
   }
   if (uniqueIds.length > 0) {
     await col.updateMany(
-      { _id: { $in: uniqueIds.map((id) => new ObjectId(id)) } },
+      { _id: { $in: uniqueIds.map((id) => new ObjectId(id)) }, ...scope },
       {
         $set: {
           cabinId: cabin,
@@ -1181,7 +1206,7 @@ export async function setCabinEmployees(
       },
     );
   }
-  return listEmployees();
+  return listEmployees({ companyId });
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -1246,7 +1271,9 @@ export async function getProjectDetailBySlug(
 ): Promise<ProjectDetail | null> {
   const project = await getProjectBySlug(slug);
   if (!project) return null;
-  const employees = await listEmployees();
+  const { resolveDefaultCompanyId } = await import("@/lib/companies");
+  const companyId = await resolveDefaultCompanyId();
+  const employees = await listEmployees({ companyId });
   const detail = toDetail(project, employees);
 
   if (!project.projectManagerId) {

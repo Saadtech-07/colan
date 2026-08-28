@@ -20,6 +20,8 @@ import type { ProjectManagerSummary } from "@/types";
 import { addressesFromDirectory, directoryPatchFromAddresses } from "@/lib/employee-address";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { getRoleFromRegistry } from "@/lib/role-registry";
+import { resolveDefaultCompanyId } from "@/lib/companies";
+import { DEMO_COMPANY_ID, toCompanyObjectId } from "@/lib/tenant-scope";
 import { isValidSeatId } from "@/lib/seating-layout";
 import {
   roleEligibleForOfficeSeat,
@@ -33,6 +35,7 @@ export type VerifiedAppUser = {
   team?: TeamName;
   imageUrl: string;
   isProfileCompleted: boolean;
+  companyId: string;
 };
 
 type SeedUser = {
@@ -126,9 +129,13 @@ async function upsertSeedUser(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   u: SeedUser,
   rounds: number,
+  companyId: import("mongodb").ObjectId,
 ) {
   const existing = await col.findOne({ email: u.email });
   if (existing) {
+    if (!existing.companyId) {
+      await col.updateOne({ _id: existing._id }, { $set: { companyId, updatedAt: new Date() } });
+    }
     if (!existing.employeeId?.trim()) {
       await col.updateOne(
         { _id: existing._id },
@@ -141,6 +148,7 @@ async function upsertSeedUser(
 
   await col.insertOne({
     _id: new ObjectId(),
+    companyId,
     email: u.email,
     passwordHash: await bcrypt.hash(u.password, rounds),
     name: u.name,
@@ -161,9 +169,11 @@ export async function ensureAppUsersSeed(
 ) {
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   await col.createIndex({ email: 1 }, { unique: true });
+  const { ensureDefaultCompany } = await import("@/lib/tenant-migration");
+  const companyId = await ensureDefaultCompany(db);
   const rounds = 10;
   for (const u of SEED_USERS) {
-    await upsertSeedUser(col, db, u, rounds);
+    await upsertSeedUser(col, db, u, rounds, companyId);
   }
   await col.updateMany(
     { isProfileCompleted: { $exists: false } },
@@ -242,6 +252,7 @@ export type AppUserSessionRefresh = {
   team?: TeamName;
   imageUrl: string;
   isProfileCompleted: boolean;
+  companyId: string;
 };
 
 export type ProfileSetupUpdateInput = {
@@ -254,12 +265,15 @@ export type ProfileSetupUpdateInput = {
   newPassword?: string;
 };
 
-export async function listAppUsers(): Promise<ReturnType<typeof appUserDocToPublic>[]> {
+export async function listAppUsers(companyId: string): Promise<ReturnType<typeof appUserDocToPublic>[]> {
   const db = await getDb();
   if (!db) throw new Error("MongoDB is not configured.");
   await ensureAppUsersSeed(db);
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
-  const docs = await col.find({}).sort({ email: 1 }).toArray();
+  const docs = await col
+    .find({ companyId: toCompanyObjectId(companyId) })
+    .sort({ email: 1 })
+    .toArray();
   const users = docs.map(appUserDocToPublic);
   return enrichAppUsersWithEmployeeProfiles(users, db);
 }
@@ -333,9 +347,9 @@ export async function getAppUserPublicById(
   return doc ? appUserDocToPublic(doc) : null;
 }
 
-export async function listProjectManagerAccounts(): Promise<ProjectManagerSummary[]> {
-  await ensureRoleRegistry();
-  const users = await listAppUsers();
+export async function listProjectManagerAccounts(companyId: string): Promise<ProjectManagerSummary[]> {
+  await ensureRoleRegistry(companyId);
+  const users = await listAppUsers(companyId);
   return users
     .filter((user) => isProjectManagerAppRole(user.appRole))
     .map((user) => ({
@@ -359,15 +373,16 @@ function toTeamAssignableAccount(
   };
 }
 
-export async function listTeamAssignableAccounts(): Promise<TeamAssignableAccount[]> {
-  await ensureRoleRegistry();
-  const users = await listAppUsers().then((rows) => rows.map(toTeamAssignableAccount));
+export async function listTeamAssignableAccounts(companyId: string): Promise<TeamAssignableAccount[]> {
+  await ensureRoleRegistry(companyId);
+  const users = await listAppUsers(companyId).then((rows) => rows.map(toTeamAssignableAccount));
   return users.filter(
     (user) => isTeamLeadAppRole(user.appRole) || isTeamManagerAppRole(user.appRole),
   );
 }
 
 export async function createAppUser(
+  companyId: string,
   input: AppUserCreateInput,
 ): Promise<ReturnType<typeof appUserDocToPublic>> {
   const db = await getDb();
@@ -386,18 +401,22 @@ export async function createAppUser(
   if (existing) throw new Error("An account with this email already exists.");
 
   const employeeCol = db.collection(COLLECTIONS.employees);
+  const scope = { companyId: toCompanyObjectId(companyId) };
 
   const userIdPattern = new RegExp(
     `^${userId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
     "i",
   );
-  const appUserIdTaken = await col.findOne({ employeeId: { $regex: userIdPattern } });
+  const appUserIdTaken = await col.findOne({ ...scope, employeeId: { $regex: userIdPattern } });
   if (appUserIdTaken) {
     throw new Error("An account with this user ID already exists.");
   }
 
   if (needsEmployeeIdentity) {
-    const employeeIdTaken = await employeeCol.findOne({ employeeId: { $regex: userIdPattern } });
+    const employeeIdTaken = await employeeCol.findOne({
+      ...scope,
+      employeeId: { $regex: userIdPattern },
+    });
     if (employeeIdTaken) {
       throw new Error("An employee with this user ID already exists.");
     }
@@ -411,7 +430,7 @@ export async function createAppUser(
         `Invalid seat "${bayNumber}". Choose a seat from the office floor plan (e.g. A1, D3).`,
       );
     }
-    const seatTaken = await employeeCol.findOne({ bayNumber });
+    const seatTaken = await employeeCol.findOne({ ...scope, bayNumber });
     if (seatTaken) {
       throw new Error(`Seat ${bayNumber} is already assigned to another employee.`);
     }
@@ -443,6 +462,7 @@ export async function createAppUser(
 
   const doc: AppUserDocument = {
     _id: new ObjectId(),
+    companyId: toCompanyObjectId(companyId),
     email: loginEmail,
     passwordHash,
     name: input.name.trim(),
@@ -461,7 +481,7 @@ export async function createAppUser(
     return appUserDocToPublic(doc);
   }
 
-  const roleRegistry = await ensureRoleRegistry();
+  const roleRegistry = await ensureRoleRegistry(companyId);
   const employeeRole =
     roleRegistry.get(normalizeAppRole(input.appRole))?.name ?? "Employee";
 
@@ -469,6 +489,7 @@ export async function createAppUser(
   const nextGender = input.gender ?? "male";
   await employeeCol.insertOne({
     _id: employeeObjectId,
+    companyId: toCompanyObjectId(companyId),
     employeeId: userId,
     email: loginEmail,
     name: input.name.trim(),
@@ -847,6 +868,7 @@ export async function verifyAppUserCredentials(
       team: u.team,
       imageUrl: u.imageUrl,
       isProfileCompleted: normalizeProfileCompleted(u.isProfileCompleted),
+      companyId: DEMO_COMPANY_ID,
     };
   }
 
@@ -883,6 +905,7 @@ export async function verifyAppUserCredentials(
     team,
     imageUrl: doc.imageUrl,
     isProfileCompleted: normalizeProfileCompleted(doc.isProfileCompleted),
+    companyId: doc.companyId?.toHexString() ?? (await resolveDefaultCompanyId()),
   };
 }
 
@@ -902,6 +925,7 @@ export async function getAppUserSessionRefresh(
       team: user.team,
       imageUrl: user.imageUrl,
       isProfileCompleted: normalizeProfileCompleted(user.isProfileCompleted),
+      companyId: DEMO_COMPANY_ID,
     };
   }
 
@@ -919,6 +943,7 @@ export async function getAppUserSessionRefresh(
     team,
     imageUrl: doc.imageUrl,
     isProfileCompleted: normalizeProfileCompleted(doc.isProfileCompleted),
+    companyId: doc.companyId?.toHexString() ?? (await resolveDefaultCompanyId()),
   };
 }
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import {
   canAccessModuleAction,
   canManageModule,
@@ -33,8 +33,12 @@ const personUpdateSchema = z.object({
   directory: z.record(z.string(), z.unknown()).optional(),
 });
 
-async function assertPersonVisible(id: string, access: NonNullable<Awaited<ReturnType<typeof sessionAccessAsync>>>) {
-  const person = await getPersonById(id);
+async function assertPersonVisible(
+  companyId: string,
+  id: string,
+  access: NonNullable<Awaited<ReturnType<typeof sessionAccessAsync>>>,
+) {
+  const person = await getPersonById(companyId, id);
   if (!person) return { error: NextResponse.json({ error: "Person not found" }, { status: 404 }) };
   const scoped = filterEmployeesForUser([person], access.role, access.team);
   if (scoped.length === 0) {
@@ -44,24 +48,28 @@ async function assertPersonVisible(id: string, access: NonNullable<Awaited<Retur
 }
 
 export async function GET(_req: Request, { params }: Params) {
-  const access = await sessionAccessAsync(await auth());
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  await ensureRoleRegistry();
+  await ensureRoleRegistry(ctx.companyId);
   const roleKey = normalizeAppRole(access.role);
   if (!canViewModule(roleKey, "peopleDirectory") && !canViewModule(roleKey, "teamMembers")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await params;
-  const result = await assertPersonVisible(id, access);
+  const result = await assertPersonVisible(ctx.companyId, id, access);
   if ("error" in result) return result.error;
   return NextResponse.json(result.person);
 }
 
 export async function PUT(req: Request, { params }: Params) {
-  const access = await sessionAccessAsync(await auth());
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  await ensureRoleRegistry();
+  await ensureRoleRegistry(ctx.companyId);
   const roleKey = normalizeAppRole(access.role);
   if (
     !canManageModule(roleKey, "peopleDirectory") &&
@@ -73,7 +81,7 @@ export async function PUT(req: Request, { params }: Params) {
   }
 
   const { id } = await params;
-  const visible = await assertPersonVisible(id, access);
+  const visible = await assertPersonVisible(ctx.companyId, id, access);
   if ("error" in visible) return visible.error;
 
   let body: unknown;
@@ -91,7 +99,7 @@ export async function PUT(req: Request, { params }: Params) {
     );
   }
 
-  const updated = await updatePerson(id, {
+  const updated = await updatePerson(ctx.companyId, id, {
     ...parsed.data,
     reportingManagerId: parsed.data.reportingManagerId ?? undefined,
   });
@@ -99,9 +107,11 @@ export async function PUT(req: Request, { params }: Params) {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
-  const access = await sessionAccessAsync(await auth());
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  await ensureRoleRegistry();
+  await ensureRoleRegistry(ctx.companyId);
   const roleKey = normalizeAppRole(access.role);
   if (
     !canManageModule(roleKey, "peopleDirectory") &&
@@ -113,10 +123,10 @@ export async function DELETE(_req: Request, { params }: Params) {
   }
 
   const { id } = await params;
-  const visible = await assertPersonVisible(id, access);
+  const visible = await assertPersonVisible(ctx.companyId, id, access);
   if ("error" in visible) return visible.error;
 
-  const ok = await deletePerson(id);
+  const ok = await deletePerson(ctx.companyId, id);
   if (!ok) return NextResponse.json({ error: "Failed to delete person" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

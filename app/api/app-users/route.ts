@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import { createAppUser, listAppUsers } from "@/lib/app-users";
 import { resolveLoginUrl } from "@/lib/email";
 import { generateTemporaryPassword } from "@/lib/password-utils";
@@ -15,27 +15,23 @@ import { sendAccountCreatedEmail } from "@/services/email-service";
 import { appUserCreateSchema } from "@/lib/validations";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (!canViewModule(roleKey, "appUsers")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const users = await listAppUsers();
+  const users = await listAppUsers(ctx.companyId);
   return NextResponse.json(users);
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (
     !canManageModule(roleKey, "appUsers") &&
     !canAccessModuleAction(roleKey, "appUsers", "create")
@@ -66,7 +62,7 @@ export async function POST(req: Request) {
         ? payload.password.trim()
         : generateTemporaryPassword();
 
-    const created = await createAppUser({
+    const created = await createAppUser(ctx.companyId, {
       email: payload.email,
       personalEmail: payload.personalEmail,
       password: temporaryPassword,

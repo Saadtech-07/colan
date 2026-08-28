@@ -7,7 +7,7 @@ export const COMPANY_ROLE_COLLECTION = COLLECTIONS.companyRoles;
 
 export type CompanyRoleDocument = {
   _id: ObjectId;
-  /** Stable slug for app_users.appRole and session. */
+  companyId: ObjectId;
   key: string;
   name: string;
   description: string;

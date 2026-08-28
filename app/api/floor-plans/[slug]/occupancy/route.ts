@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import { listEmployees } from "@/lib/data-service";
 import { getFloorPlanBySlug, normalizeOfficeSlug } from "@/lib/floor-plans";
 import { employeeEligibleForSeating } from "@/lib/workspace-identity";
@@ -7,21 +7,19 @@ import { employeeEligibleForSeating } from "@/lib/workspace-identity";
 type Params = { params: Promise<{ slug: string }> };
 
 export async function GET(_req: Request, { params }: Params) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
 
   const { slug } = await params;
   const officeSlug = normalizeOfficeSlug(slug);
 
   try {
-    const plan = await getFloorPlanBySlug(officeSlug);
+    const plan = await getFloorPlanBySlug(ctx.companyId, officeSlug);
     if (!plan || !plan.isActive) {
       return NextResponse.json({ error: "Floor plan not found" }, { status: 404 });
     }
 
-    const employees = await listEmployees();
+    const employees = await listEmployees({ companyId: ctx.companyId });
     const bySeat = new Map<
       string,
       {

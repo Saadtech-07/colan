@@ -3,6 +3,7 @@ import { getDb } from "@/lib/mongodb";
 import { allowInMemoryFallback } from "@/lib/data-backend";
 import { ensureColanModelIndexes } from "@/models/indexes";
 import { COLLECTIONS } from "@/models/collections";
+import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
 import { applySeatingChange, type SeatingPendingChange } from "@/lib/seating-draft";
 import type { SeatingVersionActor } from "@/models/seating-version.model";
@@ -13,7 +14,9 @@ import type {
 } from "@/models/seating-seat-history.model";
 import type { Employee } from "@/types";
 
-type MemoryHistory = Omit<SeatHistoryDocument, "_id"> & { id: string };
+type SeatHistoryDraft = Omit<SeatHistoryDocument, "_id" | "companyId">;
+
+type MemoryHistory = SeatHistoryDocument & { id: string };
 
 const memoryHistory: MemoryHistory[] = [];
 
@@ -74,6 +77,7 @@ function toDto(doc: SeatHistoryDocument): SeatHistoryEntry {
 function memoryToDoc(row: MemoryHistory): SeatHistoryDocument {
   return {
     _id: new ObjectId(row.id),
+    companyId: row.companyId,
     officeSlug: row.officeSlug,
     seatId: row.seatId,
     action: row.action,
@@ -105,7 +109,7 @@ function event(
   previousSeat: string | null,
   newSeat: string | null,
   fallbackName?: string,
-): Omit<SeatHistoryDocument, "_id"> {
+): SeatHistoryDraft {
   return {
     officeSlug: normalizeOfficeSlug(officeSlug),
     seatId,
@@ -123,9 +127,9 @@ function eventsForChange(
   change: SeatingPendingChange,
   actor: SeatingVersionActor,
   at: Date,
-): Omit<SeatHistoryDocument, "_id">[] {
+): SeatHistoryDraft[] {
   const office = normalizeOfficeSlug(change.officeSlug);
-  const events: Omit<SeatHistoryDocument, "_id">[] = [];
+  const events: SeatHistoryDraft[] = [];
 
   switch (change.kind) {
     case "assign-seat":
@@ -273,8 +277,8 @@ export function buildSeatHistoryRecords(
   changes: SeatingPendingChange[],
   actor: SeatingVersionActor,
   createdAt = new Date(),
-): Omit<SeatHistoryDocument, "_id">[] {
-  const records: Omit<SeatHistoryDocument, "_id">[] = [];
+): SeatHistoryDraft[] {
+  const records: SeatHistoryDraft[] = [];
   let working = employees;
   for (const change of changes) {
     records.push(...eventsForChange(working, change, actor, createdAt));
@@ -293,7 +297,11 @@ export async function insertSeatHistory(
       throw new Error("MongoDB is not available.");
     }
     for (const record of records) {
-      memoryHistory.unshift({ ...record, id: new ObjectId().toHexString() });
+      memoryHistory.unshift({
+        ...record,
+        _id: new ObjectId(),
+        id: new ObjectId().toHexString(),
+      });
     }
     return;
   }
@@ -304,6 +312,7 @@ export async function insertSeatHistory(
 }
 
 export async function listSeatHistory(
+  companyId: string,
   officeSlug: string,
   seatId: string,
 ): Promise<SeatHistoryEntry[]> {
@@ -325,7 +334,7 @@ export async function listSeatHistory(
   await ensureColanModelIndexes(db);
   const rows = await db
     .collection<SeatHistoryDocument>(COLLECTIONS.seatingSeatHistory)
-    .find({ officeSlug: office, seatId: seat })
+    .find({ ...companyScope<SeatHistoryDocument>(companyId), officeSlug: office, seatId: seat })
     .sort({ createdAt: -1 })
     .limit(200)
     .toArray();
@@ -333,10 +342,16 @@ export async function listSeatHistory(
 }
 
 export async function recordSeatHistoryForChanges(input: {
+  companyId: string;
   employees: Employee[];
   changes: SeatingPendingChange[];
   actor: SeatingVersionActor;
 }): Promise<void> {
-  const records = buildSeatHistoryRecords(input.employees, input.changes, input.actor);
+  const records = buildSeatHistoryRecords(input.employees, input.changes, input.actor).map(
+    (record) => ({
+      ...record,
+      companyId: toCompanyObjectId(input.companyId),
+    }),
+  );
   await insertSeatHistory(records);
 }

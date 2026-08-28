@@ -7,6 +7,7 @@ export type AuthUser = {
   image?: string | null;
   appRole: AppRole;
   team?: TeamName;
+  companyId: string;
   isProfileCompleted: boolean;
 };
 
@@ -21,5 +22,6 @@ export type JwtPayload = {
   picture?: string;
   appRole: AppRole;
   team?: TeamName;
+  companyId: string;
   isProfileCompleted: boolean;
 };

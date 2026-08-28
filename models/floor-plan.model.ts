@@ -14,6 +14,7 @@ export type FloorPlanSlug =
 
 export type FloorPlanDocument = {
   _id: ObjectId;
+  companyId: ObjectId;
   slug: FloorPlanSlug;
   name: string;
   city?: string;

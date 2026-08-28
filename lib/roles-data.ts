@@ -8,6 +8,7 @@ import {
 import { SYSTEM_ROLE_SEEDS, type SystemRoleSeed } from "@/lib/rbac-seed";
 import { invalidateServerRoleCache } from "@/lib/role-registry.server";
 import { teamSlugFromName } from "@/lib/team-utils";
+import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import {
   COLLECTIONS,
   companyRoleDocToDTO,
@@ -36,6 +37,7 @@ function cloneMemoryRolesFromSeed(): WorkspaceRole[] {
     const permissions = seed.permissions;
     const doc: CompanyRoleDocument = {
       _id: new ObjectId(),
+      companyId: new ObjectId(),
       key: seed.key,
       name: seed.name,
       description: seed.description,
@@ -55,13 +57,14 @@ function cloneMemoryRolesFromSeed(): WorkspaceRole[] {
 /** Ensures system roles in MongoDB include chat permissions from current seeds. */
 export async function syncSystemRoleChatPermissions(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  companyId: string,
 ): Promise<void> {
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
   for (const seed of SYSTEM_ROLE_SEEDS) {
     const chat = seed.permissions.chat;
     if (!chat) continue;
     await col.updateOne(
-      { key: seed.key, isSystem: true },
+      { ...companyScope<CompanyRoleDocument>(companyId), key: seed.key, isSystem: true },
       {
         $set: {
           "permissions.chat": chat,
@@ -75,13 +78,14 @@ export async function syncSystemRoleChatPermissions(
 /** Ensures system roles in MongoDB include notifications permissions from current seeds. */
 export async function syncSystemRoleNotificationPermissions(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  companyId: string,
 ): Promise<void> {
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
   for (const seed of SYSTEM_ROLE_SEEDS) {
     const notifications = seed.permissions.notifications;
     if (!notifications) continue;
     await col.updateOne(
-      { key: seed.key, isSystem: true },
+      { ...companyScope<CompanyRoleDocument>(companyId), key: seed.key, isSystem: true },
       {
         $set: {
           "permissions.notifications": notifications,
@@ -108,13 +112,14 @@ function adminPermissionsNeedRestore(
 /** Restores the built-in Admin role to full access if it was downgraded. */
 export async function ensureAdminRoleFullAccess(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  companyId: string,
   options?: { force?: boolean },
 ): Promise<boolean> {
   const adminSeed = seedForKey("admin");
   if (!adminSeed) return false;
 
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
-  const existing = await col.findOne({ key: "admin", isSystem: true });
+  const existing = await col.findOne({ ...companyScope<CompanyRoleDocument>(companyId), key: "admin", isSystem: true });
   if (!existing) return false;
 
   const needsRestore =
@@ -152,6 +157,7 @@ function ensureMemoryAdminRoleFullAccess(): boolean {
 
   const doc: CompanyRoleDocument = {
     _id: new ObjectId(current.id.length === 24 ? current.id : "0".repeat(24)),
+    companyId: new ObjectId(),
     key: current.key,
     name: adminSeed.name,
     description: adminSeed.description,
@@ -167,20 +173,24 @@ function ensureMemoryAdminRoleFullAccess(): boolean {
   return true;
 }
 
-export async function ensureRolesSeed(
+export async function ensureRolesSeedForCompany(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  companyId: string,
 ): Promise<void> {
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
-  const count = await col.countDocuments();
+  const scope = companyScope<CompanyRoleDocument>(companyId);
+  const count = await col.countDocuments(scope);
   if (count > 0) {
-    await syncSystemRoleChatPermissions(db);
-    await syncSystemRoleNotificationPermissions(db);
-    await ensureAdminRoleFullAccess(db);
+    await syncSystemRoleChatPermissions(db, companyId);
+    await syncSystemRoleNotificationPermissions(db, companyId);
+    await ensureAdminRoleFullAccess(db, companyId);
     return;
   }
 
+  const companyObjectId = toCompanyObjectId(companyId);
   const docs: CompanyRoleDocument[] = SYSTEM_ROLE_SEEDS.map((seed, index) => ({
     _id: new ObjectId(),
+    companyId: companyObjectId,
     key: seed.key,
     name: seed.name,
     description: seed.description,
@@ -203,7 +213,15 @@ export async function ensureRolesSeed(
   }
 }
 
-export async function listWorkspaceRoles(): Promise<WorkspaceRole[]> {
+export async function ensureRolesSeed(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+): Promise<void> {
+  const companyId = (await db.collection(COLLECTIONS.companies).findOne({ slug: "colan" }))?._id;
+  if (!companyId) return;
+  await ensureRolesSeedForCompany(db, companyId.toHexString());
+}
+
+export async function listWorkspaceRoles(companyId: string): Promise<WorkspaceRole[]> {
   const db = await getDb();
   if (!db) {
     if (memoryRoles.length === 0) {
@@ -214,19 +232,23 @@ export async function listWorkspaceRoles(): Promise<WorkspaceRole[]> {
   }
 
   await ensureColanModelIndexes(db);
-  await ensureRolesSeed(db);
-  await syncSystemRoleChatPermissions(db);
-  await syncSystemRoleNotificationPermissions(db);
+  await ensureRolesSeedForCompany(db, companyId);
+  await syncSystemRoleChatPermissions(db, companyId);
+  await syncSystemRoleNotificationPermissions(db, companyId);
 
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
-  const docs = await col.find({}).sort({ displayOrder: 1, name: 1 }).toArray();
+  const docs = await col
+    .find(companyScope<CompanyRoleDocument>(companyId))
+    .sort({ displayOrder: 1, name: 1 })
+    .toArray();
   return docs.map((doc) => docToWorkspaceRole(doc));
 }
 
 export async function getWorkspaceRoleByKey(
+  companyId: string,
   key: string,
 ): Promise<WorkspaceRole | null> {
-  const roles = await listWorkspaceRoles();
+  const roles = await listWorkspaceRoles(companyId);
   return roles.find((r) => r.key === key) ?? null;
 }
 
@@ -235,7 +257,9 @@ export function roleKeyFromName(name: string): string {
   return slug || "role";
 }
 
-export async function createWorkspaceRole(input: {
+export async function createWorkspaceRole(
+  companyId: string,
+  input: {
   name: string;
   description: string;
   color: string;
@@ -244,7 +268,8 @@ export async function createWorkspaceRole(input: {
   scopes?: string[];
   teamScopedProjects?: boolean;
   teamScopedSeating?: boolean;
-}): Promise<WorkspaceRole> {
+},
+): Promise<WorkspaceRole> {
   const name = input.name.trim();
   if (!name) throw new Error("Role name is required.");
 
@@ -261,6 +286,7 @@ export async function createWorkspaceRole(input: {
     }
     const doc: CompanyRoleDocument = {
       _id: new ObjectId(),
+      companyId: toCompanyObjectId(companyId),
       key,
       name,
       description: input.description.trim(),
@@ -280,19 +306,22 @@ export async function createWorkspaceRole(input: {
   }
 
   await ensureColanModelIndexes(db);
-  await ensureRolesSeed(db);
+  await ensureRolesSeedForCompany(db, companyId);
 
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
+  const scope = companyScope<CompanyRoleDocument>(companyId);
   const existing = await col.findOne({
+    ...scope,
     $or: [{ key }, { name }],
   });
   if (existing) throw new Error("A role with this name already exists.");
 
-  const last = await col.find({}).sort({ displayOrder: -1 }).limit(1).toArray();
+  const last = await col.find(scope).sort({ displayOrder: -1 }).limit(1).toArray();
   const displayOrder = (last[0]?.displayOrder ?? -1) + 1;
 
   const doc: CompanyRoleDocument = {
     _id: new ObjectId(),
+    companyId: toCompanyObjectId(companyId),
     key,
     name,
     description: input.description.trim(),
@@ -322,6 +351,7 @@ export async function createWorkspaceRole(input: {
 }
 
 export async function updateWorkspaceRole(
+  companyId: string,
   id: string,
   patch: {
     name?: string;
@@ -351,6 +381,7 @@ export async function updateWorkspaceRole(
       : current.permissions;
     const nextDoc: CompanyRoleDocument = {
       _id: new ObjectId(id.length === 24 ? id : "0".repeat(24)),
+      companyId: toCompanyObjectId(companyId),
       key: current.key,
       name: patch.name?.trim() ?? current.name,
       description: patch.description?.trim() ?? current.description,
@@ -373,7 +404,10 @@ export async function updateWorkspaceRole(
 
   await ensureColanModelIndexes(db);
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
-  const existing = await col.findOne({ _id: new ObjectId(id) });
+  const existing = await col.findOne({
+    _id: new ObjectId(id),
+    ...companyScope<CompanyRoleDocument>(companyId),
+  });
   if (!existing) return null;
 
   if (existing.isSystem && patch.name && patch.name.trim() !== existing.name) {
@@ -410,7 +444,7 @@ export async function updateWorkspaceRole(
   return result ? docToWorkspaceRole(result) : null;
 }
 
-export async function deleteWorkspaceRole(id: string): Promise<boolean> {
+export async function deleteWorkspaceRole(companyId: string, id: string): Promise<boolean> {
   const db = await getDb();
 
   if (!db) {
@@ -427,7 +461,10 @@ export async function deleteWorkspaceRole(id: string): Promise<boolean> {
   if (!ObjectId.isValid(id)) return false;
 
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
-  const existing = await col.findOne({ _id: new ObjectId(id) });
+  const existing = await col.findOne({
+    _id: new ObjectId(id),
+    ...companyScope<CompanyRoleDocument>(companyId),
+  });
   if (!existing) return false;
   if (existing.isSystem) {
     throw new Error("System roles cannot be deleted.");
@@ -435,7 +472,7 @@ export async function deleteWorkspaceRole(id: string): Promise<boolean> {
 
   const users = await db
     .collection(COLLECTIONS.appUsers)
-    .countDocuments({ appRole: existing.key });
+    .countDocuments({ companyId: toCompanyObjectId(companyId), appRole: existing.key });
   if (users > 0) {
     throw new Error(
       `Cannot delete — ${users} app user(s) still use this role. Reassign them first.`,

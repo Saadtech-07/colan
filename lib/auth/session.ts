@@ -1,8 +1,12 @@
 import { cookies } from "next/headers";
 import { AUTH_COOKIE_NAME } from "@/lib/auth/constants";
 import { verifyAuthToken } from "@/lib/auth/jwt";
+import { authCookieOptions } from "@/lib/auth/cookies";
+import { signAuthToken } from "@/lib/auth/jwt";
+import { refreshJwtPayload } from "@/lib/auth/user-token";
 import { sanitizeSessionImageUrl } from "@/lib/session-token";
 import { normalizeAppRole, roleNeedsTeam } from "@/lib/permissions";
+import { hydrateSessionCompanyId } from "@/lib/tenant-scope";
 import type { JwtPayload, Session } from "@/types/auth";
 import type { AppRole, TeamName } from "@/types";
 
@@ -22,6 +26,7 @@ export function sessionFromPayload(payload: JwtPayload): Session {
       image: image ?? null,
       appRole,
       team,
+      companyId: payload.companyId ?? "",
       isProfileCompleted: payload.isProfileCompleted !== false,
     },
   };
@@ -34,7 +39,22 @@ export async function getSession(): Promise<Session | null> {
   if (!token) return null;
   const payload = await verifyAuthToken(token);
   if (!payload) return null;
-  return sessionFromPayload(payload);
+  const session = sessionFromPayload(payload);
+  return hydrateSessionCompanyId(session);
+}
+
+/** Re-issue JWT when legacy cookies lack companyId. */
+export async function refreshSessionCookieIfStale(): Promise<void> {
+  const jar = await cookies();
+  const token = jar.get(AUTH_COOKIE_NAME)?.value;
+  if (!token) return;
+  const payload = await verifyAuthToken(token);
+  if (!payload || payload.companyId?.trim()) return;
+
+  const fresh = await refreshJwtPayload(payload.email);
+  if (!fresh?.companyId?.trim()) return;
+
+  jar.set(AUTH_COOKIE_NAME, await signAuthToken(fresh), authCookieOptions());
 }
 
 export async function getSessionFromCookieHeader(
@@ -45,5 +65,6 @@ export async function getSessionFromCookieHeader(
   if (!token) return null;
   const payload = await verifyAuthToken(token);
   if (!payload) return null;
-  return sessionFromPayload(payload);
+  const session = sessionFromPayload(payload);
+  return hydrateSessionCompanyId(session);
 }

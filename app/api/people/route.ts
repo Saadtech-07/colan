@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import {
   canAccessModuleAction,
   canManageModule,
@@ -25,12 +25,13 @@ const personCreateSchema = employeeCreateSchema.extend({
 });
 
 export async function GET(req: Request) {
-  const session = await auth();
-  const access = await sessionAccessAsync(session);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  await ensureRoleRegistry();
+  await ensureRoleRegistry(ctx.companyId);
   const roleKey = normalizeAppRole(access.role);
   if (!canViewModule(roleKey, "peopleDirectory") && !canViewModule(roleKey, "teamMembers")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -46,7 +47,7 @@ export async function GET(req: Request) {
     status: (url.searchParams.get("status") as PersonStatus | null) ?? undefined,
   };
 
-  let people = await listPeople(filters);
+  let people = await listPeople(ctx.companyId, filters);
   const scopedEmployees = filterEmployeesForUser(
     people,
     access.role,
@@ -59,12 +60,13 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  const access = await sessionAccessAsync(session);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  await ensureRoleRegistry();
+  await ensureRoleRegistry(ctx.companyId);
   const roleKey = normalizeAppRole(access.role);
   if (
     !canManageModule(roleKey, "peopleDirectory") &&
@@ -90,6 +92,6 @@ export async function POST(req: Request) {
     );
   }
 
-  const created = await createPerson(parsed.data);
+  const created = await createPerson(ctx.companyId, parsed.data);
   return NextResponse.json(created, { status: 201 });
 }

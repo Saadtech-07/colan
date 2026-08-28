@@ -56,6 +56,7 @@ export type SeatingVersionActor = {
 
 export type SeatingVersionDocument = {
   _id: ObjectId;
+  companyId: ObjectId;
   officeSlug: string;
   version: number;
   createdAt: Date;

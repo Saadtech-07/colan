@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import {
   deleteFloorPlan,
   getFloorPlanBySlug,
@@ -16,13 +16,11 @@ import { floorPlanUpdateSchema } from "@/lib/validations";
 type Params = { params: Promise<{ slug: string }> };
 
 export async function GET(_req: Request, { params }: Params) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
   const { slug } = await params;
   try {
-    const plan = await getFloorPlanBySlug(slug);
+    const plan = await getFloorPlanBySlug(ctx.companyId, slug);
     if (!plan || !plan.isActive) {
       return NextResponse.json({ error: "Floor plan not found" }, { status: 404 });
     }
@@ -34,12 +32,10 @@ export async function GET(_req: Request, { params }: Params) {
 }
 
 export async function PATCH(req: Request, { params }: Params) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (!canAssignSeating(roleKey) && !canManageModule(roleKey, "seating")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -61,7 +57,7 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   try {
-    const updated = await updateFloorPlan(slug, parsed.data);
+    const updated = await updateFloorPlan(ctx.companyId, slug, parsed.data);
     return NextResponse.json(updated);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Update failed";
@@ -71,19 +67,17 @@ export async function PATCH(req: Request, { params }: Params) {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (!canAssignSeating(roleKey) && !canManageModule(roleKey, "seating")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { slug } = await params;
   try {
-    const deleted = await deleteFloorPlan(slug);
+    const deleted = await deleteFloorPlan(ctx.companyId, slug);
     return NextResponse.json({
       ok: true,
       deleted: true,

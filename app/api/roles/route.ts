@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import {
   canAccessModuleAction,
   canManageModule,
@@ -17,17 +17,15 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (!canViewModule(roleKey, "roles")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const roles = await listWorkspaceRoles();
+  const roles = await listWorkspaceRoles(ctx.companyId);
   hydrateRoleRegistry(roles);
 
   const sorted = [...roles].sort(
@@ -39,12 +37,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (
     !canManageModule(roleKey, "roles") &&
     !canAccessModuleAction(roleKey, "roles", "createRoles")
@@ -68,7 +64,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const created = await createWorkspaceRole({
+    const created = await createWorkspaceRole(ctx.companyId, {
       name: parsed.data.name,
       description: parsed.data.description ?? "",
       color: parsed.data.color,

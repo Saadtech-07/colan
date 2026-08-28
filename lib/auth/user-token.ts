@@ -1,6 +1,7 @@
 import { getAppUserSessionRefresh, verifyAppUserCredentials } from "@/lib/app-users";
 import { roleNeedsTeam } from "@/lib/permissions";
 import { sanitizeSessionImageUrl } from "@/lib/session-token";
+import { DEMO_COMPANY_ID } from "@/lib/tenant-scope";
 import type { JwtPayload, Session } from "@/types/auth";
 import type { TeamName } from "@/types";
 import { sessionFromPayload } from "@/lib/auth/session";
@@ -21,6 +22,7 @@ export async function buildJwtPayloadFromCredentials(
     picture: sanitizeSessionImageUrl(row.imageUrl),
     appRole,
     team,
+    companyId: row.companyId,
     isProfileCompleted: row.isProfileCompleted,
   };
 }
@@ -39,6 +41,7 @@ export async function refreshJwtPayload(email: string): Promise<JwtPayload | nul
     picture: sanitizeSessionImageUrl(fresh.imageUrl),
     appRole,
     team,
+    companyId: fresh.companyId || DEMO_COMPANY_ID,
     isProfileCompleted: fresh.isProfileCompleted,
   };
 }

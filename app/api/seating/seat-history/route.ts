@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import { listSeatHistory } from "@/lib/seating-seat-history";
 import { normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
 
   const url = new URL(req.url);
   const officeSlug = normalizeOfficeSlug(url.searchParams.get("officeSlug"));
@@ -17,7 +15,7 @@ export async function GET(req: Request) {
   }
 
   try {
-    const entries = await listSeatHistory(officeSlug, seatId);
+    const entries = await listSeatHistory(ctx.companyId, officeSlug, seatId);
     return NextResponse.json({ entries });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to load seat history";
