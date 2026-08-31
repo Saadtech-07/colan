@@ -32,22 +32,24 @@ import type {
 } from "@/types";
 import {
   COLLECTIONS,
-  ensureColanModelIndexes,
   employeeDetailsDocToDTO,
   employeeDocToDTO,
   employeeInputToDocFields,
   galleryImageDocToDTO,
   projectDocToDTO,
+  teamDocToDTO,
   type EmployeeDetailsDocument,
   type EmployeeDocument,
   type GalleryImageDocument,
   type ProjectDocument,
+  type TeamDocument,
   type AppUserDocument,
 } from "@/models";
 import { ensureAppUsersSeed, getAppUserPublicById } from "@/lib/app-users";
 import { collectLinkedEmployeeIds } from "@/lib/employee-app-user-link";
 import { isProjectManagerAppRole } from "@/lib/project-managers";
 import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
+import { ensureWorkspaceReady } from "@/lib/workspace-ready";
 import {
   MOCK_EMPLOYEES,
   MOCK_GALLERY,
@@ -96,7 +98,13 @@ async function backfillProjectTeams(db: Db) {
   const docs = await col.find({}).toArray();
   const now = new Date();
 
-  const catalog = await listTeams();
+  // Read teams directly — listTeams() awaits ensureWorkspaceReady, which calls this backfill.
+  const teamDocs = await db
+    .collection<TeamDocument>(COLLECTIONS.teams)
+    .find({})
+    .sort({ displayOrder: 1, name: 1 })
+    .toArray();
+  const catalog = teamDocs.map(teamDocToDTO);
 
   for (const doc of docs) {
     const teams = resolveProjectTeamsFromDoc(doc, catalog);
@@ -231,13 +239,13 @@ async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof get
 
   const { ensureTeamsSeed } = await import("@/lib/teams-data");
   const { ensureRolesSeed } = await import("@/lib/roles-data");
-  const { listFloorPlans } = await import("@/lib/floor-plans");
+  const { ensureFloorPlanSeeds } = await import("@/lib/floor-plans");
   const { resolveDefaultCompanyId } = await import("@/lib/companies");
   const defaultCompanyId = await resolveDefaultCompanyId();
   await ensureAppUsersSeed(db);
   await ensureTeamsSeed(db);
   await ensureRolesSeed(db);
-  await listFloorPlans(defaultCompanyId);
+  await ensureFloorPlanSeeds(db, defaultCompanyId);
 
   if (isDemoSeedEnabled() && (await em.countDocuments()) === 0) {
     await safeSeedInsert(() =>
@@ -307,7 +315,6 @@ async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof get
     );
   }
 
-  await ensureColanModelIndexes(db);
   await purgeOrphanEmployeeRecords(db);
 }
 
@@ -348,6 +355,27 @@ function detailsToDirectory(
   };
 }
 
+function mergeEmployeeDirectoryForList(
+  detailDoc?: EmployeeDetailsDocument,
+): EmployeeDirectoryInfo | undefined {
+  if (!detailDoc) return undefined;
+  const dto = employeeDetailsDocToDTO(detailDoc);
+  const merged: EmployeeDirectoryInfo = {
+    workEmail: dto.workEmail,
+    phone: dto.phone,
+    location: dto.location,
+    joinedDate: dto.joinedDate,
+    department: dto.department,
+    designation: dto.designation,
+    status: dto.status as EmployeeDirectoryInfo["status"],
+    reportsToEmployeeId: dto.reportsToEmployeeId,
+  };
+  const hasValue = Object.values(merged).some(
+    (value) => typeof value === "string" && value.trim().length > 0,
+  );
+  return hasValue ? merged : undefined;
+}
+
 function mergeEmployeeDirectory(
   row: EmployeeDocument,
   detailDoc?: EmployeeDetailsDocument,
@@ -386,13 +414,57 @@ export async function listEmployees(opts: {
 }): Promise<Employee[]> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
-    await ensureMongoSeed(db);
+    await ensureWorkspaceReady(db);
     return listEmployeesFromDb(db, opts.companyId, opts);
   }
   const db = await getDb();
   if (!db) return [];
+  await ensureWorkspaceReady(db);
   return listEmployeesFromDb(db, opts.companyId, opts);
 }
+
+function buildAppUserLinkIndex(appUsers: AppUserDocument[]) {
+  const byEmployeeId = new Set<string>();
+  const byEmail = new Set<string>();
+  for (const user of appUsers) {
+    const employeeId = user.employeeId?.trim();
+    if (employeeId) byEmployeeId.add(employeeId);
+    byEmail.add(user.email.toLowerCase());
+  }
+  return { byEmployeeId, byEmail };
+}
+
+function isEmployeeLinkedToAppUsers(
+  employee: EmployeeDocument,
+  detail: EmployeeDetailsDocument | undefined,
+  index: ReturnType<typeof buildAppUserLinkIndex>,
+): boolean {
+  const employeeId = employee.employeeId?.trim();
+  if (employeeId && index.byEmployeeId.has(employeeId)) return true;
+
+  for (const value of [
+    employee.email,
+    employee.directory?.workEmail,
+    employee.directory?.personalEmail,
+    detail?.workEmail,
+  ]) {
+    const email = value?.trim().toLowerCase();
+    if (email && index.byEmail.has(email)) return true;
+  }
+  return false;
+}
+
+const LIST_DETAIL_PROJECTION = {
+  employeeRef: 1,
+  workEmail: 1,
+  phone: 1,
+  location: 1,
+  joinedDate: 1,
+  department: 1,
+  designation: 1,
+  status: 1,
+  reportsToEmployeeRef: 1,
+} as const;
 
 async function purgeOrphanEmployeeRecords(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
@@ -437,30 +509,36 @@ async function listEmployeesFromDb(
   const scope = { companyId: toCompanyObjectId(companyId) };
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const detCol = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
+  const listProjection = includeImages
+    ? { directory: 0 }
+    : { imageUrl: 0, directory: 0 };
   const [appUsers, rows] = await Promise.all([
-    db.collection<AppUserDocument>(COLLECTIONS.appUsers).find(scope).toArray(),
-    includeImages
-      ? col.find(scope).sort({ name: 1 }).toArray()
-      : col
-          .find(scope, { projection: { imageUrl: 0 } })
-          .sort({ name: 1 })
-          .toArray(),
+    db
+      .collection<AppUserDocument>(COLLECTIONS.appUsers)
+      .find(scope, { projection: { email: 1, employeeId: 1 } })
+      .toArray(),
+    col.find(scope, { projection: listProjection }).sort({ name: 1 }).toArray(),
   ]);
   const detailRows =
     rows.length === 0
       ? []
-      : await detCol.find({ employeeRef: { $in: rows.map((r) => r._id) } }).toArray();
+      : await detCol
+          .find(
+            { employeeRef: { $in: rows.map((r) => r._id) } },
+            { projection: LIST_DETAIL_PROJECTION },
+          )
+          .toArray();
   const byRef = new Map(
     detailRows.map((d) => [d.employeeRef.toHexString(), d]),
   );
-  const linkedIds = collectLinkedEmployeeIds(rows, appUsers, byRef);
+  const linkIndex = buildAppUserLinkIndex(appUsers);
   return rows
-    .filter((row) => linkedIds.has(row._id.toHexString()))
+    .filter((row) => isEmployeeLinkedToAppUsers(row, byRef.get(row._id.toHexString()), linkIndex))
     .map((d) => {
       const base = employeeDocToDTO(d);
       const imageUrl = includeImages ? (base.imageUrl ?? "") : "";
-      const doc = byRef.get(base.id);
-      const directory = mergeEmployeeDirectory(d, doc);
+      const detail = byRef.get(base.id);
+      const directory = mergeEmployeeDirectoryForList(detail);
       return directory ? { ...base, imageUrl, directory } : { ...base, imageUrl };
     });
 }
@@ -1212,26 +1290,31 @@ export async function setCabinEmployees(
 export async function listProjects(): Promise<Project[]> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
-    await ensureMongoSeed(db);
+    await ensureWorkspaceReady(db);
     return listProjectsFromDb(db);
   }
   const db = await getDb();
   if (!db) return [];
+  await ensureWorkspaceReady(db);
   return listProjectsFromDb(db);
 }
 
 async function listProjectsFromDb(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
 ): Promise<Project[]> {
-  const catalog = await listTeams();
-  const rows = await db
-    .collection<ProjectDocument>(COLLECTIONS.projects)
-    .find({})
-    .sort({ assignedDate: -1 })
-    .toArray();
+  const teamCol = db.collection<TeamDocument>(COLLECTIONS.teams);
+  const [catalog, rows] = await Promise.all([
+    teamCol.find({}).sort({ displayOrder: 1, name: 1 }).toArray(),
+    db
+      .collection<ProjectDocument>(COLLECTIONS.projects)
+      .find({})
+      .sort({ assignedDate: -1 })
+      .toArray(),
+  ]);
+  const teamDtos = catalog.map((doc) => teamDocToDTO(doc));
   return rows.map((d) => {
     const dto = projectDocToDTO(d);
-    const resolved = resolveProjectTeamsFromDoc(d, catalog);
+    const resolved = resolveProjectTeamsFromDoc(d, teamDtos);
     return {
       ...dto,
       teams: mergeProjectTeamNames(resolved, d),

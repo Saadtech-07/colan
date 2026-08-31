@@ -3,7 +3,7 @@ import {
   resetRoleRegistry,
 } from "@/lib/role-registry";
 import { resolveDefaultCompanyId } from "@/lib/companies";
-import { listWorkspaceRoles, ensureAdminRoleFullAccess } from "@/lib/roles-data";
+import { listWorkspaceRoles } from "@/lib/roles-data";
 import type { WorkspaceRole } from "@/models";
 
 const loadPromises = new Map<string, Promise<WorkspaceRole[]>>();
@@ -20,14 +20,6 @@ export async function ensureRoleRegistry(
   const resolvedCompanyId = companyId ?? (await resolveDefaultCompanyId());
   let rolesPromise = loadPromises.get(resolvedCompanyId);
   if (!rolesPromise) {
-    const { getDb } = await import("@/lib/mongodb");
-    const db = await getDb();
-    if (db) {
-      const restored = await ensureAdminRoleFullAccess(db, resolvedCompanyId);
-      if (restored) {
-        loadPromises.delete(resolvedCompanyId);
-      }
-    }
     rolesPromise = listWorkspaceRoles(resolvedCompanyId);
     loadPromises.set(resolvedCompanyId, rolesPromise);
   }

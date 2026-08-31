@@ -6,9 +6,8 @@ import {
   canViewModule,
   normalizeAppRole,
 } from "@/lib/permissions";
-import { hydrateRoleRegistry } from "@/lib/role-registry";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
-import { createWorkspaceRole, listWorkspaceRoles } from "@/lib/roles-data";
+import { createWorkspaceRole } from "@/lib/roles-data";
 import {
   parseRolePermissionsInput,
   workspaceRoleCreateSchema,
@@ -25,8 +24,7 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const roles = await listWorkspaceRoles(ctx.companyId);
-  hydrateRoleRegistry(roles);
+  const roles = [...(await ensureRoleRegistry(ctx.companyId)).values()];
 
   const sorted = [...roles].sort(
     (a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name),

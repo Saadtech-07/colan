@@ -9,10 +9,10 @@ import { SYSTEM_ROLE_SEEDS, type SystemRoleSeed } from "@/lib/rbac-seed";
 import { invalidateServerRoleCache } from "@/lib/role-registry.server";
 import { teamSlugFromName } from "@/lib/team-utils";
 import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
+import { ensureWorkspaceReady } from "@/lib/workspace-ready";
 import {
   COLLECTIONS,
   companyRoleDocToDTO,
-  ensureColanModelIndexes,
   type CompanyRoleDocument,
   type WorkspaceRole,
 } from "@/models";
@@ -173,17 +173,48 @@ function ensureMemoryAdminRoleFullAccess(): boolean {
   return true;
 }
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __colanRolesSynced: Set<string> | undefined;
+  // eslint-disable-next-line no-var
+  var __colanRolesSeeded: Set<string> | undefined;
+}
+
+function rolesSyncKey(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, companyId: string) {
+  return `${db.databaseName}:${companyId}`;
+}
+
+async function syncRolesOnce(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  companyId: string,
+): Promise<void> {
+  const key = rolesSyncKey(db, companyId);
+  if (!globalThis.__colanRolesSynced) {
+    globalThis.__colanRolesSynced = new Set();
+  }
+  if (globalThis.__colanRolesSynced.has(key)) return;
+  await syncSystemRoleChatPermissions(db, companyId);
+  await syncSystemRoleNotificationPermissions(db, companyId);
+  await ensureAdminRoleFullAccess(db, companyId);
+  globalThis.__colanRolesSynced.add(key);
+}
+
 export async function ensureRolesSeedForCompany(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   companyId: string,
 ): Promise<void> {
+  const key = rolesSyncKey(db, companyId);
+  if (!globalThis.__colanRolesSeeded) {
+    globalThis.__colanRolesSeeded = new Set();
+  }
+  if (globalThis.__colanRolesSeeded.has(key)) return;
+
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
   const scope = companyScope<CompanyRoleDocument>(companyId);
   const count = await col.countDocuments(scope);
   if (count > 0) {
-    await syncSystemRoleChatPermissions(db, companyId);
-    await syncSystemRoleNotificationPermissions(db, companyId);
-    await ensureAdminRoleFullAccess(db, companyId);
+    await syncRolesOnce(db, companyId);
+    globalThis.__colanRolesSeeded.add(key);
     return;
   }
 
@@ -211,6 +242,8 @@ export async function ensureRolesSeedForCompany(
   } catch (e) {
     if (!isDuplicateKeyError(e)) throw e;
   }
+  await syncRolesOnce(db, companyId);
+  globalThis.__colanRolesSeeded.add(key);
 }
 
 export async function ensureRolesSeed(
@@ -231,10 +264,8 @@ export async function listWorkspaceRoles(companyId: string): Promise<WorkspaceRo
     return [...memoryRoles].sort((a, b) => a.displayOrder - b.displayOrder);
   }
 
-  await ensureColanModelIndexes(db);
+  await ensureWorkspaceReady(db);
   await ensureRolesSeedForCompany(db, companyId);
-  await syncSystemRoleChatPermissions(db, companyId);
-  await syncSystemRoleNotificationPermissions(db, companyId);
 
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
   const docs = await col
@@ -305,7 +336,7 @@ export async function createWorkspaceRole(
     return row;
   }
 
-  await ensureColanModelIndexes(db);
+  await ensureWorkspaceReady(db);
   await ensureRolesSeedForCompany(db, companyId);
 
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
@@ -402,7 +433,7 @@ export async function updateWorkspaceRole(
 
   if (!ObjectId.isValid(id)) return null;
 
-  await ensureColanModelIndexes(db);
+  await ensureWorkspaceReady(db);
   const col = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
   const existing = await col.findOne({
     _id: new ObjectId(id),

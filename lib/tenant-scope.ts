@@ -1,7 +1,7 @@
 import { ObjectId, type Filter } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { resolveDefaultCompanyId } from "@/lib/companies";
-import { COLLECTIONS, ensureColanModelIndexes, type AppUserDocument } from "@/models";
+import { COLLECTIONS, type AppUserDocument } from "@/models";
 import type { Session } from "@/types/auth";
 
 /** Fixed id for in-memory / demo mode when MongoDB is unavailable. */
@@ -29,13 +29,9 @@ export async function resolveCompanyIdForEmail(email: string): Promise<string> {
   const db = await getDb();
   if (!db) return DEMO_COMPANY_ID;
 
-  await ensureColanModelIndexes(db);
-  const { ensureAppUsersSeed } = await import("@/lib/app-users");
-  await ensureAppUsersSeed(db);
-
   const doc = await db
     .collection<AppUserDocument>(COLLECTIONS.appUsers)
-    .findOne({ email: normalized });
+    .findOne({ email: normalized }, { projection: { companyId: 1 } });
 
   if (doc?.companyId) return doc.companyId.toHexString();
   return resolveDefaultCompanyId();

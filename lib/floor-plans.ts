@@ -114,7 +114,7 @@ function ensureMemorySeeds() {
   }
 }
 
-async function ensureFloorPlanSeeds(db: Db, companyId: string): Promise<void> {
+export async function ensureFloorPlanSeeds(db: Db, companyId: string): Promise<void> {
   const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
   const scope = companyScope<FloorPlanDocument>(companyId);
   for (const seed of buildFloorPlanSeeds()) {
