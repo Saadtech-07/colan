@@ -13,6 +13,7 @@ import {
   seatIdsFromRows,
 } from "@/lib/floor-plan-layouts";
 import { getDb } from "@/lib/mongodb";
+import { deleteFloorPlanDesigns } from "@/lib/floor-plan-layouts.server";
 import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { COLLECTIONS } from "@/models/collections";
 import {
@@ -414,6 +415,7 @@ export async function deleteFloorPlan(companyId: string, slug: string): Promise<
   if (result.deletedCount < 1) {
     throw new Error("Floor plan not found");
   }
+  await deleteFloorPlanDesigns(companyId, normalized);
   return dto;
 }
 

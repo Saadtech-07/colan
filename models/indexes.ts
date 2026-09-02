@@ -8,6 +8,7 @@ import type { CompanyRoleDocument } from "./company-role.model";
 import type { SeatingVersionDocument } from "./seating-version.model";
 import type { SeatHistoryDocument } from "./seating-seat-history.model";
 import type { FloorPlanDocument } from "./floor-plan.model";
+import type { FloorPlanLayoutDocument } from "./floor-plan-layout.model";
 import type { TeamMemberDocument } from "./team-member.model";
 import type { ProjectDocument } from "./project.model";
 import type { GalleryImageDocument } from "./gallery-image.model";
@@ -160,6 +161,13 @@ async function ensureColanModelIndexesWork(db: Db): Promise<void> {
   await db
     .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
     .createIndex({ companyId: 1, isActive: 1, sortOrder: 1 });
+
+  await db
+    .collection<FloorPlanLayoutDocument>(COLLECTIONS.floorPlanLayouts)
+    .createIndex({ companyId: 1, floorPlanSlug: 1, status: 1 });
+  await db
+    .collection<FloorPlanLayoutDocument>(COLLECTIONS.floorPlanLayouts)
+    .createIndex({ companyId: 1, floorPlanSlug: 1, version: -1 });
 
   await db.collection<EmployeeDocument>(COLLECTIONS.employees).createIndex({
     companyId: 1,

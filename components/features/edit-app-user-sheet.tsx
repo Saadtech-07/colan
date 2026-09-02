@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2, Save } from "lucide-react";
 import {
   AppUserAccountDetailsStep,
@@ -24,7 +24,8 @@ import {
   stashEditAccountSuccess,
   updateAppUserAccount,
 } from "@/lib/edit-app-user-client";
-import { fetchAppUsersList, clearCachedAppUsers } from "@/lib/app-users-client";
+import { fetchAppUsersList } from "@/lib/app-users-client";
+import { appUsersListHref } from "@/lib/app-users-list-state";
 import { LOADING_PRESETS } from "@/lib/loading-presets";
 import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
 import { parseApiError, useAppState } from "@/providers/app-state";
@@ -69,6 +70,7 @@ function validateEditAccountStep(values: AppUserAccountFormValues): string | nul
 
 export function EditAppUserSheet({ userId, open, onOpenChange }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { teamNames, workspaceRoles, employees, refreshData } = useAppState();
   const { withLoading, isLoadingKey } = useGlobalLoading();
 
@@ -181,12 +183,11 @@ export function EditAppUserSheet({ userId, open, onOpenChange }: Props) {
     try {
       await withLoading("app-users-submit", LOADING_PRESETS.updatingAccount, async () => {
         await updateAppUserAccount(userId, values);
+        await fetchAppUsersList({ force: true });
         stashEditAccountSuccess();
-        clearCachedAppUsers();
         resetState();
         onOpenChange(false);
-        router.push("/app-users");
-        // Refresh workspace data in the background — don't block navigation.
+        router.replace(appUsersListHref(undefined, searchParams));
         void refreshData();
       });
     } catch (e) {

@@ -39,6 +39,9 @@ export type FloorPlanDocument = {
   isActive: boolean;
   sortOrder?: number;
   source?: "excel" | "manual" | "ai" | "seed";
+  /** `builder` floors render from floor_plan_layouts; legacy seeds use row layout. */
+  migrationStatus?: "legacy" | "builder";
+  layoutVersion?: number;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -51,6 +54,8 @@ export type FloorPlanSummary = {
   isActive: boolean;
   sortOrder?: number;
   seatCount: number;
+  migrationStatus?: FloorPlanDocument["migrationStatus"];
+  updatedAt?: string;
 };
 
 export type FloorPlanDTO = {
@@ -65,6 +70,8 @@ export type FloorPlanDTO = {
   isActive: boolean;
   sortOrder?: number;
   source?: FloorPlanDocument["source"];
+  migrationStatus?: FloorPlanDocument["migrationStatus"];
+  layoutVersion?: number;
 };
 
 export function floorPlanDocToDTO(doc: FloorPlanDocument): FloorPlanDTO {
@@ -80,6 +87,8 @@ export function floorPlanDocToDTO(doc: FloorPlanDocument): FloorPlanDTO {
     isActive: doc.isActive,
     sortOrder: doc.sortOrder,
     source: doc.source,
+    migrationStatus: doc.migrationStatus,
+    layoutVersion: doc.layoutVersion,
   };
 }
 
@@ -92,5 +101,7 @@ export function floorPlanDocToSummary(doc: FloorPlanDocument): FloorPlanSummary 
     isActive: doc.isActive,
     sortOrder: doc.sortOrder,
     seatCount: doc.seatIds?.length ?? 0,
+    migrationStatus: doc.migrationStatus,
+    updatedAt: doc.updatedAt?.toISOString(),
   };
 }

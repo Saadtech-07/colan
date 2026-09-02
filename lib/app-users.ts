@@ -778,25 +778,13 @@ export async function deleteAppUser(id: string) {
     throw new Error("Invalid user id.");
   }
 
-  const col = db.collection<AppUserDocument>(
-    COLLECTIONS.appUsers
-  );
+  const userObjectId = new ObjectId(id);
+  const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
 
-  // Find user before deleting
-  const user = await col.findOne({
-    _id: new ObjectId(id),
-  });
-
+  const user = await col.findOne({ _id: userObjectId });
   if (!user) {
     throw new Error("User not found.");
   }
-
-  // Delete from app-users
-  await col.deleteOne({
-    _id: new ObjectId(id),
-  });
-
-  await suppressSeedUser(db, user.email);
 
   const employeeCol = db.collection(COLLECTIONS.employees);
   const detailsCol = db.collection(COLLECTIONS.employeeDetails);
@@ -820,13 +808,57 @@ export async function deleteAppUser(id: string) {
 
   const linkedEmployees = await employeeCol
     .find({ $or: employeeFilters })
-    .project({ _id: 1 })
     .toArray();
 
-  if (linkedEmployees.length > 0) {
-    const refs = linkedEmployees.map((row) => row._id);
-    await detailsCol.deleteMany({ employeeRef: { $in: refs } });
-    await employeeCol.deleteMany({ _id: { $in: refs } });
+  const employeeIds = linkedEmployees
+    .map((row) => row._id.toHexString())
+    .filter(Boolean);
+  const employeeRefs = linkedEmployees.map((row) => row._id);
+
+  const conversationCol = db.collection(COLLECTIONS.conversations);
+  const messageCol = db.collection(COLLECTIONS.messages);
+  const notificationCol = db.collection(COLLECTIONS.notifications);
+
+  const participantKeys = [userObjectId, id];
+  const linkedConversations = await conversationCol
+    .find({
+      $or: [
+        { "participants.0": { $in: participantKeys } },
+        { "participants.1": { $in: participantKeys } },
+      ],
+    })
+    .project({ _id: 1 })
+    .toArray();
+  const conversationIds = linkedConversations.map((row) => row._id);
+
+  if (conversationIds.length > 0) {
+    await messageCol.deleteMany({ conversationId: { $in: conversationIds } });
+    await conversationCol.deleteMany({ _id: { $in: conversationIds } });
+  }
+
+  await messageCol.deleteMany({
+    $or: [{ senderId: userObjectId }, { receiverId: userObjectId }],
+  });
+  await notificationCol.deleteMany({
+    $or: [{ recipientUserId: id }, { actorUserId: id }],
+  });
+
+  for (const employeeId of employeeIds) {
+    await db.collection(COLLECTIONS.projects).updateMany(
+      { memberIds: employeeId },
+      {
+        $pull: { memberIds: employeeId },
+        $set: { updatedAt: new Date() },
+      } as Record<string, unknown>,
+    );
+  }
+
+  await col.deleteOne({ _id: userObjectId });
+  await suppressSeedUser(db, user.email);
+
+  if (employeeRefs.length > 0) {
+    await detailsCol.deleteMany({ employeeRef: { $in: employeeRefs } });
+    await employeeCol.deleteMany({ _id: { $in: employeeRefs } });
   }
 
   return user;

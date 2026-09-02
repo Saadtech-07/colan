@@ -30,7 +30,7 @@ export function buildUpdateAppUserBody(values: AppUserAccountFormValues) {
     permanentAddress: values.permanentAddress.trim() || undefined,
     joinedDate: values.joinedDate.trim() || undefined,
     gender: values.gender,
-    ...(values.imageUrl.trim() ? { imageUrl: values.imageUrl.trim() } : {}),
+    imageUrl: values.imageUrl.trim(),
     ...(values.password ? { password: values.password } : {}),
   };
 }

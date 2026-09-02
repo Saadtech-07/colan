@@ -12,6 +12,9 @@ export const COLLECTIONS = {
   seatingVersions: "seating_versions",
   seatingSeatHistory: "seating_seat_history",
   floorPlans: "floor_plans",
+  /** Builder workspace designs (draft + published canvas layouts). */
+  floorPlanDesigns: "floor_plan_layouts",
+  floorPlanLayouts: "floor_plan_layouts",
   teamMembers: "team_members",
   projects: "projects",
   gallery: "gallery",
