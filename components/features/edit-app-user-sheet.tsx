@@ -122,8 +122,6 @@ export function EditAppUserSheet({ userId, open, onOpenChange }: Props) {
             workEmail: userRecord.workEmail,
             personalEmail: userRecord.personalEmail,
             phone: userRecord.phone,
-            location: userRecord.location,
-            fullAddress: userRecord.fullAddress,
             currentAddress: userRecord.currentAddress,
             permanentAddress: userRecord.permanentAddress,
             joinedDate: userRecord.joinedDate,

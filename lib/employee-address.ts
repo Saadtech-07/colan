@@ -5,6 +5,26 @@ type EmployeeAddressFields = {
   permanentAddress: string;
 };
 
+/** Fields persisted on `employee_details` (legacy location/fullAddress excluded). */
+export type EmployeeDetailsAddressFields = {
+  personalEmail?: string;
+  workEmail?: string;
+  phone?: string;
+  currentAddress?: string;
+  permanentAddress?: string;
+  joinedDate?: string;
+};
+
+export const LEGACY_EMPLOYEE_DIRECTORY_UNSET = {
+  "directory.location": "",
+  "directory.fullAddress": "",
+} as const;
+
+export const LEGACY_EMPLOYEE_DETAILS_UNSET = {
+  location: "",
+  fullAddress: "",
+} as const;
+
 /** Map legacy `location` / `fullAddress` into current address when loading older records. */
 export function addressesFromDirectory(
   directory?: Partial<EmployeeDirectoryInfo> | null,
@@ -31,6 +51,21 @@ export function directoryPatchFromAddresses(
     ...extras,
     currentAddress: currentAddress || undefined,
     permanentAddress: permanentAddress || undefined,
-    location: currentAddress || undefined,
+  };
+}
+
+/** Normalize directory/contact fields for `employee_details` writes. */
+export function employeeDetailsFieldsFromDirectory(
+  directory: Partial<EmployeeDirectoryInfo>,
+): EmployeeDetailsAddressFields {
+  const { currentAddress, permanentAddress } = addressesFromDirectory(directory);
+
+  return {
+    personalEmail: directory.personalEmail?.trim() || undefined,
+    workEmail: directory.workEmail?.trim() || undefined,
+    phone: directory.phone?.trim() || undefined,
+    currentAddress: currentAddress || undefined,
+    permanentAddress: permanentAddress || undefined,
+    joinedDate: directory.joinedDate?.trim() || undefined,
   };
 }

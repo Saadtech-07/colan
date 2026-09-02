@@ -17,7 +17,7 @@ import {
   type TeamAssignableAccount,
 } from "@/lib/team-assignees";
 import type { ProjectManagerSummary } from "@/types";
-import { addressesFromDirectory, directoryPatchFromAddresses } from "@/lib/employee-address";
+import { addressesFromDirectory, directoryPatchFromAddresses, employeeDetailsFieldsFromDirectory, LEGACY_EMPLOYEE_DETAILS_UNSET, LEGACY_EMPLOYEE_DIRECTORY_UNSET } from "@/lib/employee-address";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { getRoleFromRegistry } from "@/lib/role-registry";
 import { resolveDefaultCompanyId } from "@/lib/companies";
@@ -321,10 +321,7 @@ async function enrichAppUsersWithEmployeeProfiles(
       workEmail: directory.workEmail ?? user.email,
       personalEmail: directory.personalEmail ?? "",
       phone: directory.phone ?? "",
-      location: directory.location ?? "",
-      fullAddress: directory.fullAddress ?? directory.location ?? "",
-      currentAddress: directory.currentAddress ?? "",
-      permanentAddress: directory.permanentAddress ?? "",
+      ...addressesFromDirectory(directory),
       joinedDate: directory.joinedDate ?? "",
       bayNumber: typeof employee.bayNumber === "string" ? employee.bayNumber : "",
       gender:
@@ -509,17 +506,11 @@ export async function createAppUser(
     {
       $set: {
         employeeRef: employeeObjectId,
-        workEmail: directory.workEmail,
-        personalEmail: directory.personalEmail,
-        phone: directory.phone || undefined,
-        location: directory.location || undefined,
-        fullAddress: directory.fullAddress || undefined,
-        currentAddress: directory.currentAddress || undefined,
-        permanentAddress: directory.permanentAddress || undefined,
-        joinedDate: directory.joinedDate || undefined,
+        ...employeeDetailsFieldsFromDirectory(directory),
         notes: directory.notes || undefined,
         updatedAt: new Date(),
       },
+      $unset: LEGACY_EMPLOYEE_DETAILS_UNSET,
       $setOnInsert: {
         _id: new ObjectId(),
         createdAt: new Date(),
@@ -681,8 +672,6 @@ export async function updateAppUser(
     "directory.workEmail": nextWorkEmail,
     "directory.personalEmail": nextPersonalEmail,
     "directory.phone": nextPhone,
-    "directory.location": nextDirectory.location ?? "",
-    "directory.fullAddress": nextDirectory.fullAddress ?? "",
     "directory.currentAddress": nextDirectory.currentAddress ?? "",
     "directory.permanentAddress": nextDirectory.permanentAddress ?? "",
     "directory.joinedDate": nextJoinedDate,
@@ -691,6 +680,7 @@ export async function updateAppUser(
 
   const employeeUpdate = await employeeCol.updateOne(employeeFilter, {
     $set: employeeSet,
+    $unset: LEGACY_EMPLOYEE_DIRECTORY_UNSET,
   });
 
   let employeeRef = existingEmployee?._id;
@@ -712,8 +702,6 @@ export async function updateAppUser(
         workEmail: nextWorkEmail,
         personalEmail: nextPersonalEmail || undefined,
         phone: nextPhone,
-        location: nextDirectory.location ?? "",
-        fullAddress: nextDirectory.fullAddress ?? "",
         currentAddress: nextDirectory.currentAddress ?? "",
         permanentAddress: nextDirectory.permanentAddress ?? "",
         joinedDate: nextJoinedDate,
@@ -734,16 +722,10 @@ export async function updateAppUser(
       {
         $set: {
           employeeRef,
-          workEmail: nextWorkEmail,
-          personalEmail: nextPersonalEmail || undefined,
-          phone: nextPhone || undefined,
-          location: nextDirectory.location || undefined,
-          fullAddress: nextDirectory.fullAddress || undefined,
-          currentAddress: nextDirectory.currentAddress || undefined,
-          permanentAddress: nextDirectory.permanentAddress || undefined,
-          joinedDate: nextJoinedDate || undefined,
+          ...employeeDetailsFieldsFromDirectory(nextDirectory),
           updatedAt: new Date(),
         },
+        $unset: LEGACY_EMPLOYEE_DETAILS_UNSET,
         $setOnInsert: {
           _id: new ObjectId(),
           createdAt: new Date(),
@@ -1022,6 +1004,7 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
   const embeddedDirectory = employee.directory as
     | {
         phone?: string;
+        personalEmail?: string;
         location?: string;
         workEmail?: string;
         joinedDate?: string;
@@ -1036,23 +1019,24 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
   });
 
   const mergedDirectory = {
-    location: details?.location ?? embeddedDirectory?.location,
-    fullAddress: details?.fullAddress ?? embeddedDirectory?.fullAddress,
-    currentAddress: details?.currentAddress ?? embeddedDirectory?.currentAddress,
-    permanentAddress: details?.permanentAddress ?? embeddedDirectory?.permanentAddress,
+    personalEmail: details?.personalEmail ?? embeddedDirectory?.personalEmail,
     workEmail: embeddedDirectory?.workEmail ?? details?.workEmail,
     phone: details?.phone ?? embeddedDirectory?.phone,
+    currentAddress: details?.currentAddress ?? embeddedDirectory?.currentAddress,
+    permanentAddress: details?.permanentAddress ?? embeddedDirectory?.permanentAddress,
+    location: details?.location ?? embeddedDirectory?.location,
+    fullAddress: details?.fullAddress ?? embeddedDirectory?.fullAddress,
     joinedDate: details?.joinedDate ?? embeddedDirectory?.joinedDate,
   };
 
   profile.workEmail = mergedDirectory.workEmail?.trim() || doc.email;
+  profile.personalEmail = mergedDirectory.personalEmail?.trim() || undefined;
   profile.phone = mergedDirectory.phone?.trim() || undefined;
   profile.joinedDate = mergedDirectory.joinedDate?.trim() || undefined;
 
   const { currentAddress, permanentAddress } = addressesFromDirectory(mergedDirectory);
   profile.currentAddress = currentAddress || undefined;
   profile.permanentAddress = permanentAddress || undefined;
-  profile.location = currentAddress || mergedDirectory.location?.trim() || undefined;
 
   const embeddedResume = embeddedDirectory as
     | {

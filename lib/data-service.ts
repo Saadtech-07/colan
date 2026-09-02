@@ -15,6 +15,11 @@ import {
   employeeSlugFromId,
   findEmployeeBySlugOrId,
 } from "@/lib/employee-slug";
+import {
+  addressesFromDirectory,
+  employeeDetailsFieldsFromDirectory,
+  LEGACY_EMPLOYEE_DETAILS_UNSET,
+} from "@/lib/employee-address";
 import { getProjectsForEmployee } from "@/lib/project-assignments";
 import { assertProjectsMatchEmployeeTeam, filterProjectsByEmployeeTeam } from "@/lib/projects";
 import { resolveProjectTeamsFromDoc } from "@/lib/project-team-resolve";
@@ -335,13 +340,16 @@ export async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof 
 function detailsToDirectory(
   dto: ReturnType<typeof employeeDetailsDocToDTO>,
 ): EmployeeDirectoryInfo {
-  return {
-    workEmail: dto.workEmail,
-    phone: dto.phone,
-    location: dto.location,
-    fullAddress: dto.fullAddress,
+  const { currentAddress, permanentAddress } = addressesFromDirectory({
     currentAddress: dto.currentAddress,
     permanentAddress: dto.permanentAddress,
+  });
+  return {
+    personalEmail: dto.personalEmail,
+    workEmail: dto.workEmail,
+    phone: dto.phone,
+    currentAddress: currentAddress || undefined,
+    permanentAddress: permanentAddress || undefined,
     joinedDate: dto.joinedDate,
     notes: dto.notes,
     resumeUrl: dto.resumeUrl,
@@ -361,9 +369,13 @@ function mergeEmployeeDirectoryForList(
   if (!detailDoc) return undefined;
   const dto = employeeDetailsDocToDTO(detailDoc);
   const merged: EmployeeDirectoryInfo = {
+    personalEmail: dto.personalEmail,
     workEmail: dto.workEmail,
     phone: dto.phone,
-    location: dto.location,
+    ...addressesFromDirectory({
+      currentAddress: dto.currentAddress,
+      permanentAddress: dto.permanentAddress,
+    }),
     joinedDate: dto.joinedDate,
     department: dto.department,
     designation: dto.designation,
@@ -385,12 +397,15 @@ function mergeEmployeeDirectory(
     : {};
   const embedded = row.directory ?? {};
   const merged: EmployeeDirectoryInfo = {
+    personalEmail: fromCollection.personalEmail ?? embedded.personalEmail,
     workEmail: fromCollection.workEmail ?? embedded.workEmail,
     phone: fromCollection.phone ?? embedded.phone,
-    location: fromCollection.location ?? embedded.location,
-    fullAddress: fromCollection.fullAddress ?? embedded.fullAddress,
-    currentAddress: fromCollection.currentAddress ?? embedded.currentAddress,
-    permanentAddress: fromCollection.permanentAddress ?? embedded.permanentAddress,
+    ...addressesFromDirectory({
+      currentAddress: fromCollection.currentAddress ?? embedded.currentAddress,
+      permanentAddress: fromCollection.permanentAddress ?? embedded.permanentAddress,
+      location: embedded.location,
+      fullAddress: embedded.fullAddress,
+    }),
     joinedDate: fromCollection.joinedDate ?? embedded.joinedDate,
     notes: fromCollection.notes ?? embedded.notes,
     resumeUrl: fromCollection.resumeUrl ?? embedded.resumeUrl,
@@ -634,35 +649,31 @@ async function upsertEmployeeDirectory(
 ): Promise<EmployeeDirectoryInfo | undefined> {
   const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
   const existing = await det.findOne({ employeeRef });
-  const merged: EmployeeDetailsDocument = {
-    _id: existing?._id ?? new ObjectId(),
-    employeeRef,
+  const detailFields = employeeDetailsFieldsFromDirectory({
+    personalEmail:
+      directory.personalEmail !== undefined
+        ? directory.personalEmail
+        : existing?.personalEmail,
     workEmail:
-      directory.workEmail !== undefined
-        ? directory.workEmail || undefined
-        : existing?.workEmail,
-    phone:
-      directory.phone !== undefined ? directory.phone || undefined : existing?.phone,
-    location:
-      directory.location !== undefined
-        ? directory.location || undefined
-        : existing?.location,
-    fullAddress:
-      directory.fullAddress !== undefined
-        ? directory.fullAddress || undefined
-        : existing?.fullAddress,
+      directory.workEmail !== undefined ? directory.workEmail : existing?.workEmail,
+    phone: directory.phone !== undefined ? directory.phone : existing?.phone,
     currentAddress:
       directory.currentAddress !== undefined
-        ? directory.currentAddress || undefined
+        ? directory.currentAddress
         : existing?.currentAddress,
     permanentAddress:
       directory.permanentAddress !== undefined
-        ? directory.permanentAddress || undefined
+        ? directory.permanentAddress
         : existing?.permanentAddress,
     joinedDate:
-      directory.joinedDate !== undefined
-        ? directory.joinedDate || undefined
-        : existing?.joinedDate,
+      directory.joinedDate !== undefined ? directory.joinedDate : existing?.joinedDate,
+    location: existing?.location,
+    fullAddress: existing?.fullAddress,
+  });
+  const merged: EmployeeDetailsDocument = {
+    _id: existing?._id ?? new ObjectId(),
+    employeeRef,
+    ...detailFields,
     department:
       directory.department !== undefined
         ? directory.department || undefined
@@ -686,7 +697,10 @@ async function upsertEmployeeDirectory(
   };
   await det.updateOne(
     { employeeRef },
-    { $set: merged },
+    {
+      $set: merged,
+      $unset: LEGACY_EMPLOYEE_DETAILS_UNSET,
+    },
     { upsert: true },
   );
   return detailsToDirectory(employeeDetailsDocToDTO(merged));

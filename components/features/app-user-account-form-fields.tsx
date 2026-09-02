@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ALL_SEAT_IDS } from "@/lib/seating-layout";
-import { addressesFromDirectory, directoryPatchFromAddresses } from "@/lib/employee-address";
+import { addressesFromDirectory } from "@/lib/employee-address";
 import { seatOccupancyMap } from "@/lib/seating-utils";
 import { generateTemporaryPassword } from "@/lib/password-utils";
 import { roleNeedsEmployeeIdentity } from "@/lib/permissions";
