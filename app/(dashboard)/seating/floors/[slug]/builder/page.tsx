@@ -47,6 +47,7 @@ export default function EditFloorBuilderPage() {
             version: saved.version ?? 0,
             grid: saved.grid ?? createEmptyLayout(plan.name).grid,
             elements: saved.elements ?? [],
+            blocks: saved.blocks,
             floorPlanSlug: slug,
           });
         } else {

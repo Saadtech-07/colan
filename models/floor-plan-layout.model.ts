@@ -1,5 +1,5 @@
 import type { ObjectId } from "mongodb";
-import type { FloorPlanElement, FloorPlanGrid } from "@/lib/floor-plan-builder/types";
+import type { FloorPlanElement, FloorPlanGrid, WorkspaceBlock } from "@/lib/floor-plan-builder/types";
 import { COLLECTIONS } from "./collections";
 
 export const FLOOR_PLAN_LAYOUT_COLLECTION = COLLECTIONS.floorPlanLayouts;
@@ -13,6 +13,7 @@ export type FloorPlanLayoutDocument = {
   version: number;
   grid: FloorPlanGrid;
   elements: FloorPlanElement[];
+  blocks?: WorkspaceBlock[];
   seatIds: string[];
   mergeGroups?: Array<{ id: string; seatIds: string[] }>;
   publishedAt?: Date;
@@ -29,6 +30,7 @@ export type FloorPlanLayoutDTO = {
   version: number;
   grid: FloorPlanGrid;
   elements: FloorPlanElement[];
+  blocks?: WorkspaceBlock[];
   seatIds: string[];
   mergeGroups?: Array<{ id: string; seatIds: string[] }>;
   publishedAt?: string;
@@ -44,6 +46,7 @@ export function floorPlanLayoutDocToDTO(doc: FloorPlanLayoutDocument): FloorPlan
     version: doc.version,
     grid: doc.grid,
     elements: doc.elements,
+    blocks: doc.blocks,
     seatIds: doc.seatIds ?? [],
     mergeGroups: doc.mergeGroups,
     publishedAt: doc.publishedAt?.toISOString(),

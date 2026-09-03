@@ -23,20 +23,38 @@ type Props = {
   onFloorNameChange?: (name: string) => void;
 };
 
-function FloorNameField({ floorName, onFloorNameChange }: Required<Pick<Props, "floorName" | "onFloorNameChange">>) {
+function WorkspaceSettings({
+  floorName,
+  onFloorNameChange,
+}: Required<Pick<Props, "floorName" | "onFloorNameChange">>) {
+  const { activeBlockName, updateActiveBlockName } = useFloorPlanBuilder();
+
   return (
-    <div className="space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3">
-      <Label htmlFor="floor-name">Floor name</Label>
-      <Input
-        id="floor-name"
-        value={floorName}
-        onChange={(e) => onFloorNameChange(e.target.value)}
-        placeholder="e.g. Hyderabad · Block A"
-        className="rounded-xl"
-      />
-      <p className="text-[11px] text-muted-foreground">
-        Shown in seating branches and saved with your layout.
-      </p>
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <Label htmlFor="floor-name" className="text-xs">
+          Workspace name
+        </Label>
+        <Input
+          id="floor-name"
+          value={floorName}
+          onChange={(e) => onFloorNameChange(e.target.value)}
+          placeholder="e.g. Colan Layout"
+          className="h-8 rounded-lg"
+        />
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor="layout-name" className="text-xs">
+          Active layout name
+        </Label>
+        <Input
+          id="layout-name"
+          value={activeBlockName}
+          onChange={(e) => updateActiveBlockName(e.target.value)}
+          placeholder="Block A"
+          className="h-8 rounded-lg"
+        />
+      </div>
     </div>
   );
 }
@@ -58,18 +76,15 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
   const selectedMany = selection.length > 1;
 
   const panelClass =
-    "flex h-full min-h-0 w-[280px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-border/60 bg-card p-4";
+    "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4";
 
   if (!selected && !selectedMany) {
     return (
       <aside className={panelClass}>
         <p className="text-sm font-semibold">Properties</p>
         {onFloorNameChange ? (
-          <FloorNameField floorName={floorName} onFloorNameChange={onFloorNameChange} />
+          <WorkspaceSettings floorName={floorName} onFloorNameChange={onFloorNameChange} />
         ) : null}
-        <p className="text-xs text-muted-foreground">
-          Select an element to edit name, position, and size. Drag elements from the toolbox onto the canvas.
-        </p>
         <GridSizeControls />
         <ClearCanvasButton />
         <Button type="button" variant="outline" className="rounded-xl" onClick={() => setBulkOpen(true)}>
@@ -85,7 +100,7 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
     return (
       <aside className={panelClass}>
         {onFloorNameChange ? (
-          <FloorNameField floorName={floorName} onFloorNameChange={onFloorNameChange} />
+          <WorkspaceSettings floorName={floorName} onFloorNameChange={onFloorNameChange} />
         ) : null}
         <p className="text-sm font-semibold">{selection.length} selected</p>
         <p className="text-[11px] text-muted-foreground">
@@ -121,7 +136,7 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
   return (
     <aside className={panelClass}>
       {onFloorNameChange ? (
-        <FloorNameField floorName={floorName} onFloorNameChange={onFloorNameChange} />
+        <WorkspaceSettings floorName={floorName} onFloorNameChange={onFloorNameChange} />
       ) : null}
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Properties</p>
@@ -289,7 +304,7 @@ function ClearCanvasButton() {
       className="rounded-xl"
       onClick={() => {
         const confirmed = window.confirm(
-          "Clear the entire canvas? All seats, rooms, and structures will be removed.",
+          "Clear the active layout? All seats, rooms, and structures on this layout will be removed.",
         );
         if (confirmed) resetToEmptyLayout();
       }}

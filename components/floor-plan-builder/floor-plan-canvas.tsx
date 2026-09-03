@@ -24,6 +24,10 @@ import {
   type FloorPlanElementType,
 } from "@/lib/floor-plan-builder/types";
 import { cn } from "@/lib/utils";
+import {
+  getWorkspaceBlockCanvasLayouts,
+  getWorkspaceCanvasGridSize,
+} from "@/lib/floor-plan-builder/workspace-blocks";
 import { useFloorPlanBuilder } from "./builder-store";
 
 type DragState = {
@@ -317,6 +321,9 @@ export function FloorPlanCanvas() {
     setPan,
     resizeGrid,
     registerFitToView,
+    workspaceBlocks,
+    activeBlockId,
+    switchWorkspaceBlock,
   } = useFloorPlanBuilder();
 
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
@@ -350,8 +357,16 @@ export function FloorPlanCanvas() {
   } | null>(null);
 
   const activeGrid = gridResizePreview ?? layout.grid;
-  const canvasWidth = activeGrid.columns * BUILDER_CELL_STRIDE;
-  const canvasHeight = activeGrid.rows * BUILDER_CELL_STRIDE;
+  const blockLayouts = React.useMemo(
+    () => getWorkspaceBlockCanvasLayouts(workspaceBlocks),
+    [workspaceBlocks],
+  );
+  const canvasGrid = React.useMemo(
+    () => getWorkspaceCanvasGridSize(workspaceBlocks),
+    [workspaceBlocks],
+  );
+  const canvasWidth = canvasGrid.columns * BUILDER_CELL_STRIDE;
+  const canvasHeight = canvasGrid.rows * BUILDER_CELL_STRIDE;
 
   const fitToView = React.useCallback(() => {
     const vp = viewportRef.current;
@@ -379,7 +394,7 @@ export function FloorPlanCanvas() {
 
   React.useEffect(() => {
     fittedForGrid.current = "";
-  }, [activeGrid.rows, activeGrid.columns]);
+  }, [activeGrid.rows, activeGrid.columns, canvasGrid.columns, canvasGrid.rows, workspaceBlocks.length]);
 
   React.useEffect(() => {
     registerFitToView(fitToView);
@@ -389,7 +404,7 @@ export function FloorPlanCanvas() {
   React.useEffect(() => {
     const vp = viewportRef.current;
     if (!vp) return;
-    const gridKey = `${activeGrid.rows}x${activeGrid.columns}`;
+    const gridKey = `${canvasGrid.rows}x${canvasGrid.columns}-${workspaceBlocks.length}`;
 
     const tryFit = () => {
       if (fittedForGrid.current === gridKey) return;
@@ -404,7 +419,7 @@ export function FloorPlanCanvas() {
     const observer = new ResizeObserver(tryFit);
     observer.observe(vp);
     return () => observer.disconnect();
-  }, [activeGrid.columns, activeGrid.rows, fitToView]);
+  }, [canvasGrid.columns, canvasGrid.rows, fitToView, workspaceBlocks.length]);
 
   const panRef = React.useRef(pan);
   const zoomRef = React.useRef(zoom);
@@ -416,25 +431,34 @@ export function FloorPlanCanvas() {
     if (!vp) return;
 
     const onWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      event.preventDefault();
-
       const rect = vp.getBoundingClientRect();
       const pointerX = event.clientX - rect.left;
       const pointerY = event.clientY - rect.top;
 
-      const currentZoom = zoomRef.current;
-      const currentPan = panRef.current;
-      const zoomDelta = event.deltaY > 0 ? -0.08 : 0.08;
-      const nextZoom = Math.min(2, Math.max(0.35, currentZoom + zoomDelta));
-      if (nextZoom === currentZoom) return;
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
 
-      const scale = nextZoom / currentZoom;
+        const currentZoom = zoomRef.current;
+        const currentPan = panRef.current;
+        const zoomDelta = event.deltaY > 0 ? -0.08 : 0.08;
+        const nextZoom = Math.min(2, Math.max(0.35, currentZoom + zoomDelta));
+        if (nextZoom === currentZoom) return;
+
+        const scale = nextZoom / currentZoom;
+        setPan({
+          x: pointerX - (pointerX - currentPan.x) * scale,
+          y: pointerY - (pointerY - currentPan.y) * scale,
+        });
+        setZoom(nextZoom);
+        return;
+      }
+
+      event.preventDefault();
+      const lineScale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 120 : 1;
       setPan({
-        x: pointerX - (pointerX - currentPan.x) * scale,
-        y: pointerY - (pointerY - currentPan.y) * scale,
+        x: panRef.current.x - event.deltaX * lineScale,
+        y: panRef.current.y - event.deltaY * lineScale,
       });
-      setZoom(nextZoom);
     };
 
     vp.addEventListener("wheel", onWheel, { passive: false });
@@ -741,10 +765,12 @@ export function FloorPlanCanvas() {
         const { row: worldRow, column: worldColumn } = clientToWorldGrid(event.clientX, event.clientY);
         const targetSeat = findSeatAtWorldCell(layout.elements, worldRow, worldColumn, dragged.id);
         if (targetSeat && targetSeat.parentId === dragged.parentId) {
-          mergeSeatsByDrag(dragged.id, targetSeat.id);
-          setDrag(null);
-          setDragPreview(null);
-          return;
+          const merged = mergeSeatsByDrag(dragged.id, targetSeat.id);
+          if (merged) {
+            setDrag(null);
+            setDragPreview(null);
+            return;
+          }
         }
       }
 
@@ -893,9 +919,16 @@ export function FloorPlanCanvas() {
     }
   };
 
-  const handleElementPointerDown = (element: FloorPlanElement, event: React.PointerEvent) => {
+  const handleElementPointerDown = (
+    element: FloorPlanElement,
+    blockId: string,
+    event: React.PointerEvent,
+  ) => {
     if (canvasMode === "pan" || placementDrag) return;
     event.stopPropagation();
+    if (blockId !== activeBlockId) {
+      switchWorkspaceBlock(blockId);
+    }
     select([element.id], event.shiftKey || event.ctrlKey || event.metaKey);
     (event.target as HTMLElement).setPointerCapture(event.pointerId);
     setDrag({
@@ -923,11 +956,6 @@ export function FloorPlanCanvas() {
   const previewRowOffset = gridResizePreview?.rowOffset ?? 0;
   const previewColumnOffset = gridResizePreview?.columnOffset ?? 0;
 
-  const sortedElements = [...displayElements].sort((a, b) => {
-    const depth = (el: FloorPlanElement) => (el.parentId ? 1 : 0);
-    return depth(a) - depth(b);
-  });
-
   const draggedElement = drag ? layout.elements.find((e) => e.id === drag.elementId) : null;
   const dragWorld =
     draggedElement && dragPreview
@@ -938,17 +966,18 @@ export function FloorPlanCanvas() {
     <div
       ref={viewportRef}
       className={cn(
-        "relative min-h-0 flex-1 overflow-hidden bg-[#e8ecf4]",
+        "absolute inset-0 overflow-hidden bg-[#f8fafc]",
         canvasMode === "pan" || panDrag ? "cursor-grab active:cursor-grabbing" : "",
         placementDrag ? "cursor-crosshair" : "",
       )}
+      style={{ touchAction: "none" }}
       onPointerDown={handleViewportPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
     >
       <div
-        className="absolute origin-top-left"
+        className="absolute origin-top-left will-change-transform"
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           left: FLOOR_INSET,
@@ -957,169 +986,231 @@ export function FloorPlanCanvas() {
       >
         <div
           ref={floorRef}
-          className="relative rounded-[28px] border-2 border-slate-300/90 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.12)]"
+          className="relative"
           style={{ width: canvasWidth, height: canvasHeight }}
         >
-          {gridVisible ? (
-            <div
-              className="pointer-events-none absolute inset-0 rounded-[26px] opacity-40"
-              style={{
-                backgroundImage: `
-                  linear-gradient(to right, rgba(100,116,139,0.35) 1px, transparent 1px),
-                  linear-gradient(to bottom, rgba(100,116,139,0.35) 1px, transparent 1px)
-                `,
-                backgroundSize: `${BUILDER_CELL_STRIDE}px ${BUILDER_CELL_STRIDE}px`,
-              }}
-            />
-          ) : null}
-
-          {sortedElements.map((element) => {
-            const world = getWorldFootprint(displayElements, element);
-            const isSelected = selection.includes(element.id);
-            const isDraggingInvalid = drag?.elementId === element.id && dragPreview && !dragPreview.valid;
-            const size = elementPixelSizeFromElement(element);
+          {blockLayouts.map(({ block, columnOffset, rowOffset }) => {
+            const isActive = block.id === activeBlockId;
+            const blockGrid = isActive ? activeGrid : block.grid;
+            const blockElements = isActive ? displayElements : block.elements;
+            const previewColOff = isActive ? previewColumnOffset : 0;
+            const previewRowOff = isActive ? previewRowOffset : 0;
+            const sortedBlockElements = [...blockElements].sort((a, b) => {
+              const depth = (el: FloorPlanElement) => (el.parentId ? 1 : 0);
+              return depth(a) - depth(b);
+            });
 
             return (
               <div
-                key={element.id}
-                data-element-root
-                className={cn("absolute", isDraggingInvalid && "opacity-50")}
+                key={block.id}
+                data-block-sheet
+                className={cn(
+                  "absolute rounded-[28px] border-2 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.1)]",
+                  isActive
+                    ? "z-10 border-primary/80 ring-2 ring-primary/15"
+                    : "z-0 border-slate-200 hover:border-slate-300",
+                )}
                 style={{
-                  left: (world.worldColumn + previewColumnOffset) * BUILDER_CELL_STRIDE,
-                  top: (world.worldRow + previewRowOffset) * BUILDER_CELL_STRIDE,
-                  transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-                  transformOrigin: "center center",
+                  left: columnOffset * BUILDER_CELL_STRIDE,
+                  top: rowOffset * BUILDER_CELL_STRIDE,
+                  width: blockGrid.columns * BUILDER_CELL_STRIDE,
+                  height: blockGrid.rows * BUILDER_CELL_STRIDE,
+                }}
+                onPointerDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (!isActive) switchWorkspaceBlock(block.id);
+                  else clearSelection();
                 }}
               >
-                <div className="relative overflow-visible" style={{ width: size.width, height: size.height }}>
-                  <ElementVisual
-                    element={element}
-                    selected={isSelected}
-                    onPointerDown={(event) => handleElementPointerDown(element, event)}
-                  />
-                  {isSelected && selection.length === 1 && canvasMode === "select" ? (
-                    <>
-                      <ResizeHandles
-                        element={element}
-                        onResizeStart={(edge, e) => {
-                          e.stopPropagation();
-                          setResize({
-                            elementId: element.id,
-                            edge,
-                            startClientX: e.clientX,
-                            startClientY: e.clientY,
-                            origin: layout.elements.find((el) => el.id === element.id) ?? element,
-                          });
-                        }}
-                      />
-                      {getElementDefinition(element.type).supportsRotation ? (
-                        <RotationHandle
-                          onRotateStart={(e) => {
-                            const root = (e.currentTarget.closest("[data-element-root]") as HTMLElement | null)?.getBoundingClientRect();
-                            if (!root) return;
-                            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                            setRotate({
-                              elementId: element.id,
-                              centerX: root.left + root.width / 2,
-                              centerY: root.top + root.height / 2,
-                            });
-                            const angle =
-                              Math.atan2(
-                                e.clientY - (root.top + root.height / 2),
-                                e.clientX - (root.left + root.width / 2),
-                              ) *
-                              (180 / Math.PI);
-                            setRotatePreview(snapRotationDegrees(angle + 90));
-                          }}
-                        />
-                      ) : null}
-                    </>
+                <div className="pointer-events-none absolute -top-7 left-3 text-xs font-semibold text-slate-600">
+                  {block.name}
+                  {!isActive ? (
+                    <span className="ml-1.5 font-normal text-muted-foreground">· click to edit</span>
                   ) : null}
                 </div>
+
+                {gridVisible ? (
+                  <div
+                    className="pointer-events-none absolute inset-0 rounded-[26px] opacity-50"
+                    style={{
+                      backgroundImage: `
+                        linear-gradient(to right, rgba(148,163,184,0.45) 1px, transparent 1px),
+                        linear-gradient(to bottom, rgba(148,163,184,0.45) 1px, transparent 1px)
+                      `,
+                      backgroundSize: `${BUILDER_CELL_STRIDE}px ${BUILDER_CELL_STRIDE}px`,
+                    }}
+                  />
+                ) : null}
+
+                {blockElements.length === 0 ? (
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center rounded-[26px] px-6 text-center">
+                    <p className="text-sm font-semibold text-slate-700">{block.name}</p>
+                    <p className="mt-2 max-w-[220px] text-xs text-muted-foreground">
+                      Empty layout — drag elements from the left panel onto this grid.
+                    </p>
+                  </div>
+                ) : null}
+
+                {sortedBlockElements.map((element) => {
+                  const world = getWorldFootprint(blockElements, element);
+                  const isSelected = isActive && selection.includes(element.id);
+                  const isDraggingInvalid =
+                    isActive && drag?.elementId === element.id && dragPreview && !dragPreview.valid;
+                  const size = elementPixelSizeFromElement(element);
+
+                  return (
+                    <div
+                      key={element.id}
+                      data-element-root
+                      className={cn("absolute", isDraggingInvalid && "opacity-50")}
+                      style={{
+                        left: (world.worldColumn + previewColOff) * BUILDER_CELL_STRIDE,
+                        top: (world.worldRow + previewRowOff) * BUILDER_CELL_STRIDE,
+                        transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+                        transformOrigin: "center center",
+                      }}
+                    >
+                      <div
+                        className="relative overflow-visible"
+                        style={{ width: size.width, height: size.height }}
+                      >
+                        <ElementVisual
+                          element={element}
+                          selected={isSelected}
+                          onPointerDown={(event) => handleElementPointerDown(element, block.id, event)}
+                        />
+                        {isSelected && selection.length === 1 && canvasMode === "select" ? (
+                          <>
+                            <ResizeHandles
+                              element={element}
+                              onResizeStart={(edge, e) => {
+                                e.stopPropagation();
+                                setResize({
+                                  elementId: element.id,
+                                  edge,
+                                  startClientX: e.clientX,
+                                  startClientY: e.clientY,
+                                  origin: layout.elements.find((el) => el.id === element.id) ?? element,
+                                });
+                              }}
+                            />
+                            {getElementDefinition(element.type).supportsRotation ? (
+                              <RotationHandle
+                                onRotateStart={(e) => {
+                                  const root = (
+                                    e.currentTarget.closest("[data-element-root]") as HTMLElement | null
+                                  )?.getBoundingClientRect();
+                                  if (!root) return;
+                                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                                  setRotate({
+                                    elementId: element.id,
+                                    centerX: root.left + root.width / 2,
+                                    centerY: root.top + root.height / 2,
+                                  });
+                                  const angle =
+                                    Math.atan2(
+                                      e.clientY - (root.top + root.height / 2),
+                                      e.clientX - (root.left + root.width / 2),
+                                    ) *
+                                    (180 / Math.PI);
+                                  setRotatePreview(snapRotationDegrees(angle + 90));
+                                }}
+                              />
+                            ) : null}
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {isActive && placementPreview ? (
+                  <DropPreview
+                    worldRow={placementPreview.worldRow}
+                    worldColumn={placementPreview.worldColumn}
+                    width={placementPreview.width}
+                    height={placementPreview.height}
+                    valid={placementPreview.valid}
+                  />
+                ) : null}
+
+                {isActive && dragWorld && draggedElement && dragPreview ? (
+                  <DropPreview
+                    worldRow={dragWorld.worldRow}
+                    worldColumn={dragWorld.worldColumn}
+                    width={draggedElement.width}
+                    height={draggedElement.height}
+                    valid={dragPreview.valid}
+                  />
+                ) : null}
+
+                {isActive ? (
+                  <>
+                    <div
+                      className="absolute -top-1 left-1/2 z-40 h-2 w-20 -translate-x-1/2 cursor-n-resize rounded-full bg-primary/40 hover:bg-primary/60"
+                      title="Drag to add or remove rows from the top"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        setGridResize({
+                          edge: "rows-top",
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          originRows: layout.grid.rows,
+                          originColumns: layout.grid.columns,
+                        });
+                      }}
+                    />
+                    <div
+                      className="absolute -bottom-1 left-1/2 z-40 h-2 w-20 -translate-x-1/2 cursor-s-resize rounded-full bg-primary/40 hover:bg-primary/60"
+                      title="Drag to add or remove rows from the bottom"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        setGridResize({
+                          edge: "rows-bottom",
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          originRows: layout.grid.rows,
+                          originColumns: layout.grid.columns,
+                        });
+                      }}
+                    />
+                    <div
+                      className="absolute -left-1 top-1/2 z-40 h-20 w-2 -translate-y-1/2 cursor-w-resize rounded-full bg-primary/40 hover:bg-primary/60"
+                      title="Drag to add or remove columns from the left"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        setGridResize({
+                          edge: "columns-left",
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          originRows: layout.grid.rows,
+                          originColumns: layout.grid.columns,
+                        });
+                      }}
+                    />
+                    <div
+                      className="absolute -right-1 top-1/2 z-40 h-20 w-2 -translate-y-1/2 cursor-e-resize rounded-full bg-primary/40 hover:bg-primary/60"
+                      title="Drag to add or remove columns from the right"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        setGridResize({
+                          edge: "columns-right",
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          originRows: layout.grid.rows,
+                          originColumns: layout.grid.columns,
+                        });
+                      }}
+                    />
+                  </>
+                ) : null}
               </div>
             );
           })}
-
-          {placementPreview ? (
-            <DropPreview
-              worldRow={placementPreview.worldRow}
-              worldColumn={placementPreview.worldColumn}
-              width={placementPreview.width}
-              height={placementPreview.height}
-              valid={placementPreview.valid}
-            />
-          ) : null}
-
-          {dragWorld && draggedElement && dragPreview ? (
-            <DropPreview
-              worldRow={dragWorld.worldRow}
-              worldColumn={dragWorld.worldColumn}
-              width={draggedElement.width}
-              height={draggedElement.height}
-              valid={dragPreview.valid}
-            />
-          ) : null}
-
-          <div
-            className="absolute -top-1 left-1/2 z-40 h-2 w-20 -translate-x-1/2 cursor-n-resize rounded-full bg-primary/40 hover:bg-primary/60"
-            title="Drag to add or remove rows from the top"
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              (e.target as HTMLElement).setPointerCapture(e.pointerId);
-              setGridResize({
-                edge: "rows-top",
-                startClientX: e.clientX,
-                startClientY: e.clientY,
-                originRows: layout.grid.rows,
-                originColumns: layout.grid.columns,
-              });
-            }}
-          />
-          <div
-            className="absolute -bottom-1 left-1/2 z-40 h-2 w-20 -translate-x-1/2 cursor-s-resize rounded-full bg-primary/40 hover:bg-primary/60"
-            title="Drag to add or remove rows from the bottom"
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              (e.target as HTMLElement).setPointerCapture(e.pointerId);
-              setGridResize({
-                edge: "rows-bottom",
-                startClientX: e.clientX,
-                startClientY: e.clientY,
-                originRows: layout.grid.rows,
-                originColumns: layout.grid.columns,
-              });
-            }}
-          />
-          <div
-            className="absolute -left-1 top-1/2 z-40 h-20 w-2 -translate-y-1/2 cursor-w-resize rounded-full bg-primary/40 hover:bg-primary/60"
-            title="Drag to add or remove columns from the left"
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              (e.target as HTMLElement).setPointerCapture(e.pointerId);
-              setGridResize({
-                edge: "columns-left",
-                startClientX: e.clientX,
-                startClientY: e.clientY,
-                originRows: layout.grid.rows,
-                originColumns: layout.grid.columns,
-              });
-            }}
-          />
-          <div
-            className="absolute -right-1 top-1/2 z-40 h-20 w-2 -translate-y-1/2 cursor-e-resize rounded-full bg-primary/40 hover:bg-primary/60"
-            title="Drag to add or remove columns from the right"
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              (e.target as HTMLElement).setPointerCapture(e.pointerId);
-              setGridResize({
-                edge: "columns-right",
-                startClientX: e.clientX,
-                startClientY: e.clientY,
-                originRows: layout.grid.rows,
-                originColumns: layout.grid.columns,
-              });
-            }}
-          />
         </div>
       </div>
 

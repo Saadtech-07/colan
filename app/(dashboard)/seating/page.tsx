@@ -19,7 +19,7 @@ import {
   SeatingFloorPlan,
   type SeatingFloorPlanHandle,
 } from "@/components/seating/seating-floor-plan";
-import { BuilderFloorPlanView } from "@/components/floor-plan-builder/builder-floor-plan-view";
+import { BuilderWorkspaceFloorPlanView } from "@/components/floor-plan-builder/builder-workspace-floor-plan-view";
 import {
   SeatingFloorPlanFullscreen,
   type SeatingFullscreenBlock,
@@ -442,6 +442,7 @@ export default function SeatingPage() {
             version: layout.version,
             grid: layout.grid,
             elements: layout.elements,
+            blocks: layout.blocks,
             floorPlanSlug: layout.floorPlanSlug,
           });
         } else {
@@ -1705,7 +1706,7 @@ export default function SeatingPage() {
               ) : null}
             </div>
           ) : isBuilderFloor && builderLayout ? (
-            <BuilderFloorPlanView
+            <BuilderWorkspaceFloorPlanView
               layout={builderLayout}
               occupancy={displayOccupancy}
               selectedSeat={selectedSeat}

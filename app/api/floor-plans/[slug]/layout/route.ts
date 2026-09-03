@@ -25,12 +25,20 @@ const layoutElementSchema = z.object({
   mergeGroupId: z.string().optional(),
 });
 
+const workspaceBlockSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  grid: z.object({ rows: z.number().min(4), columns: z.number().min(4) }),
+  elements: z.array(layoutElementSchema),
+});
+
 const layoutBodySchema = z.object({
   name: z.string().min(1),
   status: z.enum(["draft", "published"]).optional(),
   version: z.number().optional(),
   grid: z.object({ rows: z.number().min(4), columns: z.number().min(4) }),
   elements: z.array(layoutElementSchema),
+  blocks: z.array(workspaceBlockSchema).optional(),
 });
 
 type RouteParams = { params: Promise<{ slug: string }> };
@@ -87,6 +95,7 @@ export async function PUT(req: Request, { params }: RouteParams) {
       version: parsed.data.version ?? 0,
       floorPlanSlug: slug,
       elements: parsed.data.elements as import("@/lib/floor-plan-builder/types").FloorPlanElement[],
+      blocks: parsed.data.blocks as import("@/lib/floor-plan-builder/types").WorkspaceBlock[] | undefined,
     });
     return NextResponse.json(saved);
   } catch (error) {
@@ -138,6 +147,7 @@ export async function POST(req: Request, { params }: RouteParams) {
         version: parsed.data.version ?? 0,
         floorPlanSlug: slug,
         elements: parsed.data.elements as import("@/lib/floor-plan-builder/types").FloorPlanElement[],
+        blocks: parsed.data.blocks as import("@/lib/floor-plan-builder/types").WorkspaceBlock[] | undefined,
       },
       {
         userId: user.email,

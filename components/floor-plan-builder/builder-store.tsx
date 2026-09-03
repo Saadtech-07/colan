@@ -21,6 +21,10 @@ import {
   deleteElement,
   duplicateEntireLayoutAt,
   duplicateSubtree,
+  extractSubtrees,
+  getSeatDisplayName,
+  getSelectionRoots,
+  insertClonedSubtrees,
   mergeSeats,
   resizeElement,
   resizeFloorGrid,
@@ -39,7 +43,17 @@ import type {
   FloorPlanGrid,
   FloorPlanLayoutState,
   Footprint,
+  WorkspaceBlock,
 } from "@/lib/floor-plan-builder/types";
+import {
+  applyActiveWorkspaceBlock,
+  createEmptyWorkspaceBlock,
+  ensureWorkspaceBlocks,
+  getAllWorkspaceElements,
+  normalizeWorkspaceLayout,
+  persistActiveWorkspaceBlock,
+  serializeWorkspaceLayout,
+} from "@/lib/floor-plan-builder/workspace-blocks";
 
 export type CanvasMode = "select" | "pan";
 export type PlacementDrag =
@@ -94,6 +108,10 @@ type BuilderContextValue = {
   updateSelected: (patch: Partial<FloorPlanElement>) => void;
   deleteSelected: () => void;
   duplicateSelected: () => void;
+  copySelected: () => void;
+  cutSelected: () => void;
+  pasteClipboard: () => void;
+  canPaste: boolean;
   bulkCreateSeats: (options: BulkSeatOptions) => void;
   mergeSelectedSeats: () => void;
   mergeSeatsByDrag: (draggedId: string, targetId: string) => boolean;
@@ -106,12 +124,31 @@ type BuilderContextValue = {
   redoChange: () => void;
   loadLayout: (layout: FloorPlanLayoutState) => void;
   resetToEmptyLayout: () => void;
+  workspaceBlocks: WorkspaceBlock[];
+  activeBlockId: string;
+  activeBlockName: string;
+  switchWorkspaceBlock: (blockId: string) => void;
+  addWorkspaceBlock: (name?: string) => void;
+  deleteWorkspaceBlock: (blockId: string) => void;
+  updateActiveBlockName: (name: string) => void;
   layoutRevision: number;
   registerFitToView: (fn: (() => void) | null) => void;
   fitToView: () => void;
 };
 
 const BuilderContext = React.createContext<BuilderContextValue | null>(null);
+
+function confirmSeatMerge(elements: FloorPlanElement[], seatIds: string[]): boolean {
+  const seats = seatIds
+    .map((id) => elements.find((el) => el.id === id))
+    .filter((el): el is FloorPlanElement => el?.type === "seat");
+  if (seats.length < 2) return false;
+
+  const labels = seats.map((seat) => getSeatDisplayName(seat)).join(" and ");
+  return window.confirm(
+    `Merge ${labels} into one wider seat?\n\nOnly confirm if you intend to combine these seats. Use Undo (Ctrl+Z) to revert.`,
+  );
+}
 
 export function useFloorPlanBuilder() {
   const ctx = React.useContext(BuilderContext);
@@ -124,14 +161,43 @@ type ProviderProps = {
   children: React.ReactNode;
 };
 
+type BuilderClipboard = {
+  elements: FloorPlanElement[];
+  rootIds: string[];
+  sourceBlockId: string;
+};
+
 export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderProps) {
-  const historyRef = React.useRef<CommandHistory>(
-    createHistory(initialLayout ?? createEmptyLayout()),
+  const boot = React.useMemo(
+    () => normalizeWorkspaceLayout(initialLayout ?? createEmptyLayout()),
+    [initialLayout],
   );
+  const historyRef = React.useRef<CommandHistory>(createHistory(boot.layout));
   const [, bump] = React.useReducer((n: number) => n + 1, 0);
   const layoutRevisionRef = React.useRef(0);
+  const [activeBlockId, setActiveBlockId] = React.useState(boot.activeBlockId);
+  const activeBlockIdRef = React.useRef(activeBlockId);
+  activeBlockIdRef.current = activeBlockId;
 
-  const [selection, setSelection] = React.useState<string[]>([]);
+  const getWorkspaceElements = React.useCallback((): FloorPlanElement[] => {
+    const current = historyRef.current.present;
+    const blocks = persistActiveWorkspaceBlock(
+      ensureWorkspaceBlocks(current),
+      activeBlockIdRef.current,
+      current.grid,
+      current.elements,
+    );
+    return getAllWorkspaceElements(blocks);
+  }, []);
+
+  const layout = historyRef.current.present;
+  const workspaceBlocks = ensureWorkspaceBlocks(
+    serializeWorkspaceLayout(layout, ensureWorkspaceBlocks(layout), activeBlockId),
+  );
+  const activeBlockName =
+    workspaceBlocks.find((block) => block.id === activeBlockId)?.name ??
+    workspaceBlocks[0]?.name ??
+    "Block A";
   const [activeTool, setActiveTool] = React.useState<FloorPlanElementType | null>(null);
   const [placementDrag, setPlacementDrag] = React.useState<PlacementDrag | null>(null);
   const [canvasMode, setCanvasMode] = React.useState<CanvasMode>("select");
@@ -142,7 +208,9 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   const [error, setError] = React.useState<string | null>(null);
   const fitToViewRef = React.useRef<(() => void) | null>(null);
 
-  const layout = historyRef.current.present;
+  const [selection, setSelection] = React.useState<string[]>([]);
+  const clipboardRef = React.useRef<BuilderClipboard | null>(null);
+  const [canPaste, setCanPaste] = React.useState(false);
 
   const registerFitToView = React.useCallback((fn: (() => void) | null) => {
     fitToViewRef.current = fn;
@@ -153,7 +221,12 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   }, []);
 
   const commitLayout = React.useCallback((next: FloorPlanLayoutState, nextError: string | null = null) => {
-    historyRef.current = applyLayoutChange(historyRef.current, next);
+    const serialized = serializeWorkspaceLayout(
+      next,
+      ensureWorkspaceBlocks(next),
+      activeBlockIdRef.current,
+    );
+    historyRef.current = applyLayoutChange(historyRef.current, serialized);
     layoutRevisionRef.current += 1;
     setError(nextError);
     bump();
@@ -209,7 +282,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
         column: footprint.column,
         width: footprint.width,
         height: footprint.height,
-        seatId: type === "seat" ? createSeatId(layout.elements) : undefined,
+        seatId: type === "seat" ? createSeatId(getWorkspaceElements()) : undefined,
       });
       const result = addElement(layout, element);
       if (result.error) {
@@ -233,8 +306,8 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
         column: footprint.column,
         width: footprint.width,
         height: footprint.height,
-        seatId: type === "seat" ? createSeatId(layout.elements) : undefined,
-        name: type === "room" ? createRoomName(layout.elements) : undefined,
+        seatId: type === "seat" ? createSeatId(getWorkspaceElements()) : undefined,
+        name: type === "room" ? createRoomName(getWorkspaceElements()) : undefined,
       });
       const result = addElement(layout, element);
       if (result.error) {
@@ -386,6 +459,60 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     if (result.newRootId) setSelection([result.newRootId]);
   }, [commitLayout, layout, selection]);
 
+  const copySelected = React.useCallback(() => {
+    if (!selection.length) return;
+    const rootIds = getSelectionRoots(layout.elements, selection);
+    if (!rootIds.length) return;
+    const elements = extractSubtrees(layout.elements, rootIds);
+    clipboardRef.current = {
+      elements,
+      rootIds,
+      sourceBlockId: activeBlockIdRef.current,
+    };
+    setCanPaste(true);
+    setError(null);
+  }, [layout.elements, selection]);
+
+  const cutSelected = React.useCallback(() => {
+    if (!selection.length) return;
+    const rootIds = getSelectionRoots(layout.elements, selection);
+    if (!rootIds.length) return;
+    const elements = extractSubtrees(layout.elements, rootIds);
+    clipboardRef.current = {
+      elements,
+      rootIds,
+      sourceBlockId: activeBlockIdRef.current,
+    };
+    setCanPaste(true);
+    let next = layout;
+    for (const id of selection) {
+      next = deleteElement(next, id, true);
+    }
+    commitLayout(next);
+    setSelection([]);
+    setError(null);
+  }, [commitLayout, layout, selection]);
+
+  const pasteClipboard = React.useCallback(() => {
+    const clip = clipboardRef.current;
+    if (!clip?.elements.length) return;
+    const result = insertClonedSubtrees(
+      layout,
+      clip.elements,
+      clip.rootIds,
+      2,
+      2,
+      getWorkspaceElements(),
+    );
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    commitLayout(result.layout);
+    if (result.newRootIds.length) setSelection(result.newRootIds);
+    setError(null);
+  }, [commitLayout, getWorkspaceElements, layout]);
+
   const bulkCreateSeats = React.useCallback(
     (options: BulkSeatOptions) => {
       const result = createBulkSeats(layout, options);
@@ -401,6 +528,13 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   );
 
   const mergeSelectedSeats = React.useCallback(() => {
+    const seatIds = selection.filter((id) => {
+      const el = layout.elements.find((e) => e.id === id);
+      return el?.type === "seat";
+    });
+    if (seatIds.length < 2) return;
+    if (!confirmSeatMerge(layout.elements, seatIds)) return;
+
     const result = mergeSeats(layout, selection);
     if (result.error) {
       setError(result.error);
@@ -413,6 +547,9 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
 
   const mergeSeatsByDrag = React.useCallback(
     (draggedId: string, targetId: string) => {
+      if (!confirmSeatMerge(layout.elements, [draggedId, targetId])) {
+        return false;
+      }
       const result = mergeSeats(layout, [draggedId, targetId]);
       if (result.error) {
         setError(result.error);
@@ -464,31 +601,144 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   }, []);
 
   const loadLayout = React.useCallback((next: FloorPlanLayoutState) => {
+    const normalized = normalizeWorkspaceLayout(next);
+    setActiveBlockId(normalized.activeBlockId);
+    historyRef.current = createHistory(normalized.layout);
+    setSelection([]);
+    setError(null);
+    bump();
+  }, []);
+
+  const switchWorkspaceBlock = React.useCallback(
+    (blockId: string) => {
+      if (blockId === activeBlockIdRef.current) return;
+      const current = historyRef.current.present;
+      const blocks = persistActiveWorkspaceBlock(
+        ensureWorkspaceBlocks(current),
+        activeBlockIdRef.current,
+        current.grid,
+        current.elements,
+      );
+      const target = blocks.find((block) => block.id === blockId);
+      if (!target) return;
+      setActiveBlockId(blockId);
+      const next = applyActiveWorkspaceBlock(current, blocks, blockId);
+      historyRef.current = applyLayoutChange(historyRef.current, next);
+      layoutRevisionRef.current += 1;
+      setSelection([]);
+      setError(null);
+      bump();
+    },
+    [],
+  );
+
+  const addWorkspaceBlock = React.useCallback((name?: string) => {
+    const current = historyRef.current.present;
+    const blocks = persistActiveWorkspaceBlock(
+      ensureWorkspaceBlocks(current),
+      activeBlockIdRef.current,
+      current.grid,
+      current.elements,
+    );
+    const newBlock = createEmptyWorkspaceBlock(blocks.length);
+    if (name?.trim()) {
+      newBlock.name = name.trim();
+    }
+    const nextBlocks = [...blocks, newBlock];
+    setActiveBlockId(newBlock.id);
+    const next = applyActiveWorkspaceBlock(current, nextBlocks, newBlock.id);
+    historyRef.current = createHistory(next);
+    layoutRevisionRef.current += 1;
+    setSelection([]);
+    setError(null);
+    bump();
+  }, []);
+
+  const deleteWorkspaceBlock = React.useCallback((blockId: string) => {
+    const current = historyRef.current.present;
+    const blocks = persistActiveWorkspaceBlock(
+      ensureWorkspaceBlocks(current),
+      activeBlockIdRef.current,
+      current.grid,
+      current.elements,
+    );
+    if (blocks.length <= 1) {
+      setError("Cannot delete the only layout in this workspace.");
+      return;
+    }
+    const target = blocks.find((block) => block.id === blockId);
+    if (!target) return;
+    const confirmed = window.confirm(
+      `Delete "${target.name}"? All elements on this layout will be removed.`,
+    );
+    if (!confirmed) return;
+
+    const nextBlocks = blocks.filter((block) => block.id !== blockId);
+    const nextActiveId =
+      blockId === activeBlockIdRef.current ? nextBlocks[0]!.id : activeBlockIdRef.current;
+    setActiveBlockId(nextActiveId);
+    const next = applyActiveWorkspaceBlock(current, nextBlocks, nextActiveId);
+    historyRef.current = createHistory(next);
+    layoutRevisionRef.current += 1;
+    setSelection([]);
+    setError(null);
+    bump();
+  }, []);
+
+  const updateActiveBlockName = React.useCallback((name: string) => {
+    const current = historyRef.current.present;
+    const blocks = persistActiveWorkspaceBlock(
+      ensureWorkspaceBlocks(current),
+      activeBlockIdRef.current,
+      current.grid,
+      current.elements,
+    ).map((block) =>
+      block.id === activeBlockIdRef.current ? { ...block, name } : block,
+    );
+    const next = applyActiveWorkspaceBlock(current, blocks, activeBlockIdRef.current);
+    historyRef.current = applyLayoutChange(historyRef.current, next);
+    layoutRevisionRef.current += 1;
+    bump();
+  }, []);
+
+  const resetToEmptyLayout = React.useCallback(() => {
+    const current = historyRef.current.present;
+    const blocks = persistActiveWorkspaceBlock(
+      ensureWorkspaceBlocks(current),
+      activeBlockIdRef.current,
+      current.grid,
+      [],
+    );
+    const next = applyActiveWorkspaceBlock(current, blocks, activeBlockIdRef.current);
     historyRef.current = createHistory(next);
     setSelection([]);
     setError(null);
     bump();
   }, []);
 
-  const resetToEmptyLayout = React.useCallback(() => {
-    historyRef.current = createHistory({
-      name: layout.name,
-      status: layout.status,
-      version: layout.version,
-      floorPlanSlug: layout.floorPlanSlug,
-      grid: { ...layout.grid },
-      elements: [],
-    });
-    setSelection([]);
-    setError(null);
-    bump();
-  }, [layout.floorPlanSlug, layout.grid, layout.name, layout.status, layout.version]);
-
   const clearSelection = React.useCallback(() => setSelection([]), []);
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        if (selection.length) {
+          e.preventDefault();
+          copySelected();
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "x") {
+        if (selection.length) {
+          e.preventDefault();
+          cutSelected();
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        if (canPaste) {
+          e.preventDefault();
+          pasteClipboard();
+        }
+      }
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selection.length) {
           e.preventDefault();
@@ -499,6 +749,12 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
         setPlacementDrag(null);
         setActiveTool(null);
         setSelection([]);
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === "v") {
+        setCanvasMode("select");
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === "h") {
+        setCanvasMode("pan");
       }
       if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
@@ -526,7 +782,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [deleteSelected, layout.elements, redoChange, selection, undoChange, updateSelected]);
+  }, [canPaste, copySelected, cutSelected, deleteSelected, layout.elements, pasteClipboard, redoChange, selection, setCanvasMode, undoChange, updateSelected]);
 
   const value: BuilderContextValue = {
     layout,
@@ -562,6 +818,10 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     updateSelected,
     deleteSelected,
     duplicateSelected,
+    copySelected,
+    cutSelected,
+    pasteClipboard,
+    canPaste,
     bulkCreateSeats,
     mergeSelectedSeats,
     mergeSeatsByDrag,
@@ -571,6 +831,13 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     redoChange,
     loadLayout,
     resetToEmptyLayout,
+    workspaceBlocks,
+    activeBlockId,
+    activeBlockName,
+    switchWorkspaceBlock,
+    addWorkspaceBlock,
+    deleteWorkspaceBlock,
+    updateActiveBlockName,
     layoutRevision: layoutRevisionRef.current,
     registerFitToView,
     fitToView,

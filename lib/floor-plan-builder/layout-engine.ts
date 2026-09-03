@@ -290,6 +290,81 @@ export function duplicateSubtree(
   return { layout: nextLayout, newRootId: idMap.get(rootId) };
 }
 
+export function getSelectionRoots(elements: FloorPlanElement[], selectedIds: string[]): string[] {
+  const selected = new Set(selectedIds);
+  return selectedIds.filter((id) => {
+    const el = elements.find((e) => e.id === id);
+    if (!el) return false;
+    if (!el.parentId) return true;
+    return !selected.has(el.parentId);
+  });
+}
+
+export function extractSubtrees(elements: FloorPlanElement[], rootIds: string[]): FloorPlanElement[] {
+  const result: FloorPlanElement[] = [];
+  const seen = new Set<string>();
+  for (const rootId of rootIds) {
+    const root = elements.find((el) => el.id === rootId);
+    if (!root) continue;
+    for (const el of [root, ...getDescendants(elements, rootId)]) {
+      if (seen.has(el.id)) continue;
+      seen.add(el.id);
+      result.push({ ...el });
+    }
+  }
+  return result;
+}
+
+export function insertClonedSubtrees(
+  layout: FloorPlanLayoutState,
+  clipboardElements: FloorPlanElement[],
+  rootIds: string[],
+  offsetRow = 2,
+  offsetColumn = 2,
+  seatIdElements?: FloorPlanElement[],
+): { layout: FloorPlanLayoutState; newRootIds: string[]; error?: string } {
+  if (!clipboardElements.length || !rootIds.length) {
+    return { layout, newRootIds: [], error: "Nothing to paste." };
+  }
+
+  const idMap = new Map<string, string>();
+  for (const el of clipboardElements) {
+    idMap.set(el.id, createElementId(el.type.slice(0, 3)));
+  }
+
+  const clones: FloorPlanElement[] = clipboardElements.map((el) => {
+    const isRoot = rootIds.includes(el.id);
+    return {
+      ...el,
+      id: idMap.get(el.id)!,
+      parentId: el.parentId ? (idMap.get(el.parentId) ?? el.parentId) : el.parentId,
+      row: isRoot ? el.row + offsetRow : el.row,
+      column: isRoot ? el.column + offsetColumn : el.column,
+      seatId: el.type === "seat" ? undefined : el.seatId,
+      mergeGroupId: undefined,
+    };
+  });
+
+  const seatPool = seatIdElements ?? layout.elements;
+  for (const clone of clones) {
+    if (clone.type === "seat") {
+      clone.seatId = createSeatId([...seatPool, ...clones], "S");
+    }
+  }
+
+  let nextLayout = layout;
+  for (const clone of clones) {
+    const result = addElement(nextLayout, clone);
+    if (result.error) return { layout, error: result.error, newRootIds: [] };
+    nextLayout = result.layout;
+  }
+
+  return {
+    layout: nextLayout,
+    newRootIds: rootIds.map((id) => idMap.get(id)!).filter(Boolean),
+  };
+}
+
 export function getSeatDisplayName(element: FloorPlanElement): string {
   if (element.type !== "seat") return element.name;
   const defaultLabel = getElementDefinition("seat").label;
@@ -766,10 +841,14 @@ export function createRoomAt(
 }
 
 export function extractSeatIds(layout: FloorPlanLayoutState): string[] {
-  return layout.elements
-    .filter((el) => el.type === "seat" && el.seatId)
-    .map((el) => el.seatId!)
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const blocks = layout.blocks?.length ? layout.blocks : [{ elements: layout.elements }];
+  const ids = new Set<string>();
+  for (const block of blocks) {
+    for (const el of block.elements) {
+      if (el.type === "seat" && el.seatId) ids.add(el.seatId);
+    }
+  }
+  return [...ids].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
 export type LayoutWorldBounds = {

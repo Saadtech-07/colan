@@ -79,7 +79,7 @@ export function SeatingSeatBlock({
     <div
       className={cn(
         "group/seat relative transition-[transform,z-index] duration-300 ease-out",
-        fillContainer ? "h-full w-full pb-2" : "shrink-0 pb-3",
+        fillContainer ? "h-full w-full pb-1" : "shrink-0 pb-3",
         emphasized ? "z-30" : "z-0 hover:z-30",
         className,
       )}
@@ -94,7 +94,7 @@ export function SeatingSeatBlock({
       <div
         className={cn(
           "absolute left-0 top-0 z-10 transition-all duration-300 ease-out",
-          fillContainer ? "right-0 bottom-2" : "",
+          fillContainer ? "right-0 bottom-1" : "",
           emphasized
             ? "-translate-y-1 scale-[1.02]"
             : "translate-y-0 group-hover/seat:-translate-y-1 group-hover/seat:scale-[1.02]",

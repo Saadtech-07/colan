@@ -41,6 +41,13 @@ export type FloorPlanGrid = {
   columns: number;
 };
 
+export type WorkspaceBlock = {
+  id: string;
+  name: string;
+  grid: FloorPlanGrid;
+  elements: FloorPlanElement[];
+};
+
 export type FloorPlanLayoutState = {
   id?: string;
   floorPlanSlug?: string;
@@ -49,6 +56,8 @@ export type FloorPlanLayoutState = {
   version: number;
   grid: FloorPlanGrid;
   elements: FloorPlanElement[];
+  /** Independent layout blocks within one workspace (Block A, Block B, …). */
+  blocks?: WorkspaceBlock[];
 };
 
 export type Footprint = {
@@ -87,9 +96,9 @@ export type BulkElementOptions = {
   count: number;
 };
 
-/** Matches classic seating card width (see seating-layout-metrics SEAT_WIDTH). */
-export const BUILDER_CELL_PX = 108;
-export const BUILDER_CELL_GAP = 14;
+/** Builder / floor-plan grid seat tile size (px per cell). */
+export const BUILDER_CELL_PX = 140;
+export const BUILDER_CELL_GAP = 16;
 export const BUILDER_CELL_STRIDE = BUILDER_CELL_PX + BUILDER_CELL_GAP;
 
 export const DEFAULT_FLOOR_GRID: FloorPlanGrid = { rows: 12, columns: 12 };

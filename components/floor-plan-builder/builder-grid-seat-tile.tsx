@@ -56,13 +56,14 @@ export function BuilderGridSeatTile({
         dimmed={dimmed}
         canAssign={interactive ? canAssign : false}
         asDiv={!interactive}
+        floorPlanMode
         onSelect={onSelect}
         onDragStart={onDragStart}
         onDrop={onDrop}
         onPointerDown={onPointerDown}
       />
       {isMerged ? (
-        <span className="pointer-events-none absolute bottom-1 left-1/2 z-40 -translate-x-1/2 rounded-full bg-amber-100 px-1.5 text-[8px] font-semibold text-amber-800 shadow-sm">
+        <span className="pointer-events-none absolute bottom-1.5 left-1/2 z-40 -translate-x-1/2 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-semibold text-amber-800 shadow-sm">
           Merged
         </span>
       ) : null}
