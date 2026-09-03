@@ -1,17 +1,18 @@
 "use client";
 
 import * as React from "react";
+import { BuilderGridSeatTile } from "@/components/floor-plan-builder/builder-grid-seat-tile";
 import { getElementDefinition } from "@/lib/floor-plan-builder/element-registry";
 import { getWorldFootprint } from "@/lib/floor-plan-builder/hierarchy";
 import {
   computeResizePatch,
   getBulkBlockFootprint,
-  getSeatDisplayName,
   resolvePlacementTarget,
   snapDropPosition,
   snapFootprintStrict,
   snapRotationDegrees,
 } from "@/lib/floor-plan-builder/layout-engine";
+import { elementPixelSize } from "@/lib/floor-plan-builder/metrics";
 import type { ResizeEdge } from "@/lib/floor-plan-builder/placement-utils";
 import {
   BUILDER_CELL_GAP,
@@ -104,11 +105,8 @@ function DropPreview({
   );
 }
 
-function elementPixelSize(element: Pick<FloorPlanElement, "width" | "height">) {
-  return {
-    width: element.width * BUILDER_CELL_PX + (element.width - 1) * BUILDER_CELL_GAP,
-    height: element.height * BUILDER_CELL_PX + (element.height - 1) * BUILDER_CELL_GAP,
-  };
+function elementPixelSizeFromElement(element: Pick<FloorPlanElement, "width" | "height">) {
+  return elementPixelSize(element.width, element.height);
 }
 
 function ElementVisual({
@@ -122,7 +120,17 @@ function ElementVisual({
 }) {
   const def = getElementDefinition(element.type);
   const isSeat = element.type === "seat";
-  const merged = Boolean(element.mergeGroupId);
+
+  if (isSeat) {
+    return (
+      <BuilderGridSeatTile
+        element={element}
+        selected={selected}
+        interactive={false}
+        onPointerDown={onPointerDown}
+      />
+    );
+  }
 
   return (
     <div
@@ -131,9 +139,8 @@ function ElementVisual({
       onPointerDown={onPointerDown}
       className={cn(
         "relative flex h-full w-full flex-col items-center justify-center border-2 text-center shadow-sm",
-        isSeat ? "rounded-[18px]" : "rounded-2xl",
+        "rounded-2xl",
         selected ? "overflow-visible ring-2 ring-primary ring-offset-2 ring-offset-white z-20" : "overflow-hidden",
-        isSeat && "bg-gradient-to-b from-white via-white to-slate-50",
         element.type === "pillar" && "rounded-xl bg-gradient-to-b from-slate-600 to-slate-800 text-white",
         element.type === "entrance" && "rounded-xl bg-gradient-to-b from-sky-100 to-sky-200 text-sky-900",
         element.type === "wall" && "rounded-md bg-slate-500 text-white",
@@ -146,7 +153,7 @@ function ElementVisual({
       style={{
         borderColor: selected ? undefined : def.borderColor,
         backgroundColor:
-          isSeat || ["pillar", "entrance", "wall", "desk", "meeting_table"].includes(element.type)
+          ["pillar", "entrance", "wall", "desk", "meeting_table"].includes(element.type)
             ? undefined
             : `${def.color}f0`,
       }}
@@ -158,19 +165,7 @@ function ElementVisual({
         />
       ) : null}
 
-      {isSeat ? (
-        <>
-          <span className="relative z-10 text-[11px] font-bold text-violet-700">
-            {getSeatDisplayName(element)}
-          </span>
-          <span className="relative z-10 text-[10px] text-muted-foreground">Vacant</span>
-          {merged || element.width > 1 || element.height > 1 ? (
-            <span className="relative z-10 mt-0.5 rounded-full bg-amber-100 px-1.5 text-[9px] font-semibold text-amber-800">
-              Merged
-            </span>
-          ) : null}
-        </>
-      ) : element.type === "pillar" ? (
+      {element.type === "pillar" ? (
         <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Pillar</span>
       ) : element.type === "wall" ? (
         <span className="text-[9px] font-semibold uppercase">Wall</span>
@@ -319,13 +314,18 @@ export function FloorPlanCanvas() {
   const [rotatePreview, setRotatePreview] = React.useState<0 | 90 | 180 | 270 | null>(null);
   const [panDrag, setPanDrag] = React.useState<PanState | null>(null);
   const [gridResize, setGridResize] = React.useState<{
-    edge: "rows" | "columns";
+    edge: "rows-bottom" | "rows-top" | "columns-right" | "columns-left";
     startClientX: number;
     startClientY: number;
     originRows: number;
     originColumns: number;
   } | null>(null);
-  const [gridResizePreview, setGridResizePreview] = React.useState<{ rows: number; columns: number } | null>(null);
+  const [gridResizePreview, setGridResizePreview] = React.useState<{
+    rows: number;
+    columns: number;
+    rowOffset: number;
+    columnOffset: number;
+  } | null>(null);
   const [dragPreview, setDragPreview] = React.useState<{ row: number; column: number; valid: boolean } | null>(null);
   const [resizePreview, setResizePreview] = React.useState<Partial<FloorPlanElement> | null>(null);
   const [placementPreview, setPlacementPreview] = React.useState<{
@@ -717,6 +717,81 @@ export function FloorPlanCanvas() {
     };
   }, [clientToWorldGrid, drag, layout, mergeSeatsByDrag, snapEnabled, tryMoveElement, zoom]);
 
+  const gridResizePreviewRef = React.useRef(gridResizePreview);
+  gridResizePreviewRef.current = gridResizePreview;
+
+  const applyGridResizePreview = React.useCallback(
+    (clientX: number, clientY: number) => {
+      if (!gridResize) return;
+      const deltaCol = Math.round(
+        (clientX - gridResize.startClientX) / (BUILDER_CELL_STRIDE * zoom),
+      );
+      const deltaRow = Math.round(
+        (clientY - gridResize.startClientY) / (BUILDER_CELL_STRIDE * zoom),
+      );
+
+      let rows = gridResize.originRows;
+      let columns = gridResize.originColumns;
+      let rowOffset = 0;
+      let columnOffset = 0;
+
+      switch (gridResize.edge) {
+        case "rows-bottom":
+          rows = Math.max(4, gridResize.originRows + deltaRow);
+          break;
+        case "rows-top":
+          rows = Math.max(4, gridResize.originRows - deltaRow);
+          rowOffset = rows - gridResize.originRows;
+          break;
+        case "columns-right":
+          columns = Math.max(4, gridResize.originColumns + deltaCol);
+          break;
+        case "columns-left":
+          columns = Math.max(4, gridResize.originColumns - deltaCol);
+          columnOffset = columns - gridResize.originColumns;
+          break;
+      }
+
+      setGridResizePreview({ rows, columns, rowOffset, columnOffset });
+    },
+    [gridResize, zoom],
+  );
+
+  const finishGridResize = React.useCallback(() => {
+    const preview = gridResizePreviewRef.current;
+    if (preview) {
+      resizeGrid(
+        { rows: preview.rows, columns: preview.columns },
+        {
+          rowOffset: preview.rowOffset,
+          columnOffset: preview.columnOffset,
+        },
+      );
+    }
+    setGridResize(null);
+    setGridResizePreview(null);
+  }, [resizeGrid]);
+
+  React.useEffect(() => {
+    if (!gridResize) return;
+
+    const onMove = (event: PointerEvent) => {
+      applyGridResizePreview(event.clientX, event.clientY);
+    };
+    const onUp = () => {
+      finishGridResize();
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { capture: true });
+    document.addEventListener("pointercancel", onUp, { capture: true });
+    return () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp, { capture: true });
+      document.removeEventListener("pointercancel", onUp, { capture: true });
+    };
+  }, [applyGridResizePreview, finishGridResize, gridResize]);
+
   const handlePointerMove = (event: React.PointerEvent) => {
     if (panDrag) {
       setPan({
@@ -727,18 +802,7 @@ export function FloorPlanCanvas() {
     }
 
     if (gridResize) {
-      const deltaCol = Math.round((event.clientX - gridResize.startClientX) / (BUILDER_CELL_STRIDE * zoom));
-      const deltaRow = Math.round((event.clientY - gridResize.startClientY) / (BUILDER_CELL_STRIDE * zoom));
-      setGridResizePreview({
-        rows:
-          gridResize.edge === "rows"
-            ? Math.max(4, gridResize.originRows + deltaRow)
-            : gridResize.originRows,
-        columns:
-          gridResize.edge === "columns"
-            ? Math.max(4, gridResize.originColumns + deltaCol)
-            : gridResize.originColumns,
-      });
+      applyGridResizePreview(event.clientX, event.clientY);
       return;
     }
 
@@ -755,12 +819,9 @@ export function FloorPlanCanvas() {
       return;
     }
 
-    if (gridResize && gridResizePreview) {
-      resizeGrid(gridResizePreview);
+    if (gridResize) {
+      return;
     }
-
-    setGridResize(null);
-    setGridResizePreview(null);
   };
 
   const handlePointerLeave = (event: React.PointerEvent) => {
@@ -810,6 +871,9 @@ export function FloorPlanCanvas() {
     }
     return element;
   });
+
+  const previewRowOffset = gridResizePreview?.rowOffset ?? 0;
+  const previewColumnOffset = gridResizePreview?.columnOffset ?? 0;
 
   const sortedElements = [...displayElements].sort((a, b) => {
     const depth = (el: FloorPlanElement) => (el.parentId ? 1 : 0);
@@ -862,10 +926,10 @@ export function FloorPlanCanvas() {
           ) : null}
 
           {sortedElements.map((element) => {
-            const world = getWorldFootprint(layout.elements, element);
+            const world = getWorldFootprint(displayElements, element);
             const isSelected = selection.includes(element.id);
             const isDraggingInvalid = drag?.elementId === element.id && dragPreview && !dragPreview.valid;
-            const size = elementPixelSize(element);
+            const size = elementPixelSizeFromElement(element);
 
             return (
               <div
@@ -873,8 +937,8 @@ export function FloorPlanCanvas() {
                 data-element-root
                 className={cn("absolute", isDraggingInvalid && "opacity-50")}
                 style={{
-                  left: world.worldColumn * BUILDER_CELL_STRIDE,
-                  top: world.worldRow * BUILDER_CELL_STRIDE,
+                  left: (world.worldColumn + previewColumnOffset) * BUILDER_CELL_STRIDE,
+                  top: (world.worldRow + previewRowOffset) * BUILDER_CELL_STRIDE,
                   transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
                   transformOrigin: "center center",
                 }}
@@ -949,12 +1013,13 @@ export function FloorPlanCanvas() {
           ) : null}
 
           <div
-            className="absolute -bottom-1 left-1/2 z-40 h-2 w-20 -translate-x-1/2 cursor-s-resize rounded-full bg-primary/40"
+            className="absolute -top-1 left-1/2 z-40 h-2 w-20 -translate-x-1/2 cursor-n-resize rounded-full bg-primary/40 hover:bg-primary/60"
+            title="Drag to add or remove rows from the top"
             onPointerDown={(e) => {
               e.stopPropagation();
               (e.target as HTMLElement).setPointerCapture(e.pointerId);
               setGridResize({
-                edge: "rows",
+                edge: "rows-top",
                 startClientX: e.clientX,
                 startClientY: e.clientY,
                 originRows: layout.grid.rows,
@@ -963,12 +1028,43 @@ export function FloorPlanCanvas() {
             }}
           />
           <div
-            className="absolute -right-1 top-1/2 z-40 h-20 w-2 -translate-y-1/2 cursor-e-resize rounded-full bg-primary/40"
+            className="absolute -bottom-1 left-1/2 z-40 h-2 w-20 -translate-x-1/2 cursor-s-resize rounded-full bg-primary/40 hover:bg-primary/60"
+            title="Drag to add or remove rows from the bottom"
             onPointerDown={(e) => {
               e.stopPropagation();
               (e.target as HTMLElement).setPointerCapture(e.pointerId);
               setGridResize({
-                edge: "columns",
+                edge: "rows-bottom",
+                startClientX: e.clientX,
+                startClientY: e.clientY,
+                originRows: layout.grid.rows,
+                originColumns: layout.grid.columns,
+              });
+            }}
+          />
+          <div
+            className="absolute -left-1 top-1/2 z-40 h-20 w-2 -translate-y-1/2 cursor-w-resize rounded-full bg-primary/40 hover:bg-primary/60"
+            title="Drag to add or remove columns from the left"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              (e.target as HTMLElement).setPointerCapture(e.pointerId);
+              setGridResize({
+                edge: "columns-left",
+                startClientX: e.clientX,
+                startClientY: e.clientY,
+                originRows: layout.grid.rows,
+                originColumns: layout.grid.columns,
+              });
+            }}
+          />
+          <div
+            className="absolute -right-1 top-1/2 z-40 h-20 w-2 -translate-y-1/2 cursor-e-resize rounded-full bg-primary/40 hover:bg-primary/60"
+            title="Drag to add or remove columns from the right"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              (e.target as HTMLElement).setPointerCapture(e.pointerId);
+              setGridResize({
+                edge: "columns-right",
                 startClientX: e.clientX,
                 startClientY: e.clientY,
                 originRows: layout.grid.rows,

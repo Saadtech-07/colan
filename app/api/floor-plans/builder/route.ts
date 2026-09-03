@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireTenantContext } from "@/lib/api/tenant-context";
 import { createFloorWithBuilderLayout } from "@/lib/floor-plan-layouts.server";
 import { canAssignSeating, canManageModule, normalizeAppRole } from "@/lib/permissions";
+import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { createEmptyLayout } from "@/lib/floor-plan-builder/layout-engine";
 import { z } from "zod";
 
@@ -22,6 +23,7 @@ export async function POST(req: Request) {
   const ctx = await requireTenantContext();
   if (ctx instanceof Response) return ctx;
 
+  await ensureRoleRegistry(ctx.companyId);
   const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (!canAssignSeating(roleKey) && !canManageModule(roleKey, "seating")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

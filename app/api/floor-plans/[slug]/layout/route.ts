@@ -7,6 +7,7 @@ import {
   saveFloorPlanLayoutDraft,
 } from "@/lib/floor-plan-layouts.server";
 import { canAssignSeating, canManageModule, normalizeAppRole } from "@/lib/permissions";
+import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { z } from "zod";
 
 const layoutElementSchema = z.object({
@@ -37,6 +38,7 @@ type RouteParams = { params: Promise<{ slug: string }> };
 async function assertLayoutAccess() {
   const ctx = await requireTenantContext();
   if (ctx instanceof Response) return { error: ctx };
+  await ensureRoleRegistry(ctx.companyId);
   const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (!canAssignSeating(roleKey) && !canManageModule(roleKey, "seating")) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };

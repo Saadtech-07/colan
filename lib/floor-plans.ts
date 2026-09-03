@@ -31,6 +31,70 @@ type MemoryFloorPlan = FloorPlanDTO & {
 };
 
 const memoryFloorPlans: MemoryFloorPlan[] = [];
+const memorySuppressedSeedSlugs = new Set<string>();
+
+function catalogSeedSlugs(): Set<string> {
+  return new Set(buildFloorPlanSeeds().map((seed) => seed.slug));
+}
+
+function isCatalogSeedSlug(slug: string): boolean {
+  return catalogSeedSlugs().has(slug.trim().toLowerCase());
+}
+
+type FloorPlanSeedSuppressionDocument = {
+  companyId: ObjectId;
+  slug: string;
+  suppressedAt: Date;
+};
+
+async function getSuppressedFloorPlanSeedSlugs(
+  db: Db,
+  companyId: string,
+): Promise<Set<string>> {
+  const rows = await db
+    .collection<FloorPlanSeedSuppressionDocument>(COLLECTIONS.floorPlanSeedSuppressions)
+    .find({ companyId: toCompanyObjectId(companyId) })
+    .project({ slug: 1 })
+    .toArray();
+  return new Set(rows.map((row) => row.slug));
+}
+
+async function suppressFloorPlanSeed(
+  db: Db,
+  companyId: string,
+  slug: string,
+): Promise<void> {
+  const normalized = slug.trim().toLowerCase();
+  if (!normalized || !isCatalogSeedSlug(normalized)) return;
+
+  const col = db.collection<FloorPlanSeedSuppressionDocument>(
+    COLLECTIONS.floorPlanSeedSuppressions,
+  );
+  await col.createIndex({ companyId: 1, slug: 1 }, { unique: true });
+  await col.updateOne(
+    { companyId: toCompanyObjectId(companyId), slug: normalized },
+    {
+      $set: {
+        companyId: toCompanyObjectId(companyId),
+        slug: normalized,
+        suppressedAt: new Date(),
+      },
+    },
+    { upsert: true },
+  );
+}
+
+async function unsuppressFloorPlanSeed(
+  db: Db,
+  companyId: string,
+  slug: string,
+): Promise<void> {
+  const normalized = slug.trim().toLowerCase();
+  if (!normalized) return;
+  await db
+    .collection<FloorPlanSeedSuppressionDocument>(COLLECTIONS.floorPlanSeedSuppressions)
+    .deleteOne({ companyId: toCompanyObjectId(companyId), slug: normalized });
+}
 
 function clonePlan(plan: FloorPlanDTO): FloorPlanDTO {
   return structuredClone(plan);
@@ -75,6 +139,7 @@ function mergeCatalogSideCabinHeights(
 function ensureMemorySeeds() {
   const seeds = buildFloorPlanSeeds();
   for (const seed of seeds) {
+    if (memorySuppressedSeedSlugs.has(seed.slug)) continue;
     const idx = memoryFloorPlans.findIndex((p) => p.slug === seed.slug);
     const catalogCabins = catalogCabinsForSlug(seed.slug);
     const catalogRows = catalogRowsForSlug(seed.slug);
@@ -118,7 +183,9 @@ function ensureMemorySeeds() {
 export async function ensureFloorPlanSeeds(db: Db, companyId: string): Promise<void> {
   const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
   const scope = companyScope<FloorPlanDocument>(companyId);
+  const suppressed = await getSuppressedFloorPlanSeedSlugs(db, companyId);
   for (const seed of buildFloorPlanSeeds()) {
+    if (suppressed.has(seed.slug)) continue;
     const existing = await col.findOne({ ...scope, slug: seed.slug });
     if (!existing) {
       await col.insertOne({
@@ -301,6 +368,7 @@ export async function createFloorPlan(
     if (memoryFloorPlans.some((p) => p.slug === slug)) {
       throw new Error(`Floor plan "${slug}" already exists`);
     }
+    memorySuppressedSeedSlugs.delete(slug);
     memoryFloorPlans.push({ ...payload, createdAt: new Date(), updatedAt: new Date() });
     return clonePlan(payload);
   }
@@ -325,6 +393,7 @@ export async function createFloorPlan(
     createdAt: now,
     updatedAt: now,
   });
+  await unsuppressFloorPlanSeed(db, companyId, slug);
   return payload;
 }
 
@@ -403,6 +472,9 @@ export async function deleteFloorPlan(companyId: string, slug: string): Promise<
     const idx = memoryFloorPlans.findIndex((p) => p.slug === normalized);
     if (idx < 0) throw new Error("Floor plan not found");
     const [removed] = memoryFloorPlans.splice(idx, 1);
+    if (isCatalogSeedSlug(normalized) || removed.source === "seed") {
+      memorySuppressedSeedSlugs.add(normalized);
+    }
     return clonePlan(removed);
   }
 
@@ -414,6 +486,9 @@ export async function deleteFloorPlan(companyId: string, slug: string): Promise<
   const result = await col.deleteOne({ ...scope, slug: normalized });
   if (result.deletedCount < 1) {
     throw new Error("Floor plan not found");
+  }
+  if (isCatalogSeedSlug(normalized) || existing.source === "seed") {
+    await suppressFloorPlanSeed(db, companyId, normalized);
   }
   await deleteFloorPlanDesigns(companyId, normalized);
   return dto;

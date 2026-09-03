@@ -47,7 +47,7 @@ export function SeatingLayoutCanvas({
               </div>
               <div
                 className={cn(
-                  "flex w-max flex-wrap gap-2.5 rounded-[28px] border border-dashed border-violet-400/35 bg-violet-500/[0.04] p-4",
+                  "flex w-max flex-wrap gap-3.5 rounded-[28px] border border-dashed border-violet-400/35 bg-violet-500/[0.04] p-4",
                 )}
               >
                 {zone.seatIds.map((seatId) => {

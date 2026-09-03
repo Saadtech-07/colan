@@ -55,7 +55,7 @@ export function SeatingCabinRow({
 
   return (
     <div className={cn("w-max", className)}>
-      <div className="flex w-max items-end gap-2.5 overflow-visible">
+      <div className="flex w-max items-end gap-3.5 overflow-visible">
         <div className="shrink-0" style={{ width: LABEL_WIDTH, minHeight: 88 }} aria-hidden />
         <div
           className="flex items-stretch"

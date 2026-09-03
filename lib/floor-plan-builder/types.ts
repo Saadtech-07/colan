@@ -87,8 +87,9 @@ export type BulkElementOptions = {
   count: number;
 };
 
-export const BUILDER_CELL_PX = 56;
-export const BUILDER_CELL_GAP = 6;
+/** Matches classic seating card width (see seating-layout-metrics SEAT_WIDTH). */
+export const BUILDER_CELL_PX = 108;
+export const BUILDER_CELL_GAP = 14;
 export const BUILDER_CELL_STRIDE = BUILDER_CELL_PX + BUILDER_CELL_GAP;
 
 export const DEFAULT_FLOOR_GRID: FloorPlanGrid = { rows: 12, columns: 12 };

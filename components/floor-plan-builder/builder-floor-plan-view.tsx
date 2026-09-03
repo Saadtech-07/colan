@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { SeatCard } from "@/components/seating/seat-card";
+import { BuilderGridSeatTile } from "@/components/floor-plan-builder/builder-grid-seat-tile";
 import { SeatingZoomFrame } from "@/components/seating/seating-zoom-frame";
 import { getElementDefinition } from "@/lib/floor-plan-builder/element-registry";
 import { getWorldFootprint } from "@/lib/floor-plan-builder/hierarchy";
+import { elementPixelSize } from "@/lib/floor-plan-builder/metrics";
 import {
   BUILDER_CELL_GAP,
   BUILDER_CELL_PX,
@@ -187,8 +188,7 @@ export function BuilderFloorPlanView({
               const emp = occupancy.get(seatId) ?? null;
               if (hideSeat(seatId, emp)) return null;
               const world = getWorldFootprint(layout.elements, element);
-              const width = element.width * BUILDER_CELL_PX + (element.width - 1) * BUILDER_CELL_GAP;
-              const height = element.height * BUILDER_CELL_PX + (element.height - 1) * BUILDER_CELL_GAP;
+              const size = elementPixelSize(element.width, element.height);
 
               return (
                 <div
@@ -197,11 +197,14 @@ export function BuilderFloorPlanView({
                   style={{
                     left: world.worldColumn * BUILDER_CELL_STRIDE,
                     top: world.worldRow * BUILDER_CELL_STRIDE,
-                    width,
-                    height,
+                    width: size.width,
+                    height: size.height,
+                    transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+                    transformOrigin: "center center",
                   }}
                 >
-                  <SeatCard
+                  <BuilderGridSeatTile
+                    element={element}
                     seatId={seatId}
                     occupant={emp}
                     selected={selectedSeat === seatId}

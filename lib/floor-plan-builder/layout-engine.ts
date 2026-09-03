@@ -664,8 +664,25 @@ export function unmergeSeats(
 export function resizeFloorGrid(
   layout: FloorPlanLayoutState,
   grid: FloorPlanGrid,
+  opts?: { rowOffset?: number; columnOffset?: number },
 ): FloorPlanLayoutState {
-  return { ...layout, grid };
+  const rowOffset = opts?.rowOffset ?? 0;
+  const columnOffset = opts?.columnOffset ?? 0;
+  if (rowOffset === 0 && columnOffset === 0) {
+    return { ...layout, grid };
+  }
+  return {
+    ...layout,
+    grid,
+    elements: layout.elements.map((el) => {
+      if (el.parentId !== null) return el;
+      return {
+        ...el,
+        row: el.row + rowOffset,
+        column: el.column + columnOffset,
+      };
+    }),
+  };
 }
 
 export function resolvePlacementTarget(

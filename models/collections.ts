@@ -5,6 +5,7 @@ export const COLLECTIONS = {
   companies: "companies",
   appUsers: "app_users",
   appUserSeedSuppressions: "app_user_seed_suppressions",
+  floorPlanSeedSuppressions: "floor_plan_seed_suppressions",
   employees: "employees",
   employeeDetails: "employee_details",
   teams: "teams",

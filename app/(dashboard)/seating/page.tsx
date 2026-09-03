@@ -355,6 +355,18 @@ export default function SeatingPage() {
     };
   }, []);
 
+  const refreshOfficePlans = React.useCallback(async () => {
+    setPlansLoading(true);
+    try {
+      const plans = await fetchFloorPlanSummaries({ force: true });
+      setOfficePlans(plans);
+    } catch {
+      /* keep current list */
+    } finally {
+      setPlansLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     if (listMode) {
       setPlanLoading(false);
@@ -1508,7 +1520,9 @@ export default function SeatingPage() {
           plans={officePlans}
           employees={savedEmployees}
           loading={plansLoading}
+          canManage={canAssign}
           onViewBranch={openBranchFloor}
+          onBranchDeleted={refreshOfficePlans}
         />
       ) : (
         <>

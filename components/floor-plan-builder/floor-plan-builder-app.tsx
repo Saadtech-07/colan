@@ -51,6 +51,7 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
   const [publishing, setPublishing] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [statusMessage, setStatusMessage] = React.useState<string | null>(null);
+  const [statusIsError, setStatusIsError] = React.useState(false);
   const skipAutoSaveRef = React.useRef(true);
   const saveInFlightRef = React.useRef(false);
 
@@ -61,6 +62,7 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       if (opts?.silent) setAutoSaving(true);
       else setSaving(true);
       setStatusMessage(null);
+      setStatusIsError(false);
       try {
         let targetSlug = currentSlug;
         const payload = { ...layout, name: floorName };
@@ -88,10 +90,14 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
           if (!res.ok) throw new Error(await parseApiError(res));
         }
         invalidateFloorPlanClientCache(targetSlug);
-        if (!opts?.silent) setStatusMessage("Draft saved.");
+        if (!opts?.silent) {
+          setStatusIsError(false);
+          setStatusMessage("Draft saved.");
+        }
         return targetSlug;
       } catch (e) {
         if (!opts?.silent) {
+          setStatusIsError(true);
           setStatusMessage(e instanceof Error ? e.message : "Save failed.");
         }
         return null;
@@ -118,6 +124,7 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
   const publish = React.useCallback(async () => {
     setPublishing(true);
     setStatusMessage(null);
+    setStatusIsError(false);
     try {
       const targetSlug = (await persistDraft()) ?? currentSlug;
       if (!targetSlug) throw new Error("Save the floor before publishing.");
@@ -132,7 +139,11 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       if (!res.ok) throw new Error(await parseApiError(res));
       invalidateFloorPlanLayoutCache(targetSlug);
       invalidateFloorPlanClientCache(targetSlug);
+      setStatusIsError(false);
       setStatusMessage("Floor published.");
+    } catch (e) {
+      setStatusIsError(true);
+      setStatusMessage(e instanceof Error ? e.message : "Publish failed.");
     } finally {
       setPublishing(false);
     }
@@ -150,12 +161,14 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
 
     setDeleting(true);
     setStatusMessage(null);
+    setStatusIsError(false);
     try {
       await deleteFloorPlanClient(currentSlug);
       invalidateFloorPlanLayoutCache(currentSlug);
       invalidateFloorPlanClientCache();
       router.push("/seating/floors/new");
     } catch (e) {
+      setStatusIsError(true);
       setStatusMessage(e instanceof Error ? e.message : "Delete failed.");
     } finally {
       setDeleting(false);
@@ -171,7 +184,18 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
         onPublish={() => void publish()}
         onDelete={() => void deleteWorkspace()}
         onPreview={() => {
-          if (currentSlug) router.push(`/seating?office=${encodeURIComponent(currentSlug)}`);
+          void (async () => {
+            let slug = currentSlug;
+            if (!slug) {
+              slug = (await persistDraft()) ?? "";
+            }
+            if (slug) {
+              router.push(`/seating?office=${encodeURIComponent(slug)}`);
+              return;
+            }
+            setStatusIsError(true);
+            setStatusMessage("Save the floor before previewing.");
+          })();
         }}
         saving={saving}
         autoSaving={autoSaving}
@@ -183,7 +207,7 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       {(error || statusMessage) && (
         <div
           className={
-            error
+            error || statusIsError
               ? "shrink-0 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
               : "shrink-0 border-b border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-800"
           }

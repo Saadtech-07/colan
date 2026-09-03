@@ -94,7 +94,10 @@ type BuilderContextValue = {
   mergeSelectedSeats: () => void;
   mergeSeatsByDrag: (draggedId: string, targetId: string) => boolean;
   unmergeGroup: (groupId: string) => void;
-  resizeGrid: (grid: FloorPlanGrid) => void;
+  resizeGrid: (
+    grid: FloorPlanGrid,
+    opts?: { rowOffset?: number; columnOffset?: number },
+  ) => void;
   undoChange: () => void;
   redoChange: () => void;
   loadLayout: (layout: FloorPlanLayoutState) => void;
@@ -418,8 +421,8 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   );
 
   const resizeGrid = React.useCallback(
-    (grid: FloorPlanGrid) => {
-      commitLayout(resizeFloorGrid(layout, grid));
+    (grid: FloorPlanGrid, opts?: { rowOffset?: number; columnOffset?: number }) => {
+      commitLayout(resizeFloorGrid(layout, grid, opts));
     },
     [commitLayout, layout],
   );
