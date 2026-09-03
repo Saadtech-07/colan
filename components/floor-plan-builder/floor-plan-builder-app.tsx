@@ -10,9 +10,11 @@ import { PropertiesPanel } from "./properties-panel";
 import { WorkspaceBlockTabs } from "./workspace-block-tabs";
 import { deleteFloorPlanClient, invalidateFloorPlanClientCache } from "@/lib/floor-plans-client";
 import { parseApiError } from "@/providers/app-state";
+import { cn } from "@/lib/utils";
 import { invalidateFloorPlanLayoutCache } from "@/lib/floor-plan-layouts-client";
 import type { FloorPlanLayoutState } from "@/lib/floor-plan-builder/types";
 import { ensureWorkspaceBlocks, serializeWorkspaceLayout } from "@/lib/floor-plan-builder/workspace-blocks";
+import { BUILDER_CHROME } from "./builder-ui";
 
 type Props = {
   slug?: string;
@@ -29,18 +31,23 @@ function BuilderStatusBar() {
     : 0;
 
   return (
-    <div className="flex shrink-0 items-center justify-between border-t border-border/60 bg-card/95 px-3 py-1.5 text-[11px] text-muted-foreground">
-      <span>
-        {activeBlockName}
+    <div className="flex shrink-0 items-center justify-between border-t border-border/50 bg-[#fafbfc]/95 px-4 py-1.5 text-[11px] text-muted-foreground backdrop-blur-sm">
+      <span className="font-medium">
+        <span className="text-foreground/80">{activeBlockName}</span>
         {workspaceBlocks.length > 1 ? ` · ${workspaceBlocks.length} layouts` : ""}
-        {" · "}
-        Grid: {layout.grid.rows} × {layout.grid.columns}
+        <span className="mx-1.5 text-border">|</span>
+        Grid {layout.grid.rows} × {layout.grid.columns}
       </span>
       <span>
-        Seats: {seatCount}
-        {selection.length > 0 ? ` · ${selection.length} selected` : ""}
-        {" · "}
-        {pct}% of floor cells
+        <span className="font-medium text-foreground/70">{seatCount}</span> seats
+        {selection.length > 0 ? (
+          <>
+            <span className="mx-1.5 text-border">|</span>
+            <span className="font-medium text-primary">{selection.length} selected</span>
+          </>
+        ) : null}
+        <span className="mx-1.5 text-border">|</span>
+        {pct}% floor utilization
       </span>
     </div>
   );
@@ -217,7 +224,7 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
   }, [activeBlockId, fitToView]);
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#f4f6f9]">
+    <div className={cn("flex h-full min-h-0 w-full flex-col overflow-hidden", BUILDER_CHROME.shellBg)}>
       {(error || statusMessage) && (
         <div
           className={
@@ -232,8 +239,8 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <ElementToolbox onBack={() => router.push("/seating/floors/new")} />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/60 bg-white px-3 py-2">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#fafbfc]">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-[#fafbfc] px-3 py-2">
             <WorkspaceBlockTabs />
             <BuilderToolbar
               onSaveDraft={() => void persistDraft()}
@@ -261,16 +268,24 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
               canDelete
             />
           </div>
-          <p className="shrink-0 border-b border-border/40 bg-slate-50 px-4 py-1.5 text-[11px] text-muted-foreground">
+          <p className="shrink-0 border-b border-border/40 bg-muted/20 px-4 py-1.5 text-[11px] text-muted-foreground">
             {getToolHint(placementDrag)}
-            {autoSaving ? " · Auto-saving…" : currentSlug ? " · Design saved to database" : trimmedFloorName ? " · Unsaved — edits auto-save shortly" : " · Enter a workspace name to start saving"}
+            {autoSaving ? (
+              <span className="text-primary/80"> · Auto-saving…</span>
+            ) : currentSlug ? (
+              <span className="text-emerald-700/80"> · Design saved to database</span>
+            ) : trimmedFloorName ? (
+              <span> · Unsaved — edits auto-save shortly</span>
+            ) : (
+              <span> · Enter a workspace name to start saving</span>
+            )}
           </p>
-          <div className="relative min-h-0 flex-1 bg-[#f8fafc]">
+          <div className={cn("relative min-h-0 flex-1", BUILDER_CHROME.canvasBg)}>
             <FloorPlanCanvas />
           </div>
           <BuilderStatusBar />
         </div>
-        <aside className="flex h-full min-h-0 w-[260px] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-card">
+        <aside className="flex h-full min-h-0 w-[272px] shrink-0 flex-col overflow-hidden border-l border-border/50 bg-[#fafbfc]">
           <PropertiesPanel floorName={floorName} onFloorNameChange={setFloorName} />
         </aside>
       </div>

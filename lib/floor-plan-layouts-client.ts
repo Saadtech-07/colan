@@ -48,6 +48,29 @@ export async function fetchFloorPlanViewLayout(
   return fetchFloorPlanLayoutByStatus(slug, "draft", opts);
 }
 
+/** Builder editor: same source as seating view so published work is never hidden behind a stale draft. */
+export async function fetchFloorPlanEditLayout(
+  slug: string,
+  opts?: { force?: boolean },
+): Promise<FloorPlanLayoutDTO | null> {
+  return fetchFloorPlanViewLayout(slug, opts);
+}
+
+export function floorPlanLayoutDtoToState(
+  dto: FloorPlanLayoutDTO,
+  slug: string,
+): import("@/lib/floor-plan-builder/types").FloorPlanLayoutState {
+  return {
+    name: dto.name,
+    status: dto.status,
+    version: dto.version ?? 0,
+    grid: dto.grid,
+    elements: dto.elements ?? [],
+    blocks: dto.blocks,
+    floorPlanSlug: slug,
+  };
+}
+
 export function invalidateFloorPlanLayoutCache(slug?: string) {
   if (!slug) {
     layoutCache.clear();

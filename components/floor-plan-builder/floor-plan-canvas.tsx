@@ -28,6 +28,14 @@ import {
   getWorkspaceBlockCanvasLayouts,
   getWorkspaceCanvasGridSize,
 } from "@/lib/floor-plan-builder/workspace-blocks";
+import {
+  BUILDER_CHROME,
+  buildCanvasGridStyle,
+  buildInternalGridStyle,
+  DimensionLabel,
+  DropCellHighlight,
+  SelectionBadge,
+} from "./builder-ui";
 import { useFloorPlanBuilder } from "./builder-store";
 
 type DragState = {
@@ -72,42 +80,47 @@ function findSeatAtWorldCell(
   return found;
 }
 
-function internalGridStyle(color: string) {
-  return {
-    backgroundImage: `
-      linear-gradient(to right, ${color}44 1px, transparent 1px),
-      linear-gradient(to bottom, ${color}44 1px, transparent 1px)
-    `,
-    backgroundSize: `${BUILDER_CELL_STRIDE}px ${BUILDER_CELL_STRIDE}px`,
-  };
-}
-
 function DropPreview({
   worldRow,
   worldColumn,
   width,
   height,
   valid,
+  showCells = true,
 }: {
   worldRow: number;
   worldColumn: number;
   width: number;
   height: number;
   valid: boolean;
+  showCells?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        "pointer-events-none absolute z-40 rounded-lg border-2 border-dashed transition-colors",
-        valid ? "border-emerald-500 bg-emerald-500/15" : "border-destructive bg-destructive/15",
-      )}
-      style={{
-        left: worldColumn * BUILDER_CELL_STRIDE,
-        top: worldRow * BUILDER_CELL_STRIDE,
-        width: width * BUILDER_CELL_PX + (width - 1) * BUILDER_CELL_GAP,
-        height: height * BUILDER_CELL_PX + (height - 1) * BUILDER_CELL_GAP,
-      }}
-    />
+    <>
+      {showCells ? (
+        <DropCellHighlight
+          worldRow={worldRow}
+          worldColumn={worldColumn}
+          width={width}
+          height={height}
+          valid={valid}
+        />
+      ) : null}
+      <div
+        className={cn(
+          "pointer-events-none absolute z-40 rounded-lg border-2 border-dashed transition-all duration-100",
+          valid
+            ? "border-primary/70 bg-primary/5 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]"
+            : "border-destructive/70 bg-destructive/8 shadow-[0_0_0_1px_rgba(239,68,68,0.15)]",
+        )}
+        style={{
+          left: worldColumn * BUILDER_CELL_STRIDE,
+          top: worldRow * BUILDER_CELL_STRIDE,
+          width: width * BUILDER_CELL_PX + (width - 1) * BUILDER_CELL_GAP,
+          height: height * BUILDER_CELL_PX + (height - 1) * BUILDER_CELL_GAP,
+        }}
+      />
+    </>
   );
 }
 
@@ -129,12 +142,17 @@ function ElementVisual({
 
   if (isSeat) {
     return (
-      <BuilderGridSeatTile
-        element={element}
-        selected={selected}
-        interactive={false}
-        onPointerDown={onPointerDown}
-      />
+      <div className={cn("relative h-full w-full", selected && "z-20")}>
+        {selected ? (
+          <div className="pointer-events-none absolute -inset-0.5 rounded-[14px] border-2 border-primary/80 shadow-[0_0_0_2px_rgba(59,130,246,0.2)]" />
+        ) : null}
+        <BuilderGridSeatTile
+          element={element}
+          selected={selected}
+          interactive={false}
+          onPointerDown={onPointerDown}
+        />
+      </div>
     );
   }
 
@@ -144,39 +162,66 @@ function ElementVisual({
       tabIndex={0}
       onPointerDown={onPointerDown}
       className={cn(
-        "relative flex h-full w-full flex-col items-center justify-center border-2 text-center shadow-sm",
-        "rounded-2xl",
-        selected ? "overflow-visible ring-2 ring-primary ring-offset-2 ring-offset-white z-20" : "overflow-hidden",
-        element.type === "pillar" && "rounded-xl bg-gradient-to-b from-slate-600 to-slate-800 text-white",
-        element.type === "entrance" && "rounded-xl bg-gradient-to-b from-sky-100 to-sky-200 text-sky-900",
-        element.type === "wall" && "rounded-md bg-slate-500 text-white",
-        element.type === "desk" && "rounded-xl bg-slate-100",
-        element.type === "meeting_table" && "rounded-xl bg-violet-100",
+        "relative flex h-full w-full flex-col items-center justify-center border text-center transition-shadow duration-150",
+        "rounded-xl",
+        selected
+          ? "overflow-visible z-20 border-primary/60 shadow-[0_0_0_2px_rgba(59,130,246,0.25),0_8px_24px_rgba(59,130,246,0.12)]"
+          : "overflow-hidden border-opacity-60 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_4px_12px_rgba(15,23,42,0.04)] hover:shadow-[0_4px_16px_rgba(15,23,42,0.08)]",
+        element.type === "pillar" &&
+          "rounded-lg border-slate-700/80 bg-gradient-to-br from-slate-600 via-slate-700 to-slate-800 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_4px_12px_rgba(15,23,42,0.25)]",
+        element.type === "entrance" &&
+          "rounded-lg border-sky-300/80 bg-gradient-to-b from-sky-50 via-sky-100 to-sky-200 text-sky-900",
+        element.type === "wall" &&
+          "rounded-sm border-slate-600/80 bg-gradient-to-b from-slate-500 to-slate-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]",
+        element.type === "stairs" &&
+          "rounded-lg border-stone-400/70 bg-gradient-to-br from-stone-100 via-stone-200/80 to-stone-300/60 text-stone-700",
+        element.type === "desk" && "rounded-lg border-slate-300/70 bg-gradient-to-b from-slate-50 to-slate-100",
+        element.type === "meeting_table" && "rounded-lg border-violet-300/70 bg-gradient-to-b from-violet-50 to-violet-100",
         def.category === "structure" &&
-          !["pillar", "entrance", "wall"].includes(element.type) &&
-          "bg-white/95 shadow-[0_8px_24px_rgba(15,23,42,0.08)]",
+          !["pillar", "entrance", "wall", "stairs"].includes(element.type) &&
+          "bg-white/98 shadow-[0_1px_0_rgba(255,255,255,0.9)_inset,0_6px_20px_rgba(15,23,42,0.06)]",
       )}
       style={{
-        borderColor: selected ? undefined : def.borderColor,
-        backgroundColor:
-          ["pillar", "entrance", "wall", "desk", "meeting_table"].includes(element.type)
+        borderColor: selected
+          ? undefined
+          : ["pillar", "entrance", "wall", "stairs", "desk", "meeting_table"].includes(element.type)
             ? undefined
-            : `${def.color}f0`,
+            : def.borderColor,
+        backgroundColor:
+          ["pillar", "entrance", "wall", "stairs", "desk", "meeting_table"].includes(element.type)
+            ? undefined
+            : `${def.color}ee`,
       }}
     >
       {def.supportsChildren ? (
         <div
-          className="pointer-events-none absolute inset-1 rounded-xl"
-          style={internalGridStyle(def.borderColor)}
+          className="pointer-events-none absolute inset-1.5 rounded-lg opacity-60"
+          style={buildInternalGridStyle(def.borderColor)}
         />
       ) : null}
 
       {element.type === "pillar" ? (
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Pillar</span>
+        <span className="text-[9px] font-bold uppercase tracking-[0.18em] opacity-90">Pillar</span>
       ) : element.type === "wall" ? (
-        <span className="text-[9px] font-semibold uppercase">Wall</span>
+        <span className="text-[8px] font-semibold uppercase tracking-wider opacity-90">Wall</span>
+      ) : element.type === "stairs" ? (
+        <div className="relative z-10 flex flex-col items-center gap-0.5">
+          <div className="flex flex-col gap-px">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-px w-6 bg-stone-500/40" />
+            ))}
+          </div>
+          <span className="text-[9px] font-semibold">{element.name}</span>
+        </div>
+      ) : element.type === "entrance" ? (
+        <div className="relative z-10 flex flex-col items-center gap-0.5">
+          <div className="h-3 w-5 rounded-t-full border-2 border-b-0 border-sky-500/50" />
+          <span className="text-[9px] font-semibold">{element.name}</span>
+        </div>
       ) : (
-        <span className="relative z-10 px-2 text-xs font-semibold leading-tight">{element.name}</span>
+        <span className="relative z-10 px-2 text-[11px] font-semibold leading-tight text-foreground/90">
+          {element.name}
+        </span>
       )}
     </div>
   );
@@ -236,17 +281,22 @@ type RotateState = {
 function RotationHandle({ onRotateStart }: { onRotateStart: (event: React.PointerEvent) => void }) {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-visible">
-      <div className="absolute left-1/2 w-0.5 -translate-x-1/2 bg-primary" style={{ top: -32, height: 24 }} />
       <div
-        className="pointer-events-auto absolute left-1/2 h-5 w-5 -translate-x-1/2 cursor-grab rounded-full border-2 border-primary bg-white shadow-md active:cursor-grabbing"
-        style={{ top: -40 }}
+        className="absolute left-1/2 w-px -translate-x-1/2 bg-primary/50"
+        style={{ top: -36, height: 28 }}
+      />
+      <div
+        className="pointer-events-auto absolute left-1/2 flex h-5 w-5 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border-2 border-primary bg-background shadow-md transition-transform hover:scale-110 active:cursor-grabbing"
+        style={{ top: -44 }}
         title="Drag to rotate"
         onPointerDown={(e) => {
           e.stopPropagation();
           e.preventDefault();
           onRotateStart(e);
         }}
-      />
+      >
+        <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+      </div>
     </div>
   );
 }
@@ -261,11 +311,13 @@ function ResizeHandles({
   if (!getElementDefinition(element.type).supportsResize) return null;
   return (
     <>
+      {/* Selection outline */}
+      <div className="pointer-events-none absolute -inset-0.5 rounded-xl border-2 border-primary/80" />
       {EDGE_RESIZE_HANDLES.map(({ edge, className, cursor }) => (
         <div
           key={edge}
           className={cn(
-            "absolute z-50 touch-none rounded-full border-2 border-primary bg-white shadow-md hover:bg-primary/10",
+            "absolute z-50 touch-none rounded-sm border border-primary/30 bg-primary/20 backdrop-blur-sm transition-colors hover:bg-primary/35",
             className,
             cursor,
           )}
@@ -281,7 +333,7 @@ function ResizeHandles({
         <div
           key={edge}
           className={cn(
-            "absolute z-50 h-3.5 w-3.5 touch-none rounded-full border-2 border-primary bg-white shadow-md hover:scale-110",
+            "absolute z-50 h-2.5 w-2.5 touch-none rounded-sm border-2 border-primary bg-background shadow-sm transition-transform hover:scale-125 hover:bg-primary hover:border-primary",
             className,
             cursor,
           )}
@@ -355,6 +407,7 @@ export function FloorPlanCanvas() {
     height: number;
     valid: boolean;
   } | null>(null);
+  const [cursorPos, setCursorPos] = React.useState<{ x: number; y: number } | null>(null);
 
   const activeGrid = gridResizePreview ?? layout.grid;
   const blockLayouts = React.useMemo(
@@ -641,6 +694,7 @@ export function FloorPlanCanvas() {
 
   React.useEffect(() => {
     if (!placementDrag) {
+      setCursorPos(null);
       pendingPlacementRef.current = null;
       return;
     }
@@ -648,10 +702,12 @@ export function FloorPlanCanvas() {
     placementCommitLock.current = false;
 
     const onMove = (event: PointerEvent) => {
+      setCursorPos({ x: event.clientX, y: event.clientY });
       updatePlacementPreview(event.clientX, event.clientY);
     };
 
     const onUp = () => {
+      setCursorPos(null);
       commitPendingPlacement();
     };
 
@@ -966,11 +1022,16 @@ export function FloorPlanCanvas() {
     <div
       ref={viewportRef}
       className={cn(
-        "absolute inset-0 overflow-hidden bg-[#f8fafc]",
+        "absolute inset-0 overflow-hidden",
+        BUILDER_CHROME.canvasBg,
         canvasMode === "pan" || panDrag ? "cursor-grab active:cursor-grabbing" : "",
         placementDrag ? "cursor-crosshair" : "",
       )}
-      style={{ touchAction: "none" }}
+      style={{
+        touchAction: "none",
+        backgroundImage: BUILDER_CHROME.canvasPattern,
+        backgroundSize: "20px 20px",
+      }}
       onPointerDown={handleViewportPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -1005,10 +1066,9 @@ export function FloorPlanCanvas() {
                 key={block.id}
                 data-block-sheet
                 className={cn(
-                  "absolute rounded-[28px] border-2 bg-white shadow-[0_16px_48px_rgba(15,23,42,0.1)]",
-                  isActive
-                    ? "z-10 border-primary/80 ring-2 ring-primary/15"
-                    : "z-0 border-slate-200 hover:border-slate-300",
+                  "absolute transition-shadow duration-200",
+                  BUILDER_CHROME.floorSheet,
+                  isActive ? cn("z-10", BUILDER_CHROME.floorSheetActive) : "z-0 opacity-90 hover:opacity-100",
                 )}
                 style={{
                   left: columnOffset * BUILDER_CELL_STRIDE,
@@ -1022,31 +1082,32 @@ export function FloorPlanCanvas() {
                   else clearSelection();
                 }}
               >
-                <div className="pointer-events-none absolute -top-7 left-3 text-xs font-semibold text-slate-600">
-                  {block.name}
+                <div className="pointer-events-none absolute -top-8 left-4 flex items-center gap-2">
+                  <span className="rounded-md bg-background/90 px-2 py-0.5 text-[11px] font-semibold text-foreground/80 shadow-sm ring-1 ring-border/50 backdrop-blur-sm">
+                    {block.name}
+                  </span>
                   {!isActive ? (
-                    <span className="ml-1.5 font-normal text-muted-foreground">· click to edit</span>
+                    <span className="text-[10px] font-normal text-muted-foreground">Click to edit</span>
                   ) : null}
                 </div>
 
                 {gridVisible ? (
                   <div
-                    className="pointer-events-none absolute inset-0 rounded-[26px] opacity-50"
-                    style={{
-                      backgroundImage: `
-                        linear-gradient(to right, rgba(148,163,184,0.45) 1px, transparent 1px),
-                        linear-gradient(to bottom, rgba(148,163,184,0.45) 1px, transparent 1px)
-                      `,
-                      backgroundSize: `${BUILDER_CELL_STRIDE}px ${BUILDER_CELL_STRIDE}px`,
-                    }}
+                    className="pointer-events-none absolute inset-0 rounded-[19px]"
+                    style={buildCanvasGridStyle(5)}
                   />
                 ) : null}
 
                 {blockElements.length === 0 ? (
-                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center rounded-[26px] px-6 text-center">
-                    <p className="text-sm font-semibold text-slate-700">{block.name}</p>
-                    <p className="mt-2 max-w-[220px] text-xs text-muted-foreground">
-                      Empty layout — drag elements from the left panel onto this grid.
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center rounded-[19px] px-8 text-center">
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/30">
+                      <svg className="h-6 w-6 text-muted-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-semibold text-foreground/70">Start designing your floor</p>
+                    <p className="mt-1.5 max-w-[240px] text-xs leading-relaxed text-muted-foreground">
+                      Drag an element from the library onto the grid
                     </p>
                   </div>
                 ) : null}
@@ -1057,6 +1118,7 @@ export function FloorPlanCanvas() {
                   const isDraggingInvalid =
                     isActive && drag?.elementId === element.id && dragPreview && !dragPreview.valid;
                   const size = elementPixelSizeFromElement(element);
+                  const def = getElementDefinition(element.type);
 
                   return (
                     <div
@@ -1081,6 +1143,10 @@ export function FloorPlanCanvas() {
                         />
                         {isSelected && selection.length === 1 && canvasMode === "select" ? (
                           <>
+                            <SelectionBadge
+                              label={def.label}
+                              sublabel={`${element.width}×${element.height}`}
+                            />
                             <ResizeHandles
                               element={element}
                               onResizeStart={(edge, e) => {
@@ -1094,6 +1160,12 @@ export function FloorPlanCanvas() {
                                 });
                               }}
                             />
+                            {resize?.elementId === element.id && resizePreview ? (
+                              <DimensionLabel
+                                width={resizePreview.width ?? element.width}
+                                height={resizePreview.height ?? element.height}
+                              />
+                            ) : null}
                             {getElementDefinition(element.type).supportsRotation ? (
                               <RotationHandle
                                 onRotateStart={(e) => {
@@ -1147,7 +1219,7 @@ export function FloorPlanCanvas() {
                 {isActive ? (
                   <>
                     <div
-                      className="absolute -top-1 left-1/2 z-40 h-2 w-20 -translate-x-1/2 cursor-n-resize rounded-full bg-primary/40 hover:bg-primary/60"
+                      className="absolute -top-1 left-1/2 z-40 h-1.5 w-16 -translate-x-1/2 cursor-n-resize rounded-full bg-primary/30 transition-colors hover:bg-primary/50"
                       title="Drag to add or remove rows from the top"
                       onPointerDown={(e) => {
                         e.stopPropagation();
@@ -1162,7 +1234,7 @@ export function FloorPlanCanvas() {
                       }}
                     />
                     <div
-                      className="absolute -bottom-1 left-1/2 z-40 h-2 w-20 -translate-x-1/2 cursor-s-resize rounded-full bg-primary/40 hover:bg-primary/60"
+                      className="absolute -bottom-1 left-1/2 z-40 h-1.5 w-16 -translate-x-1/2 cursor-s-resize rounded-full bg-primary/30 transition-colors hover:bg-primary/50"
                       title="Drag to add or remove rows from the bottom"
                       onPointerDown={(e) => {
                         e.stopPropagation();
@@ -1177,7 +1249,7 @@ export function FloorPlanCanvas() {
                       }}
                     />
                     <div
-                      className="absolute -left-1 top-1/2 z-40 h-20 w-2 -translate-y-1/2 cursor-w-resize rounded-full bg-primary/40 hover:bg-primary/60"
+                      className="absolute -left-1 top-1/2 z-40 h-16 w-1.5 -translate-y-1/2 cursor-w-resize rounded-full bg-primary/30 transition-colors hover:bg-primary/50"
                       title="Drag to add or remove columns from the left"
                       onPointerDown={(e) => {
                         e.stopPropagation();
@@ -1192,7 +1264,7 @@ export function FloorPlanCanvas() {
                       }}
                     />
                     <div
-                      className="absolute -right-1 top-1/2 z-40 h-20 w-2 -translate-y-1/2 cursor-e-resize rounded-full bg-primary/40 hover:bg-primary/60"
+                      className="absolute -right-1 top-1/2 z-40 h-16 w-1.5 -translate-y-1/2 cursor-e-resize rounded-full bg-primary/30 transition-colors hover:bg-primary/50"
                       title="Drag to add or remove columns from the right"
                       onPointerDown={(e) => {
                         e.stopPropagation();
@@ -1214,11 +1286,33 @@ export function FloorPlanCanvas() {
         </div>
       </div>
 
+      {placementDrag && cursorPos && placementDrag.mode === "element" ? (
+        <div
+          className="pointer-events-none fixed z-[100] flex items-center gap-2 rounded-lg border border-primary/30 bg-background/95 px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-lg backdrop-blur-sm"
+          style={{
+            left: cursorPos.x + 16,
+            top: cursorPos.y + 16,
+          }}
+        >
+          <div
+            className="h-3 w-3 rounded-sm border"
+            style={{
+              backgroundColor: getElementDefinition(placementDrag.type).color,
+              borderColor: getElementDefinition(placementDrag.type).borderColor,
+            }}
+          />
+          {placementDrag.quantity > 1 ? `${placementDrag.quantity}× ` : ""}
+          {getElementDefinition(placementDrag.type).label}
+        </div>
+      ) : null}
+
       {placementDrag ? (
-        <div className="pointer-events-none absolute bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-background/95 px-4 py-2 text-xs font-medium shadow-lg ring-1 ring-border">
+        <div className="pointer-events-none absolute bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full border border-border/50 bg-background/95 px-4 py-2 text-xs font-medium text-muted-foreground shadow-lg backdrop-blur-sm">
           {placementDrag.mode === "layout-clone"
-            ? "Drag to place a full copy of this layout. Release on an open area — left, right, top, or bottom."
-            : `Drag to place ${placementDrag.quantity}× ${getElementDefinition(placementDrag.type).label}. Release on a valid grid area.`}
+            ? "Release on an open area to place layout copy"
+            : placementPreview?.valid
+              ? "Release to place element"
+              : "Invalid placement — move to an open grid area"}
         </div>
       ) : null}
     </div>

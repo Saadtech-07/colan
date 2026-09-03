@@ -1,10 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Copy, Trash2, Users } from "lucide-react";
+import { Copy, Grid3x3, Trash2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -17,6 +16,7 @@ import { getParentElement } from "@/lib/floor-plan-builder/hierarchy";
 import { getContainerCapacity, getSeatDisplayName, seatCountInContainer } from "@/lib/floor-plan-builder/layout-engine";
 import { useFloorPlanBuilder } from "./builder-store";
 import { BulkSeatDialog } from "./bulk-seat-dialog";
+import { InspectorField, InspectorSection } from "./builder-ui";
 
 type Props = {
   floorName?: string;
@@ -30,32 +30,28 @@ function WorkspaceSettings({
   const { activeBlockName, updateActiveBlockName } = useFloorPlanBuilder();
 
   return (
-    <div className="space-y-3">
-      <div className="space-y-2">
-        <Label htmlFor="floor-name" className="text-xs">
-          Workspace name
-        </Label>
-        <Input
-          id="floor-name"
-          value={floorName}
-          onChange={(e) => onFloorNameChange(e.target.value)}
-          placeholder="e.g. Colan Layout"
-          className="h-8 rounded-lg"
-        />
+    <InspectorSection title="Floor information">
+      <div className="space-y-3">
+        <InspectorField label="Workspace name" htmlFor="floor-name">
+          <Input
+            id="floor-name"
+            value={floorName}
+            onChange={(e) => onFloorNameChange(e.target.value)}
+            placeholder="e.g. Colan Layout"
+            className="h-8 rounded-lg border-border/50 bg-background text-sm"
+          />
+        </InspectorField>
+        <InspectorField label="Active layout name" htmlFor="layout-name">
+          <Input
+            id="layout-name"
+            value={activeBlockName}
+            onChange={(e) => updateActiveBlockName(e.target.value)}
+            placeholder="Block A"
+            className="h-8 rounded-lg border-border/50 bg-background text-sm"
+          />
+        </InspectorField>
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="layout-name" className="text-xs">
-          Active layout name
-        </Label>
-        <Input
-          id="layout-name"
-          value={activeBlockName}
-          onChange={(e) => updateActiveBlockName(e.target.value)}
-          placeholder="Block A"
-          className="h-8 rounded-lg"
-        />
-      </div>
-    </div>
+    </InspectorSection>
   );
 }
 
@@ -76,20 +72,33 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
   const selectedMany = selection.length > 1;
 
   const panelClass =
-    "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4";
+    "flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4";
 
   if (!selected && !selectedMany) {
     return (
       <aside className={panelClass}>
-        <p className="text-sm font-semibold">Properties</p>
+        <div className="border-b border-border/50 pb-4">
+          <p className="text-sm font-semibold tracking-tight text-foreground">Inspector</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">Floor and canvas settings</p>
+        </div>
         {onFloorNameChange ? (
           <WorkspaceSettings floorName={floorName} onFloorNameChange={onFloorNameChange} />
         ) : null}
         <GridSizeControls />
-        <ClearCanvasButton />
-        <Button type="button" variant="outline" className="rounded-xl" onClick={() => setBulkOpen(true)}>
-          Bulk create seats
-        </Button>
+        <InspectorSection title="Canvas actions">
+          <div className="flex flex-col gap-2">
+            <ClearCanvasButton />
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 justify-start gap-2 rounded-lg border-border/50 text-sm font-medium"
+              onClick={() => setBulkOpen(true)}
+            >
+              <Grid3x3 className="h-4 w-4 text-muted-foreground" />
+              Bulk create seats
+            </Button>
+          </div>
+        </InspectorSection>
         <BulkSeatDialog open={bulkOpen} onOpenChange={setBulkOpen} />
       </aside>
     );
@@ -99,23 +108,35 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
     const seats = layout.elements.filter((el) => selection.includes(el.id) && el.type === "seat");
     return (
       <aside className={panelClass}>
+        <div className="border-b border-border/50 pb-4">
+          <p className="text-sm font-semibold tracking-tight text-foreground">Inspector</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{selection.length} elements selected</p>
+        </div>
         {onFloorNameChange ? (
           <WorkspaceSettings floorName={floorName} onFloorNameChange={onFloorNameChange} />
         ) : null}
-        <p className="text-sm font-semibold">{selection.length} selected</p>
-        <p className="text-[11px] text-muted-foreground">
-          Ctrl+click or Shift+click to add seats. Drag one seat onto another to merge.
-        </p>
-        {seats.length >= 2 ? (
-          <Button type="button" className="rounded-xl gap-2" onClick={mergeSelectedSeats}>
-            <Users className="h-4 w-4" />
-            Merge seats
-          </Button>
-        ) : null}
-        <Button type="button" variant="destructive" className="rounded-xl gap-2" onClick={deleteSelected}>
-          <Trash2 className="h-4 w-4" />
-          Delete selected
-        </Button>
+        <InspectorSection
+          title="Selection"
+          description="Ctrl+click or Shift+click to add seats. Drag one seat onto another to merge."
+        >
+          <div className="flex flex-col gap-2">
+            {seats.length >= 2 ? (
+              <Button type="button" className="h-9 justify-start gap-2 rounded-lg text-sm" onClick={mergeSelectedSeats}>
+                <Users className="h-4 w-4" />
+                Merge seats
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="destructive"
+              className="h-9 justify-start gap-2 rounded-lg text-sm"
+              onClick={deleteSelected}
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete selected
+            </Button>
+          </div>
+        </InspectorSection>
       </aside>
     );
   }
@@ -133,114 +154,111 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
     });
   };
 
+  const displayName = selected.type === "seat" ? getSeatDisplayName(selected) : selected.name;
+
   return (
     <aside className={panelClass}>
-      {onFloorNameChange ? (
-        <WorkspaceSettings floorName={floorName} onFloorNameChange={onFloorNameChange} />
-      ) : null}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Properties</p>
-        <p className="mt-1 text-sm font-bold">
-          {selected.type === "seat" ? getSeatDisplayName(selected) : selected.name}
+      <div className="border-b border-border/50 pb-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          {def.label}
         </p>
-        <p className="text-xs text-muted-foreground">{def.label}</p>
+        <p className="mt-1 text-base font-semibold tracking-tight text-foreground">{displayName}</p>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="prop-name">Name</Label>
-        <Input
-          id="prop-name"
-          value={selected.type === "seat" ? getSeatDisplayName(selected) : selected.name}
-          onChange={(e) => updateSelected({ name: e.target.value })}
-          className="rounded-xl"
-        />
-      </div>
-
-      <div className="space-y-1 text-xs text-muted-foreground">
-        <p>
+      <InspectorSection title="Identity">
+        <InspectorField label="Name" htmlFor="prop-name">
+          <Input
+            id="prop-name"
+            value={displayName}
+            onChange={(e) => updateSelected({ name: e.target.value })}
+            className="h-8 rounded-lg border-border/50 bg-background text-sm"
+          />
+        </InspectorField>
+        <p className="text-[11px] text-muted-foreground">
           Parent: <span className="font-medium text-foreground">{parent?.name ?? "Floor"}</span>
         </p>
-      </div>
+      </InspectorSection>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-2">
-          <Label htmlFor="prop-row">Row</Label>
-          <Input
-            id="prop-row"
-            type="number"
-            min={0}
-            value={selected.row}
-            onChange={(e) => updateSelected({ row: Number(e.target.value) || 0 })}
-            className="rounded-xl"
-          />
+      <InspectorSection title="Position">
+        <div className="grid grid-cols-2 gap-3">
+          <InspectorField label="Row" htmlFor="prop-row">
+            <Input
+              id="prop-row"
+              type="number"
+              min={0}
+              value={selected.row}
+              onChange={(e) => updateSelected({ row: Number(e.target.value) || 0 })}
+              className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
+            />
+          </InspectorField>
+          <InspectorField label="Column" htmlFor="prop-col">
+            <Input
+              id="prop-col"
+              type="number"
+              min={0}
+              value={selected.column}
+              onChange={(e) => updateSelected({ column: Number(e.target.value) || 0 })}
+              className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
+            />
+          </InspectorField>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="prop-col">Column</Label>
-          <Input
-            id="prop-col"
-            type="number"
-            min={0}
-            value={selected.column}
-            onChange={(e) => updateSelected({ column: Number(e.target.value) || 0 })}
-            className="rounded-xl"
-          />
-        </div>
-        {def.supportsResize ? (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="prop-h">Rows</Label>
+      </InspectorSection>
+
+      {def.supportsResize ? (
+        <InspectorSection title="Size">
+          <div className="grid grid-cols-2 gap-3">
+            <InspectorField label="Rows" htmlFor="prop-h">
               <Input
                 id="prop-h"
                 type="number"
                 min={def.minHeight}
                 value={selected.height}
                 onChange={(e) => updateSelected({ height: Number(e.target.value) || def.minHeight })}
-                className="rounded-xl"
+                className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="prop-w">Columns</Label>
+            </InspectorField>
+            <InspectorField label="Columns" htmlFor="prop-w">
               <Input
                 id="prop-w"
                 type="number"
                 min={def.minWidth}
                 value={selected.width}
                 onChange={(e) => updateSelected({ width: Number(e.target.value) || def.minWidth })}
-                className="rounded-xl"
+                className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
               />
-            </div>
-          </>
-        ) : null}
-      </div>
-
-      {def.supportsCapacity ? (
-        <div className="space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3">
-          <Label htmlFor="prop-capacity">Capacity</Label>
-          <Input
-            id="prop-capacity"
-            type="number"
-            min={0}
-            value={capacity ?? 0}
-            onChange={(e) => setCapacity(Number(e.target.value) || 0)}
-            className="rounded-xl"
-          />
-          {seatCount !== null && capacity !== null ? (
-            <p className="text-xs text-muted-foreground">
-              Occupancy: {seatCount} / {capacity}
-            </p>
-          ) : null}
-        </div>
+            </InspectorField>
+          </div>
+        </InspectorSection>
       ) : null}
 
-      <div className="space-y-2">
-        <Label>Rotation</Label>
+      {def.supportsCapacity ? (
+        <InspectorSection title="Capacity">
+          <InspectorField label="Max seats" htmlFor="prop-capacity">
+            <Input
+              id="prop-capacity"
+              type="number"
+              min={0}
+              value={capacity ?? 0}
+              onChange={(e) => setCapacity(Number(e.target.value) || 0)}
+              className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
+            />
+          </InspectorField>
+          {seatCount !== null && capacity !== null ? (
+            <p className="text-[11px] text-muted-foreground">
+              Occupancy: <span className="font-medium text-foreground">{seatCount}</span> / {capacity}
+            </p>
+          ) : null}
+        </InspectorSection>
+      ) : null}
+
+      <InspectorSection title="Rotation">
         <Select
           value={String(selected.rotation ?? 0)}
           onValueChange={(value) =>
             updateSelected({ rotation: Number(value) as 0 | 90 | 180 | 270 })
           }
         >
-          <SelectTrigger className="rounded-xl">
+          <SelectTrigger className="h-8 rounded-lg border-border/50 bg-background text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -251,38 +269,55 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
             ))}
           </SelectContent>
         </Select>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
           Use 90° or 270° to turn vertical elements horizontal (e.g. entrance, wall).
         </p>
-      </div>
+      </InspectorSection>
 
-      {selected.type === "seat" && (selected.width > 1 || selected.height > 1) ? (
-        <Button
-          type="button"
-          variant="outline"
-          className="rounded-xl"
-          onClick={() => unmergeGroup(selected.id)}
-        >
-          Split merged seat
-        </Button>
-      ) : null}
-
-      {def.supportsChildren ? (
-        <Button type="button" variant="outline" className="rounded-xl" onClick={() => setBulkOpen(true)}>
-          Add seats inside
-        </Button>
-      ) : null}
-
-      <div className="flex gap-2">
-        <Button type="button" variant="outline" className="flex-1 rounded-xl gap-2" onClick={duplicateSelected}>
-          <Copy className="h-4 w-4" />
-          Duplicate
-        </Button>
-        <Button type="button" variant="destructive" className="flex-1 rounded-xl gap-2" onClick={deleteSelected}>
-          <Trash2 className="h-4 w-4" />
-          Delete
-        </Button>
-      </div>
+      <InspectorSection title="Actions">
+        <div className="flex flex-col gap-2">
+          {selected.type === "seat" && (selected.width > 1 || selected.height > 1) ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-lg border-border/50 text-sm"
+              onClick={() => unmergeGroup(selected.id)}
+            >
+              Split merged seat
+            </Button>
+          ) : null}
+          {def.supportsChildren ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 rounded-lg border-border/50 text-sm"
+              onClick={() => setBulkOpen(true)}
+            >
+              Add seats inside
+            </Button>
+          ) : null}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-9 flex-1 gap-2 rounded-lg border-border/50 text-sm"
+              onClick={duplicateSelected}
+            >
+              <Copy className="h-3.5 w-3.5" />
+              Duplicate
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="h-9 flex-1 gap-2 rounded-lg text-sm"
+              onClick={deleteSelected}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </Button>
+          </div>
+        </div>
+      </InspectorSection>
 
       <BulkSeatDialog
         open={bulkOpen}
@@ -301,7 +336,7 @@ function ClearCanvasButton() {
     <Button
       type="button"
       variant="outline"
-      className="rounded-xl"
+      className="h-9 justify-start rounded-lg border-border/50 text-sm font-medium text-muted-foreground"
       onClick={() => {
         const confirmed = window.confirm(
           "Clear the active layout? All seats, rooms, and structures on this layout will be removed.",
@@ -317,11 +352,9 @@ function ClearCanvasButton() {
 function GridSizeControls() {
   const { layout, resizeGrid } = useFloorPlanBuilder();
   return (
-    <div className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Floor grid size</p>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <Label className="text-xs">Rows</Label>
+    <InspectorSection title="Grid size">
+      <div className="grid grid-cols-2 gap-3">
+        <InspectorField label="Rows">
           <Input
             type="number"
             min={4}
@@ -329,11 +362,10 @@ function GridSizeControls() {
             onChange={(e) =>
               resizeGrid({ ...layout.grid, rows: Math.max(4, Number(e.target.value) || layout.grid.rows) })
             }
-            className="h-9 rounded-lg"
+            className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
           />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Columns</Label>
+        </InspectorField>
+        <InspectorField label="Columns">
           <Input
             type="number"
             min={4}
@@ -344,10 +376,10 @@ function GridSizeControls() {
                 columns: Math.max(4, Number(e.target.value) || layout.grid.columns),
               })
             }
-            className="h-9 rounded-lg"
+            className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
           />
-        </div>
+        </InspectorField>
       </div>
-    </div>
+    </InspectorSection>
   );
 }
