@@ -771,3 +771,188 @@ export function extractSeatIds(layout: FloorPlanLayoutState): string[] {
     .map((el) => el.seatId!)
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
+
+export type LayoutWorldBounds = {
+  minRow: number;
+  minColumn: number;
+  maxRow: number;
+  maxColumn: number;
+  width: number;
+  height: number;
+};
+
+export function getLayoutWorldBounds(elements: FloorPlanElement[]): LayoutWorldBounds | null {
+  if (elements.length === 0) return null;
+
+  let minRow = Infinity;
+  let minColumn = Infinity;
+  let maxRow = 0;
+  let maxColumn = 0;
+
+  for (const element of elements) {
+    const world = getWorldFootprint(elements, element);
+    minRow = Math.min(minRow, world.worldRow);
+    minColumn = Math.min(minColumn, world.worldColumn);
+    maxRow = Math.max(maxRow, world.worldRow + element.height);
+    maxColumn = Math.max(maxColumn, world.worldColumn + element.width);
+  }
+
+  return {
+    minRow,
+    minColumn,
+    maxRow,
+    maxColumn,
+    width: maxColumn - minColumn,
+    height: maxRow - minRow,
+  };
+}
+
+function ensureGridFitsLayoutClone(
+  layout: FloorPlanLayoutState,
+  bounds: LayoutWorldBounds,
+  targetWorldRow: number,
+  targetWorldColumn: number,
+): { layout: FloorPlanLayoutState; offsetRow: number; offsetColumn: number } {
+  const offsetRow = targetWorldRow - bounds.minRow;
+  const offsetColumn = targetWorldColumn - bounds.minColumn;
+  const copyMinRow = bounds.minRow + offsetRow;
+  const copyMinColumn = bounds.minColumn + offsetColumn;
+  const copyMaxRow = bounds.maxRow + offsetRow;
+  const copyMaxColumn = bounds.maxColumn + offsetColumn;
+
+  let rows = layout.grid.rows;
+  let columns = layout.grid.columns;
+  let rowOffset = 0;
+  let columnOffset = 0;
+
+  if (copyMinRow < 0) {
+    rowOffset = -copyMinRow;
+    rows += rowOffset;
+  }
+  if (copyMinColumn < 0) {
+    columnOffset = -copyMinColumn;
+    columns += columnOffset;
+  }
+  if (copyMaxRow + rowOffset > rows) rows = copyMaxRow + rowOffset;
+  if (copyMaxColumn + columnOffset > columns) columns = copyMaxColumn + columnOffset;
+
+  if (
+    rows === layout.grid.rows &&
+    columns === layout.grid.columns &&
+    rowOffset === 0 &&
+    columnOffset === 0
+  ) {
+    return { layout, offsetRow, offsetColumn };
+  }
+
+  const expanded = resizeFloorGrid(layout, { rows, columns }, { rowOffset, columnOffset });
+  const nextBounds = getLayoutWorldBounds(expanded.elements);
+  if (!nextBounds) {
+    return { layout: expanded, offsetRow, offsetColumn };
+  }
+
+  return {
+    layout: expanded,
+    offsetRow: targetWorldRow - nextBounds.minRow,
+    offsetColumn: targetWorldColumn - nextBounds.minColumn,
+  };
+}
+
+export function validateLayoutCloneAt(
+  layout: FloorPlanLayoutState,
+  targetWorldRow: number,
+  targetWorldColumn: number,
+): { ok: boolean; reason?: string; preview?: LayoutWorldBounds & { worldRow: number; worldColumn: number } } {
+  const bounds = getLayoutWorldBounds(layout.elements);
+  if (!bounds) {
+    return { ok: false, reason: "Nothing to duplicate." };
+  }
+
+  const { layout: expandedLayout, offsetRow, offsetColumn } = ensureGridFitsLayoutClone(
+    layout,
+    bounds,
+    targetWorldRow,
+    targetWorldColumn,
+  );
+
+  const roots = expandedLayout.elements.filter((el) => el.parentId === null);
+  let workingLayout = expandedLayout;
+
+  for (const root of roots) {
+    const subtree = [root, ...getDescendants(workingLayout.elements, root.id)];
+    const idMap = new Map<string, string>();
+    for (const el of subtree) {
+      idMap.set(el.id, createElementId(el.type.slice(0, 3)));
+    }
+
+    const clones: FloorPlanElement[] = subtree.map((el) => {
+      const isRoot = el.id === root.id;
+      return {
+        ...el,
+        id: idMap.get(el.id)!,
+        parentId: isRoot ? el.parentId : idMap.get(el.parentId!) ?? el.parentId,
+        row: isRoot ? el.row + offsetRow : el.row,
+        column: isRoot ? el.column + offsetColumn : el.column,
+        seatId: el.type === "seat" ? undefined : el.seatId,
+        mergeGroupId: undefined,
+      };
+    });
+
+    for (const clone of clones) {
+      if (clone.type === "seat") {
+        clone.seatId = createSeatId([...workingLayout.elements, ...clones], "S");
+      }
+      const validation = validatePlacement(workingLayout, clone);
+      if (!validation.ok) {
+        return { ok: false, reason: validation.reason };
+      }
+      workingLayout = {
+        ...workingLayout,
+        elements: [...workingLayout.elements, clone],
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    preview: {
+      ...bounds,
+      worldRow: targetWorldRow,
+      worldColumn: targetWorldColumn,
+    },
+  };
+}
+
+export function duplicateEntireLayoutAt(
+  layout: FloorPlanLayoutState,
+  targetWorldRow: number,
+  targetWorldColumn: number,
+): { layout: FloorPlanLayoutState; error?: string; newRootIds?: string[] } {
+  const validation = validateLayoutCloneAt(layout, targetWorldRow, targetWorldColumn);
+  if (!validation.ok) {
+    return { layout, error: validation.reason ?? "Cannot place layout copy here." };
+  }
+
+  const bounds = getLayoutWorldBounds(layout.elements)!;
+  const { layout: expandedLayout, offsetRow, offsetColumn } = ensureGridFitsLayoutClone(
+    layout,
+    bounds,
+    targetWorldRow,
+    targetWorldColumn,
+  );
+
+  const roots = expandedLayout.elements.filter((el) => el.parentId === null);
+  let nextLayout = expandedLayout;
+  const newRootIds: string[] = [];
+
+  for (const root of roots) {
+    const result = duplicateSubtree(nextLayout, root.id, offsetRow, offsetColumn);
+    if (result.error) {
+      return { layout, error: result.error };
+    }
+    nextLayout = result.layout;
+    if (result.newRootId) newRootIds.push(result.newRootId);
+  }
+
+  return { layout: nextLayout, newRootIds };
+}

@@ -21,10 +21,27 @@ import { BulkSeatDialog } from "./bulk-seat-dialog";
 type Props = {
   floorName?: string;
   onFloorNameChange?: (name: string) => void;
-  showFloorName?: boolean;
 };
 
-export function PropertiesPanel({ floorName, onFloorNameChange, showFloorName }: Props) {
+function FloorNameField({ floorName, onFloorNameChange }: Required<Pick<Props, "floorName" | "onFloorNameChange">>) {
+  return (
+    <div className="space-y-2 rounded-xl border border-border/60 bg-muted/20 p-3">
+      <Label htmlFor="floor-name">Floor name</Label>
+      <Input
+        id="floor-name"
+        value={floorName}
+        onChange={(e) => onFloorNameChange(e.target.value)}
+        placeholder="e.g. Hyderabad · Block A"
+        className="rounded-xl"
+      />
+      <p className="text-[11px] text-muted-foreground">
+        Shown in seating branches and saved with your layout.
+      </p>
+    </div>
+  );
+}
+
+export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
   const {
     layout,
     selection,
@@ -47,21 +64,14 @@ export function PropertiesPanel({ floorName, onFloorNameChange, showFloorName }:
     return (
       <aside className={panelClass}>
         <p className="text-sm font-semibold">Properties</p>
-        {showFloorName && onFloorNameChange ? (
-          <div className="space-y-2">
-            <Label htmlFor="floor-name">Floor name</Label>
-            <Input
-              id="floor-name"
-              value={floorName ?? ""}
-              onChange={(e) => onFloorNameChange(e.target.value)}
-              className="rounded-xl"
-            />
-          </div>
+        {onFloorNameChange ? (
+          <FloorNameField floorName={floorName} onFloorNameChange={onFloorNameChange} />
         ) : null}
         <p className="text-xs text-muted-foreground">
           Select an element to edit name, position, and size. Drag elements from the toolbox onto the canvas.
         </p>
         <GridSizeControls />
+        <ClearCanvasButton />
         <Button type="button" variant="outline" className="rounded-xl" onClick={() => setBulkOpen(true)}>
           Bulk create seats
         </Button>
@@ -74,6 +84,9 @@ export function PropertiesPanel({ floorName, onFloorNameChange, showFloorName }:
     const seats = layout.elements.filter((el) => selection.includes(el.id) && el.type === "seat");
     return (
       <aside className={panelClass}>
+        {onFloorNameChange ? (
+          <FloorNameField floorName={floorName} onFloorNameChange={onFloorNameChange} />
+        ) : null}
         <p className="text-sm font-semibold">{selection.length} selected</p>
         <p className="text-[11px] text-muted-foreground">
           Ctrl+click or Shift+click to add seats. Drag one seat onto another to merge.
@@ -107,6 +120,9 @@ export function PropertiesPanel({ floorName, onFloorNameChange, showFloorName }:
 
   return (
     <aside className={panelClass}>
+      {onFloorNameChange ? (
+        <FloorNameField floorName={floorName} onFloorNameChange={onFloorNameChange} />
+      ) : null}
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Properties</p>
         <p className="mt-1 text-sm font-bold">
@@ -259,6 +275,27 @@ export function PropertiesPanel({ floorName, onFloorNameChange, showFloorName }:
         parentId={def.supportsChildren ? selected.id : selected.parentId}
       />
     </aside>
+  );
+}
+
+function ClearCanvasButton() {
+  const { layout, resetToEmptyLayout } = useFloorPlanBuilder();
+  if (layout.elements.length === 0) return null;
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className="rounded-xl"
+      onClick={() => {
+        const confirmed = window.confirm(
+          "Clear the entire canvas? All seats, rooms, and structures will be removed.",
+        );
+        if (confirmed) resetToEmptyLayout();
+      }}
+    >
+      Clear canvas
+    </Button>
   );
 }
 

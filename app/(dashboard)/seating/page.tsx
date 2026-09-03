@@ -53,13 +53,14 @@ import {
 import {
   branchKeyForPlan,
   blockLabelForPlan,
+  shouldPairFloorPlansAsBlocks,
 } from "@/lib/floor-plan-branch";
 import {
   fetchFloorPlanDetail,
   fetchFloorPlanSummaries,
   invalidateFloorPlanClientCache,
 } from "@/lib/floor-plans-client";
-import { fetchFloorPlanPublishedLayout } from "@/lib/floor-plan-layouts-client";
+import { fetchFloorPlanViewLayout } from "@/lib/floor-plan-layouts-client";
 import type { FloorPlanLayoutState } from "@/lib/floor-plan-builder/types";
 import type { FloorPlanDTO, FloorPlanSummary } from "@/models/floor-plan.model";
 import { applyOccupancySwaps } from "@/lib/seating-layout-prompt";
@@ -103,10 +104,9 @@ function siblingSlugForPlan(
   officePlans: FloorPlanSummary[],
 ): string | null {
   if (officePlans.length > 0) {
-    const branchKey = branchKeyForPlan(plan);
     return (
       officePlans.find(
-        (item) => item.slug !== plan.slug && branchKeyForPlan(item) === branchKey,
+        (item) => item.slug !== plan.slug && shouldPairFloorPlansAsBlocks(plan, item),
       )?.slug ?? null
     );
   }
@@ -120,7 +120,7 @@ function siblingSlugForPlan(
 
 function keepSiblingPlan(plan: FloorPlanDTO, candidate: FloorPlanDTO | null) {
   if (!candidate || candidate.slug === plan.slug) return null;
-  return branchKeyForPlan(candidate) === branchKeyForPlan(plan) ? candidate : null;
+  return shouldPairFloorPlansAsBlocks(plan, candidate) ? candidate : null;
 }
 
 export default function SeatingPage() {
@@ -185,6 +185,8 @@ export default function SeatingPage() {
   const [officePlans, setOfficePlans] = React.useState<FloorPlanSummary[]>([]);
   const [plansLoading, setPlansLoading] = React.useState(true);
   const [builderLayout, setBuilderLayout] = React.useState<FloorPlanLayoutState | null>(null);
+  const [companionBuilderLayout, setCompanionBuilderLayout] =
+    React.useState<FloorPlanLayoutState | null>(null);
   const [builderLayoutLoading, setBuilderLayoutLoading] = React.useState(false);
 
   React.useEffect(() => {
@@ -417,6 +419,11 @@ export default function SeatingPage() {
     };
   }, [listMode, officeSlug]);
 
+  const pairedCompanionPlan =
+    activePlan && companionPlan && shouldPairFloorPlansAsBlocks(activePlan, companionPlan)
+      ? companionPlan
+      : null;
+
   React.useEffect(() => {
     if (listMode || !isBuilderFloor) {
       setBuilderLayout(null);
@@ -426,7 +433,7 @@ export default function SeatingPage() {
     (async () => {
       setBuilderLayoutLoading(true);
       try {
-        const layout = await fetchFloorPlanPublishedLayout(officeSlug);
+        const layout = await fetchFloorPlanViewLayout(officeSlug);
         if (cancelled) return;
         if (layout) {
           setBuilderLayout({
@@ -452,6 +459,37 @@ export default function SeatingPage() {
   }, [isBuilderFloor, listMode, officeSlug]);
 
   React.useEffect(() => {
+    if (listMode || !pairedCompanionPlan || pairedCompanionPlan.migrationStatus !== "builder") {
+      setCompanionBuilderLayout(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const layout = await fetchFloorPlanViewLayout(pairedCompanionPlan.slug);
+        if (cancelled) return;
+        if (layout) {
+          setCompanionBuilderLayout({
+            name: layout.name,
+            status: layout.status,
+            version: layout.version,
+            grid: layout.grid,
+            elements: layout.elements,
+            floorPlanSlug: layout.floorPlanSlug,
+          });
+        } else {
+          setCompanionBuilderLayout(null);
+        }
+      } catch {
+        if (!cancelled) setCompanionBuilderLayout(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listMode, pairedCompanionPlan]);
+
+  React.useEffect(() => {
     if (listMode || !fullscreenOpen || !activePlan) return;
     if (keepSiblingPlan(activePlan, companionPlan)) return;
     const siblingSlug = siblingSlugForPlan(activePlan, officePlans);
@@ -459,7 +497,9 @@ export default function SeatingPage() {
 
     let cancelled = false;
     void fetchFloorPlanDetail(siblingSlug).then((sibling) => {
-      if (!cancelled && sibling) setCompanionPlan(sibling);
+      if (!cancelled && sibling && shouldPairFloorPlansAsBlocks(activePlan, sibling)) {
+        setCompanionPlan(sibling);
+      }
     });
     return () => {
       cancelled = true;
@@ -1037,7 +1077,11 @@ export default function SeatingPage() {
       ];
     }
 
-    const toBlock = (plan: FloorPlanDTO, slug: string): SeatingFullscreenBlock => {
+    const toBlock = (
+      plan: FloorPlanDTO,
+      slug: string,
+      builderLayoutForPlan?: FloorPlanLayoutState | null,
+    ): SeatingFullscreenBlock => {
       const slots = listCabinSlotsOnPlan(plan);
       return {
         key: slug,
@@ -1056,7 +1100,7 @@ export default function SeatingPage() {
           cabinIds: slots.map((s) => s.id),
         }),
         rows: plan.rows,
-        showCabins: true,
+        showCabins: plan.migrationStatus !== "builder",
         cabinsBeforeA: plan.cabins?.beforeA ?? [],
         cabinsAfterG: plan.cabins?.afterG ?? [],
         sideCabins: plan.cabins?.sideCabins?.hrManager?.trim() ||
@@ -1064,12 +1108,21 @@ export default function SeatingPage() {
           ? plan.cabins.sideCabins!
           : EMPTY_SIDE_CABINS,
         outsideEntrance: plan.cabins?.outsideEntrance ?? null,
+        builderLayout: builderLayoutForPlan ?? null,
       };
     };
 
-    if (activePlan && companionPlan && !viewingHistory) {
-      const primary = toBlock(activePlan, activePlan.slug);
-      const secondary = toBlock(companionPlan, companionPlan.slug);
+    if (activePlan && pairedCompanionPlan && !viewingHistory) {
+      const primary = toBlock(
+        activePlan,
+        activePlan.slug,
+        activePlan.migrationStatus === "builder" ? builderLayout : null,
+      );
+      const secondary = toBlock(
+        pairedCompanionPlan,
+        pairedCompanionPlan.slug,
+        pairedCompanionPlan.migrationStatus === "builder" ? companionBuilderLayout : null,
+      );
       const ordered =
         activePlan.building === "Block B" || activePlan.slug.endsWith("-block-b")
           ? [secondary, primary]
@@ -1079,7 +1132,7 @@ export default function SeatingPage() {
         label:
           block.officeSlug === activePlan.slug
             ? activePlan.name
-            : companionPlan.name || blockLabelForPlan(companionPlan),
+            : pairedCompanionPlan.name || blockLabelForPlan(pairedCompanionPlan),
       }));
     }
 
@@ -1088,6 +1141,7 @@ export default function SeatingPage() {
         toBlock(
           activePlan,
           officeSlug,
+          activePlan.migrationStatus === "builder" ? builderLayout : null,
         ),
       ];
     }
@@ -1116,7 +1170,9 @@ export default function SeatingPage() {
     cabinOccupants,
     activeRows,
     activePlan,
-    companionPlan,
+    pairedCompanionPlan,
+    companionBuilderLayout,
+    builderLayout,
     employees,
     activeCabinsBeforeA,
     activeCabinsAfterG,
@@ -1639,7 +1695,7 @@ export default function SeatingPage() {
             </div>
           ) : isBuilderFloor && !builderLayout ? (
             <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-12 text-sm text-muted-foreground">
-              <p>No published layout yet. Open the builder to design and publish this floor.</p>
+              <p>No saved layout yet. Open the builder to design this floor.</p>
               {canAssign ? (
                 <Button type="button" size="sm" className="rounded-xl" asChild>
                   <Link href={`/seating/floors/${encodeURIComponent(officeSlug)}/builder`}>
@@ -1720,7 +1776,7 @@ export default function SeatingPage() {
         title={
           layoutMode
             ? "New layout canvas"
-            : activePlan && companionPlan
+            : activePlan && pairedCompanionPlan
               ? `${branchKeyForPlan(activePlan)} · Block A & Block B`
               : activePlan?.building
                 ? `${activePlan.city ?? "Office"} · ${activePlan.building}`
@@ -1731,7 +1787,7 @@ export default function SeatingPage() {
             ? "Desks from your AI prompt — assignments save immediately."
             : colanFrozen
               ? "Frozen Colan view from before the layout planner."
-              : activePlan && companionPlan
+              : activePlan && pairedCompanionPlan
                 ? "Both office blocks · fitted to your screen · scroll down"
                 : "Full layout fitted to your screen · scroll down for more rows"
         }

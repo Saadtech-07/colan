@@ -225,11 +225,19 @@ export function BuilderFloorPlanView({
                       setDragEmployeeId(null);
                       setDragSourceSeatId(null);
                       if (!employeeId) return;
-                      if (sourceSeatId && sourceSeatId !== seatId && onSwapSeats) {
+                      const targetOccupant = occupancy.get(seatId) ?? null;
+                      if (
+                        sourceSeatId &&
+                        sourceSeatId !== seatId &&
+                        targetOccupant &&
+                        onSwapSeats
+                      ) {
                         onSwapSeats(sourceSeatId, seatId);
                         return;
                       }
-                      onAssignSeat(seatId, employeeId);
+                      if (!targetOccupant) {
+                        onAssignSeat(seatId, employeeId);
+                      }
                     }}
                   />
                 </div>

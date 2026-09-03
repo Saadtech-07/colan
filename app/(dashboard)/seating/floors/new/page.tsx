@@ -116,7 +116,7 @@ export default function NewFloorPlanPage() {
           <span>
             <span className="block text-base font-semibold">New Floor Plan Builder</span>
             <span className="mt-1 block text-sm font-normal opacity-90">
-              Start a fresh canvas — auto-saves to the design store.
+              Start with a blank canvas — add seats, cabins, and rooms as you need them.
             </span>
           </span>
         </Button>

@@ -19,6 +19,7 @@ import {
   createRoomName,
   createSeatId,
   deleteElement,
+  duplicateEntireLayoutAt,
   duplicateSubtree,
   mergeSeats,
   resizeElement,
@@ -41,7 +42,9 @@ import type {
 } from "@/lib/floor-plan-builder/types";
 
 export type CanvasMode = "select" | "pan";
-export type PlacementDrag = { type: FloorPlanElementType; quantity: number };
+export type PlacementDrag =
+  | { mode: "element"; type: FloorPlanElementType; quantity: number }
+  | { mode: "layout-clone" };
 
 type BuilderContextValue = {
   layout: FloorPlanLayoutState;
@@ -79,6 +82,7 @@ type BuilderContextValue = {
     footprint: Footprint,
     quantity: number,
   ) => boolean;
+  commitLayoutCloneAt: (worldRow: number, worldColumn: number) => boolean;
   tryMoveElement: (elementId: string, row: number, column: number) => boolean;
   tryResizeElement: (
     elementId: string,
@@ -101,6 +105,7 @@ type BuilderContextValue = {
   undoChange: () => void;
   redoChange: () => void;
   loadLayout: (layout: FloorPlanLayoutState) => void;
+  resetToEmptyLayout: () => void;
   layoutRevision: number;
   registerFitToView: (fn: (() => void) | null) => void;
   fitToView: () => void;
@@ -261,6 +266,25 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
       commitLayout(result.layout);
       if (result.elementIds?.length) {
         setSelection(result.elementIds);
+      }
+      setActiveTool(null);
+      setPlacementDrag(null);
+      setError(null);
+      return true;
+    },
+    [commitLayout, layout],
+  );
+
+  const commitLayoutCloneAt = React.useCallback(
+    (worldRow: number, worldColumn: number) => {
+      const result = duplicateEntireLayoutAt(layout, worldRow, worldColumn);
+      if (result.error) {
+        setError(result.error);
+        return false;
+      }
+      commitLayout(result.layout);
+      if (result.newRootIds?.length) {
+        setSelection(result.newRootIds);
       }
       setActiveTool(null);
       setPlacementDrag(null);
@@ -446,6 +470,20 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     bump();
   }, []);
 
+  const resetToEmptyLayout = React.useCallback(() => {
+    historyRef.current = createHistory({
+      name: layout.name,
+      status: layout.status,
+      version: layout.version,
+      floorPlanSlug: layout.floorPlanSlug,
+      grid: { ...layout.grid },
+      elements: [],
+    });
+    setSelection([]);
+    setError(null);
+    bump();
+  }, [layout.floorPlanSlug, layout.grid, layout.name, layout.status, layout.version]);
+
   const clearSelection = React.useCallback(() => setSelection([]), []);
 
   React.useEffect(() => {
@@ -517,6 +555,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     placeElementAt,
     commitPlacementFootprint,
     commitBulkPlacement,
+    commitLayoutCloneAt,
     tryMoveElement,
     tryResizeElement,
     tryRotateElement,
@@ -531,6 +570,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     undoChange,
     redoChange,
     loadLayout,
+    resetToEmptyLayout,
     layoutRevision: layoutRevisionRef.current,
     registerFitToView,
     fitToView,

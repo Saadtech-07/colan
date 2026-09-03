@@ -3,6 +3,7 @@ import {
   CHENNAI_BLOCK_B_SLUG,
   isChennaiOfficeSlug,
 } from "@/lib/floor-plan-layouts";
+import type { FloorPlanDTO } from "@/models/floor-plan.model";
 import { slugifyFloorPlanSlug } from "@/lib/floor-plan-row-builder";
 import type { FloorPlanSummary } from "@/models/floor-plan.model";
 
@@ -13,10 +14,15 @@ export type FloorPlanBranchGroup = {
 };
 
 /** Prefer city; fall back to name prefix before "·" / "-". */
-export function branchKeyForPlan(plan: Pick<FloorPlanSummary, "slug" | "name" | "city">): string {
+export function branchKeyForPlan(
+  plan: Pick<FloorPlanSummary, "slug" | "name" | "city" | "building" | "migrationStatus">,
+): string {
   if (isChennaiOfficeSlug(plan.slug)) return "Chennai";
   const city = plan.city?.trim();
   if (city) return city;
+  if (plan.migrationStatus === "builder" && !plan.building?.trim()) {
+    return `builder:${plan.slug}`;
+  }
   const name = plan.name?.trim() || "Office";
   const cut = name.split(/\s*[·|–—-]\s*/)[0]?.trim();
   return cut || name;
@@ -37,13 +43,38 @@ export function groupFloorPlansByBranch(plans: FloorPlanSummary[]): FloorPlanBra
     group.push(plan);
   }
 
-  return order.map((key) => ({
-    key,
-    label: key,
-    plans: (map.get(key) ?? [])
+  return order.map((key) => {
+    const plans = (map.get(key) ?? [])
       .slice()
-      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
-  }));
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    const label =
+      plans.length === 1 && key.startsWith("builder:") ? plans[0]!.name : key;
+    return { key, label, plans };
+  });
+}
+
+/** Whether two plans in the same branch should render as paired blocks (e.g. Chennai A/B). */
+export function shouldPairFloorPlansAsBlocks(
+  plan: Pick<FloorPlanSummary, "slug" | "building" | "city" | "name" | "migrationStatus">,
+  candidate: Pick<FloorPlanSummary, "slug" | "building" | "city" | "name" | "migrationStatus">,
+): boolean {
+  if (plan.slug === candidate.slug) return false;
+  if (branchKeyForPlan(plan) !== branchKeyForPlan(candidate)) return false;
+
+  if (isChennaiOfficeSlug(plan.slug) && isChennaiOfficeSlug(candidate.slug)) {
+    return true;
+  }
+
+  const planBuilding = plan.building?.trim();
+  const candidateBuilding = candidate.building?.trim();
+  if (planBuilding && candidateBuilding) return true;
+
+  // Builder floors without explicit block labels are independent canvases.
+  if (plan.migrationStatus === "builder" || candidate.migrationStatus === "builder") {
+    return false;
+  }
+
+  return false;
 }
 
 export function blockLabelForPlan(plan: Pick<FloorPlanSummary, "slug" | "building" | "name">): string {

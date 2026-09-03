@@ -7,10 +7,12 @@ import { getWorldFootprint } from "@/lib/floor-plan-builder/hierarchy";
 import {
   computeResizePatch,
   getBulkBlockFootprint,
+  getLayoutWorldBounds,
   resolvePlacementTarget,
   snapDropPosition,
   snapFootprintStrict,
   snapRotationDegrees,
+  validateLayoutCloneAt,
 } from "@/lib/floor-plan-builder/layout-engine";
 import { elementPixelSize } from "@/lib/floor-plan-builder/metrics";
 import type { ResizeEdge } from "@/lib/floor-plan-builder/placement-utils";
@@ -198,18 +200,28 @@ const CORNER_RESIZE_HANDLES: {
   { edge: "sw", className: "left-0 bottom-0 -translate-x-1/2 translate-y-1/2", cursor: "cursor-sw-resize" },
 ];
 
-type PendingPlacement = {
-  valid: boolean;
-  type: FloorPlanElementType;
-  quantity: number;
-  parentId: string | null;
-  row: number;
-  column: number;
-  width: number;
-  height: number;
-  previewWidth: number;
-  previewHeight: number;
-};
+type PendingPlacement =
+  | {
+      mode: "element";
+      valid: boolean;
+      type: FloorPlanElementType;
+      quantity: number;
+      parentId: string | null;
+      row: number;
+      column: number;
+      width: number;
+      height: number;
+      previewWidth: number;
+      previewHeight: number;
+    }
+  | {
+      mode: "layout-clone";
+      valid: boolean;
+      worldRow: number;
+      worldColumn: number;
+      previewWidth: number;
+      previewHeight: number;
+    };
 
 type RotateState = {
   elementId: string;
@@ -295,6 +307,7 @@ export function FloorPlanCanvas() {
     clearSelection,
     commitPlacementFootprint,
     commitBulkPlacement,
+    commitLayoutCloneAt,
     tryMoveElement,
     tryResizeElement,
     tryRotateElement,
@@ -457,7 +470,36 @@ export function FloorPlanCanvas() {
         setPlacementPreview(null);
         return;
       }
+
       const { row, column } = clientToWorldGrid(clientX, clientY);
+
+      if (placementDrag.mode === "layout-clone") {
+        const bounds = getLayoutWorldBounds(layout.elements);
+        if (!bounds) {
+          pendingPlacementRef.current = null;
+          setPlacementPreview(null);
+          return;
+        }
+
+        const validation = validateLayoutCloneAt(layout, row, column);
+        pendingPlacementRef.current = {
+          mode: "layout-clone",
+          valid: validation.ok,
+          worldRow: row,
+          worldColumn: column,
+          previewWidth: bounds.width,
+          previewHeight: bounds.height,
+        };
+        setPlacementPreview({
+          worldRow: row,
+          worldColumn: column,
+          width: bounds.width,
+          height: bounds.height,
+          valid: validation.ok,
+        });
+        return;
+      }
+
       const def = getElementDefinition(placementDrag.type);
       const quantity = Math.max(1, placementDrag.quantity);
       const target = resolvePlacementTarget(layout, placementDrag.type, row, column, null);
@@ -497,6 +539,7 @@ export function FloorPlanCanvas() {
         previewWidth = footprint.width;
         previewHeight = footprint.height;
         pendingPlacementRef.current = {
+          mode: "element",
           valid: true,
           type: placementDrag.type,
           quantity,
@@ -510,6 +553,7 @@ export function FloorPlanCanvas() {
         };
       } else {
         pendingPlacementRef.current = {
+          mode: "element",
           valid: false,
           type: placementDrag.type,
           quantity,
@@ -543,6 +587,10 @@ export function FloorPlanCanvas() {
         cancelPlacementDrag();
         return;
       }
+      if (pending.mode === "layout-clone") {
+        commitLayoutCloneAt(pending.worldRow, pending.worldColumn);
+        return;
+      }
       if (pending.quantity > 1) {
         commitBulkPlacement(pending.type, {
           parentId: pending.parentId,
@@ -565,7 +613,7 @@ export function FloorPlanCanvas() {
       setPlacementPreview(null);
       placementCommitLock.current = false;
     }
-  }, [cancelPlacementDrag, commitBulkPlacement, commitPlacementFootprint]);
+  }, [cancelPlacementDrag, commitBulkPlacement, commitLayoutCloneAt, commitPlacementFootprint]);
 
   React.useEffect(() => {
     if (!placementDrag) {
@@ -1077,7 +1125,9 @@ export function FloorPlanCanvas() {
 
       {placementDrag ? (
         <div className="pointer-events-none absolute bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-background/95 px-4 py-2 text-xs font-medium shadow-lg ring-1 ring-border">
-          Drag to place {placementDrag.quantity}× {getElementDefinition(placementDrag.type).label}. Release on a valid grid area.
+          {placementDrag.mode === "layout-clone"
+            ? "Drag to place a full copy of this layout. Release on an open area — left, right, top, or bottom."
+            : `Drag to place ${placementDrag.quantity}× ${getElementDefinition(placementDrag.type).label}. Release on a valid grid area.`}
         </div>
       ) : null}
     </div>

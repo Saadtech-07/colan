@@ -16,16 +16,19 @@ import {
   Maximize2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useFloorPlanBuilder } from "./builder-store";
 
 type Props = {
   floorName: string;
+  onFloorNameChange?: (name: string) => void;
   onBack?: () => void;
   onSaveDraft: () => void;
   onPublish: () => void;
   onDelete?: () => void;
   onPreview?: () => void;
+  onClearCanvas?: () => void;
   saving?: boolean;
   autoSaving?: boolean;
   publishing?: boolean;
@@ -35,11 +38,13 @@ type Props = {
 
 export function BuilderToolbar({
   floorName,
+  onFloorNameChange,
   onBack,
   onSaveDraft,
   onPublish,
   onDelete,
   onPreview,
+  onClearCanvas,
   saving,
   autoSaving,
   publishing,
@@ -60,6 +65,7 @@ export function BuilderToolbar({
     undoChange,
     redoChange,
     fitToView,
+    layout,
   } = useFloorPlanBuilder();
 
   return (
@@ -70,8 +76,18 @@ export function BuilderToolbar({
         </Button>
       ) : null}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-foreground">{floorName}</p>
-        <p className="text-xs text-muted-foreground">Floor Plan Builder</p>
+        {onFloorNameChange ? (
+          <Input
+            value={floorName}
+            onChange={(e) => onFloorNameChange(e.target.value)}
+            placeholder="Floor name (e.g. Hyderabad · Block A)"
+            className="h-9 max-w-md rounded-xl border-border/70 bg-background text-sm font-semibold"
+            aria-label="Floor name"
+          />
+        ) : (
+          <p className="truncate text-sm font-semibold text-foreground">{floorName}</p>
+        )}
+        <p className="mt-0.5 text-xs text-muted-foreground">Floor Plan Builder</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
@@ -138,6 +154,17 @@ export function BuilderToolbar({
         >
           <Maximize2 className="h-4 w-4" />
         </Button>
+        {onClearCanvas && layout.elements.length > 0 ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="rounded-xl gap-1.5"
+            onClick={onClearCanvas}
+          >
+            Clear canvas
+          </Button>
+        ) : null}
         {onPreview ? (
           <Button type="button" variant="outline" size="sm" className="rounded-xl gap-1.5" onClick={onPreview}>
             <Eye className="h-4 w-4" />

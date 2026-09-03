@@ -20,6 +20,7 @@ import { getElementDefinition, toolboxElements } from "@/lib/floor-plan-builder/
 import type { FloorPlanElementType } from "@/lib/floor-plan-builder/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import type { PlacementDrag } from "./builder-store";
 import { useFloorPlanBuilder } from "./builder-store";
 
 const ICONS: Partial<Record<FloorPlanElementType, React.ComponentType<{ className?: string }>>> = {
@@ -59,7 +60,7 @@ const DEFAULT_QUANTITY = 1;
 const MAX_QUANTITY = 64;
 
 export function ElementToolbox() {
-  const { placementDrag, startPlacementDrag } = useFloorPlanBuilder();
+  const { startPlacementDrag } = useFloorPlanBuilder();
   const [quantities, setQuantities] = React.useState<Partial<Record<FloorPlanElementType, number>>>({});
   const [activeType, setActiveType] = React.useState<FloorPlanElementType | null>(null);
 
@@ -82,7 +83,7 @@ export function ElementToolbox() {
   const beginDrag = (type: FloorPlanElementType, event: React.PointerEvent) => {
     event.preventDefault();
     setActiveType(type);
-    startPlacementDrag({ type, quantity: getQty(type) });
+    startPlacementDrag({ mode: "element", type, quantity: getQty(type) });
   };
 
   return (
@@ -98,7 +99,7 @@ export function ElementToolbox() {
         {defs.map((def) => {
           const Icon = ICONS[def.type] ?? LayoutGrid;
           const qty = getQty(def.type);
-          const isActive = activeType === def.type || placementDrag?.type === def.type;
+          const isActive = activeType === def.type;
           return (
             <div
               key={def.type}
@@ -159,9 +160,16 @@ export function ElementToolbox() {
   );
 }
 
-export function getToolHint(type: FloorPlanElementType | null, quantity = 1): string {
-  if (!type) return "Drag elements from the toolbox onto the canvas. Use Select or Pan in the toolbar.";
-  const label = getElementDefinition(type).label;
-  if (quantity > 1) return `Dragging ${quantity}× ${label} — release on a valid grid area.`;
+export function getToolHint(placementDrag: PlacementDrag | null): string {
+  if (!placementDrag) {
+    return "Drag elements from the toolbox onto the canvas. Use Select or Pan in the toolbar.";
+  }
+  if (placementDrag.mode === "layout-clone") {
+    return "Dragging a full layout copy — release on an open area to the left, right, top, or bottom.";
+  }
+  const label = getElementDefinition(placementDrag.type).label;
+  if (placementDrag.quantity > 1) {
+    return `Dragging ${placementDrag.quantity}× ${label} — release on a valid grid area.`;
+  }
   return `Dragging ${label} — release on a valid cell.`;
 }

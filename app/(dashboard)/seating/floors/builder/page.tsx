@@ -23,8 +23,8 @@ export default function NewFloorBuilderPage() {
   return (
     <FloorPlanBuilderApp
       mode="create"
-      initialName="New Floor"
-      initialLayout={createEmptyLayout("New Floor")}
+      initialName=""
+      initialLayout={createEmptyLayout()}
     />
   );
 }

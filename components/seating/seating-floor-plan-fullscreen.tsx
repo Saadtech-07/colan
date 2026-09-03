@@ -4,8 +4,10 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BuilderFloorPlanView } from "@/components/floor-plan-builder/builder-floor-plan-view";
 import { SeatingFloorPlan } from "@/components/seating/seating-floor-plan";
 import { SeatingScrollViewport } from "@/components/seating/seating-scroll-viewport";
+import type { FloorPlanLayoutState } from "@/lib/floor-plan-builder/types";
 import type { SeatingRowConfig } from "@/lib/seating-layout";
 import type { SeatingCabin } from "@/lib/seating-cabins";
 import type { SideCabinsConfig } from "@/lib/seating-layout-editor-types";
@@ -26,6 +28,7 @@ export type SeatingFullscreenBlock = {
   cabinsAfterG?: SeatingCabin[];
   sideCabins?: SideCabinsConfig;
   outsideEntrance?: { text: string } | null;
+  builderLayout?: FloorPlanLayoutState | null;
 };
 
 type SharedFloorProps = {
@@ -184,6 +187,34 @@ export function SeatingFloorPlanFullscreen({
                   </span>
                 </div>
               )}
+              {block.builderLayout ? (
+                <BuilderFloorPlanView
+                  layout={block.builderLayout}
+                  zoom={zoom}
+                  occupancy={block.occupancy}
+                  selectedSeat={selectedSeat}
+                  highlightSeats={highlightSeats}
+                  teamFilter={teamFilter}
+                  search={search}
+                  viewMode={viewMode}
+                  canAssign={canAssign}
+                  onSeatClick={(seatId) => onSeatClick(seatId, block.officeSlug)}
+                  onViewSeatHistory={
+                    onViewSeatHistory
+                      ? (seatId) => onViewSeatHistory(seatId, block.officeSlug)
+                      : undefined
+                  }
+                  onAssignSeat={(seatId, employeeId) =>
+                    onAssignSeat(seatId, employeeId, block.officeSlug)
+                  }
+                  onSwapSeats={
+                    onSwapSeats
+                      ? (fromSeatId, toSeatId) =>
+                          onSwapSeats(fromSeatId, toSeatId, block.officeSlug)
+                      : undefined
+                  }
+                />
+              ) : (
               <SeatingFloorPlan
                 zoom={zoom}
                 occupancy={block.occupancy}
@@ -234,6 +265,7 @@ export function SeatingFloorPlanFullscreen({
                     : undefined
                 }
               />
+              )}
             </section>
           ))}
         </div>

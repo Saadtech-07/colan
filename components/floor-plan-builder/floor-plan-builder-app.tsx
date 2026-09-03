@@ -43,7 +43,7 @@ function BuilderStatusBar() {
 
 function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">) {
   const router = useRouter();
-  const { layout, error, placementDrag, loadLayout, layoutRevision } = useFloorPlanBuilder();
+  const { layout, error, placementDrag, loadLayout, resetToEmptyLayout, layoutRevision } = useFloorPlanBuilder();
   const [floorName, setFloorName] = React.useState(initialName);
   const [currentSlug, setCurrentSlug] = React.useState(slug ?? "");
   const [saving, setSaving] = React.useState(false);
@@ -55,9 +55,22 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
   const skipAutoSaveRef = React.useRef(true);
   const saveInFlightRef = React.useRef(false);
 
+  React.useEffect(() => {
+    setFloorName(initialName);
+  }, [initialName]);
+
+  const trimmedFloorName = floorName.trim();
+
   const persistDraft = React.useCallback(
     async (opts?: { silent?: boolean }): Promise<string | null> => {
       if (saveInFlightRef.current) return currentSlug || null;
+      if (!trimmedFloorName) {
+        if (!opts?.silent) {
+          setStatusIsError(true);
+          setStatusMessage("Enter a floor name before saving.");
+        }
+        return null;
+      }
       saveInFlightRef.current = true;
       if (opts?.silent) setAutoSaving(true);
       else setSaving(true);
@@ -65,14 +78,14 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       setStatusIsError(false);
       try {
         let targetSlug = currentSlug;
-        const payload = { ...layout, name: floorName };
+        const payload = { ...layout, name: trimmedFloorName };
 
         if (!targetSlug) {
           const res = await fetch("/api/floor-plans/builder", {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: floorName, layout: payload }),
+            body: JSON.stringify({ name: trimmedFloorName, layout: payload }),
           });
           if (!res.ok) throw new Error(await parseApiError(res));
           const created = (await res.json()) as { slug: string };
@@ -107,7 +120,7 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
         else setSaving(false);
       }
     },
-    [currentSlug, floorName, layout, loadLayout, router],
+    [currentSlug, layout, loadLayout, router, trimmedFloorName],
   );
 
   React.useEffect(() => {
@@ -115,11 +128,12 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       skipAutoSaveRef.current = false;
       return;
     }
+    if (!trimmedFloorName) return;
     const timer = window.setTimeout(() => {
       void persistDraft({ silent: true });
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [layoutRevision, floorName, persistDraft]);
+  }, [layoutRevision, persistDraft, trimmedFloorName]);
 
   const publish = React.useCallback(async () => {
     setPublishing(true);
@@ -129,7 +143,7 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       const targetSlug = (await persistDraft()) ?? currentSlug;
       if (!targetSlug) throw new Error("Save the floor before publishing.");
 
-      const payload = { ...layout, name: floorName };
+      const payload = { ...layout, name: trimmedFloorName };
       const res = await fetch(`/api/floor-plans/${targetSlug}/layout?action=publish`, {
         method: "POST",
         credentials: "include",
@@ -147,7 +161,7 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
     } finally {
       setPublishing(false);
     }
-  }, [currentSlug, floorName, layout, persistDraft]);
+  }, [currentSlug, layout, persistDraft, trimmedFloorName]);
 
   const deleteWorkspace = React.useCallback(async () => {
     if (!currentSlug) {
@@ -175,14 +189,26 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
     }
   }, [currentSlug, floorName, router]);
 
+  const clearCanvas = React.useCallback(() => {
+    const confirmed = window.confirm(
+      "Clear the entire canvas? All seats, rooms, and structures will be removed. Grid size and floor name are kept.",
+    );
+    if (!confirmed) return;
+    resetToEmptyLayout();
+    setStatusIsError(false);
+    setStatusMessage("Canvas cleared. Drag elements from the toolbox to start fresh.");
+  }, [resetToEmptyLayout]);
+
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
       <BuilderToolbar
         floorName={floorName}
+        onFloorNameChange={setFloorName}
         onBack={() => router.push("/seating/floors/new")}
         onSaveDraft={() => void persistDraft()}
         onPublish={() => void publish()}
         onDelete={() => void deleteWorkspace()}
+        onClearCanvas={clearCanvas}
         onPreview={() => {
           void (async () => {
             let slug = currentSlug;
@@ -220,13 +246,13 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
         <ElementToolbox />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <p className="shrink-0 border-b border-border/40 bg-muted/20 px-3 py-1.5 text-[11px] text-muted-foreground">
-            {getToolHint(placementDrag?.type ?? null, placementDrag?.quantity ?? 1)}
-            {autoSaving ? " · Auto-saving…" : currentSlug ? " · Design saved to database" : " · Unsaved — edits auto-save shortly"}
+            {getToolHint(placementDrag)}
+            {autoSaving ? " · Auto-saving…" : currentSlug ? " · Design saved to database" : trimmedFloorName ? " · Unsaved — edits auto-save shortly" : " · Enter a floor name to start saving"}
           </p>
           <FloorPlanCanvas />
           <BuilderStatusBar />
         </div>
-        <PropertiesPanel floorName={floorName} onFloorNameChange={setFloorName} showFloorName={mode === "create" && !currentSlug} />
+        <PropertiesPanel floorName={floorName} onFloorNameChange={setFloorName} />
       </div>
     </div>
   );
