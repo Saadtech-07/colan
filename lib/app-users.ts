@@ -36,6 +36,7 @@ export type VerifiedAppUser = {
   imageUrl: string;
   isProfileCompleted: boolean;
   companyId: string;
+  appUserId: string;
 };
 
 type SeedUser = {
@@ -253,6 +254,7 @@ export type AppUserSessionRefresh = {
   imageUrl: string;
   isProfileCompleted: boolean;
   companyId: string;
+  appUserId: string;
 };
 
 export type ProfileSetupUpdateInput = {
@@ -883,6 +885,7 @@ export async function verifyAppUserCredentials(
       imageUrl: u.imageUrl,
       isProfileCompleted: normalizeProfileCompleted(u.isProfileCompleted),
       companyId: DEMO_COMPANY_ID,
+      appUserId: "dev-user-id",
     };
   }
 
@@ -920,6 +923,7 @@ export async function verifyAppUserCredentials(
     imageUrl: doc.imageUrl,
     isProfileCompleted: normalizeProfileCompleted(doc.isProfileCompleted),
     companyId: doc.companyId?.toHexString() ?? (await resolveDefaultCompanyId()),
+    appUserId: doc._id.toHexString(),
   };
 }
 
@@ -940,6 +944,7 @@ export async function getAppUserSessionRefresh(
       imageUrl: user.imageUrl,
       isProfileCompleted: normalizeProfileCompleted(user.isProfileCompleted),
       companyId: DEMO_COMPANY_ID,
+      appUserId: "dev-user-id",
     };
   }
 
@@ -958,6 +963,7 @@ export async function getAppUserSessionRefresh(
     imageUrl: doc.imageUrl,
     isProfileCompleted: normalizeProfileCompleted(doc.isProfileCompleted),
     companyId: doc.companyId?.toHexString() ?? (await resolveDefaultCompanyId()),
+    appUserId: doc._id.toHexString(),
   };
 }
 
@@ -1101,6 +1107,40 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
     profile.bayNumber = undefined;
   }
 
+  return profile;
+}
+
+/** Lightweight profile for header avatar — single appUsers read, no employee joins. */
+export async function getCurrentAppUserProfileMinimal(
+  email: string,
+): Promise<AppUserProfileDTO> {
+  const normalized = email.toLowerCase().trim();
+  if (!normalized) throw new Error("Invalid user email.");
+
+  const db = await getDb();
+  if (!db) {
+    const user = DEV_APP_USERS.find((item) => item.email === normalized);
+    if (!user) throw new Error("User not found.");
+    return {
+      email: user.email,
+      name: user.name,
+      appRole: user.appRole,
+      team: user.team,
+      employeeId: "DEV-USER",
+      imageUrl: user.imageUrl,
+      isProfileCompleted: normalizeProfileCompleted(user.isProfileCompleted),
+      updatedProfileAt: new Date().toISOString(),
+    };
+  }
+
+  await ensureAppUsersSeed(db);
+  const doc = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).findOne({ email: normalized });
+  if (!doc) throw new Error("User not found.");
+
+  const profile = appUserDocToProfile(doc);
+  if (!roleShowsTeamOnProfile(doc.appRole)) {
+    profile.team = undefined;
+  }
   return profile;
 }
 

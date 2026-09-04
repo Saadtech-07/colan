@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import {
   countAllNotifications,
   countNotificationsForUser,
@@ -10,7 +9,6 @@ import {
 } from "@/lib/notifications-data";
 import { requireNotificationActor } from "@/lib/notification-api";
 import { canManageModule } from "@/lib/permissions";
-import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import type { AppRole } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -25,9 +23,7 @@ export async function GET(req: Request) {
   const actor = await requireNotificationActor();
   if (actor instanceof NextResponse) return actor;
 
-  await ensureRoleRegistry();
-  const session = await auth();
-  const role = session?.user?.appRole as AppRole | undefined;
+  const role = actor.appRole as AppRole | undefined;
   if (!role) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -37,18 +33,24 @@ export async function GET(req: Request) {
   const scopeAll = searchParams.get("scope") === "all";
   const unreadOnly = searchParams.get("unreadOnly") === "true";
   const canViewAll = canManageModule(role, "notifications");
+  const badgePreview = unreadOnly && !scopeAll && limit <= 5;
 
   if (scopeAll && !canViewAll) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const [rawNotifications, totalCount, unreadCount] = await Promise.all([
+  const listPromise =
     scopeAll && canViewAll
       ? listAllNotifications(limit, unreadOnly)
-      : listNotificationsForUser(actor.id, limit, unreadOnly),
-    scopeAll && canViewAll
-      ? countAllNotifications()
-      : countNotificationsForUser(actor.id),
+      : listNotificationsForUser(actor.id, limit, unreadOnly);
+
+  const [rawNotifications, totalCount, unreadCount] = await Promise.all([
+    listPromise,
+    badgePreview
+      ? Promise.resolve(0)
+      : scopeAll && canViewAll
+        ? countAllNotifications()
+        : countNotificationsForUser(actor.id),
     getUnreadNotificationCount(actor.id),
   ]);
 
@@ -58,7 +60,7 @@ export async function GET(req: Request) {
     {
       notifications,
       unreadCount,
-      totalCount,
+      totalCount: badgePreview ? unreadCount : totalCount,
       scope: scopeAll && canViewAll ? "all" : "mine",
     },
     { headers: { "Cache-Control": "no-store" } },

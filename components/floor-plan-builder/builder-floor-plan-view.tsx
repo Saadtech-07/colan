@@ -2,6 +2,13 @@
 
 import * as React from "react";
 import { BuilderGridSeatTile } from "@/components/floor-plan-builder/builder-grid-seat-tile";
+import { buildInternalGridStyle } from "@/components/floor-plan-builder/builder-ui";
+import {
+  CANVAS_BOUNDS_PX,
+  CANVAS_DOT_SPACING,
+  getWorldPixelRect,
+  isFreeformSeat,
+} from "@/lib/floor-plan-builder/freeform-geometry";
 import { SeatingZoomFrame } from "@/components/seating/seating-zoom-frame";
 import { getElementDefinition } from "@/lib/floor-plan-builder/element-registry";
 import { getWorldFootprint } from "@/lib/floor-plan-builder/hierarchy";
@@ -66,14 +73,8 @@ function StructureBlock({ element }: { element: FloorPlanElement }) {
     >
       {def.supportsChildren ? (
         <div
-          className="pointer-events-none absolute inset-1 rounded-xl opacity-40"
-          style={{
-            backgroundImage: `
-              linear-gradient(to right, ${def.borderColor}33 1px, transparent 1px),
-              linear-gradient(to bottom, ${def.borderColor}33 1px, transparent 1px)
-            `,
-            backgroundSize: `${BUILDER_CELL_STRIDE}px ${BUILDER_CELL_STRIDE}px`,
-          }}
+          className="pointer-events-none absolute inset-1 rounded-xl opacity-50"
+          style={buildInternalGridStyle(def.borderColor)}
         />
       ) : null}
       {element.type === "pillar" ? (
@@ -134,8 +135,8 @@ export function BuilderFloorPlanView({
     [viewMode],
   );
 
-  const canvasWidth = layout.grid.columns * BUILDER_CELL_STRIDE;
-  const canvasHeight = layout.grid.rows * BUILDER_CELL_STRIDE;
+  const canvasWidth = layout.grid.columns * CANVAS_BOUNDS_PX;
+  const canvasHeight = layout.grid.rows * CANVAS_BOUNDS_PX;
 
   const seats = layout.elements.filter((el) => el.type === "seat" && el.seatId);
   const structures = layout.elements.filter((el) => el.type !== "seat");
@@ -157,13 +158,11 @@ export function BuilderFloorPlanView({
             style={{ width: canvasWidth, height: canvasHeight }}
           >
             <div
-              className="pointer-events-none absolute inset-0 rounded-[24px] opacity-30"
+              className="pointer-events-none absolute inset-0 rounded-[24px] opacity-40"
               style={{
-                backgroundImage: `
-                  linear-gradient(to right, rgba(148,163,184,0.35) 1px, transparent 1px),
-                  linear-gradient(to bottom, rgba(148,163,184,0.35) 1px, transparent 1px)
-                `,
-                backgroundSize: `${BUILDER_CELL_STRIDE}px ${BUILDER_CELL_STRIDE}px`,
+                backgroundImage:
+                  "radial-gradient(circle, rgba(148,163,184,0.35) 1px, transparent 1px)",
+                backgroundSize: `${CANVAS_DOT_SPACING}px ${CANVAS_DOT_SPACING}px`,
               }}
             />
 
@@ -187,16 +186,21 @@ export function BuilderFloorPlanView({
               const seatId = element.seatId!;
               const emp = occupancy.get(seatId) ?? null;
               if (hideSeat(seatId, emp)) return null;
+              const pixelRect = isFreeformSeat(element)
+                ? getWorldPixelRect(layout.elements, element)
+                : null;
               const world = getWorldFootprint(layout.elements, element);
-              const size = elementPixelSize(element.width, element.height);
+              const size = pixelRect
+                ? { width: pixelRect.width, height: pixelRect.height }
+                : elementPixelSize(element.width, element.height);
 
               return (
                 <div
                   key={element.id}
                   className="absolute"
                   style={{
-                    left: world.worldColumn * BUILDER_CELL_STRIDE,
-                    top: world.worldRow * BUILDER_CELL_STRIDE,
+                    left: pixelRect ? pixelRect.x : world.worldColumn * BUILDER_CELL_STRIDE,
+                    top: pixelRect ? pixelRect.y : world.worldRow * BUILDER_CELL_STRIDE,
                     width: size.width,
                     height: size.height,
                     transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,

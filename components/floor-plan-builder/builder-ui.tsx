@@ -3,6 +3,8 @@
 import * as React from "react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { AlignmentGuideLine } from "@/lib/floor-plan-builder/alignment-guides";
+import { CANVAS_DOT_SPACING } from "@/lib/floor-plan-builder/freeform-geometry";
 import {
   BUILDER_CELL_PX,
   BUILDER_CELL_STRIDE,
@@ -13,32 +15,30 @@ export const BUILDER_CHROME = {
   shellBg: "bg-[#f4f6f8]",
   canvasBg: "bg-[#eef1f4]",
   canvasPattern:
-    "radial-gradient(circle, rgba(148, 163, 184, 0.35) 1px, transparent 1px)",
+    "radial-gradient(circle, rgba(148, 163, 184, 0.28) 1px, transparent 1px)",
   floorSheet:
     "rounded-[20px] border border-border/60 bg-white shadow-[0_8px_32px_rgba(15,23,42,0.08)]",
   floorSheetActive:
     "ring-2 ring-primary/20 shadow-[0_12px_40px_rgba(59,130,246,0.12)]",
 };
 
-export function buildCanvasGridStyle(lineAlphaPercent = 5): React.CSSProperties {
-  const alpha = Math.max(0, Math.min(1, lineAlphaPercent / 100));
-  const color = `rgba(148, 163, 184, ${alpha})`;
+/** Subtle dotted background — visual guide only, not placement slots. */
+export function buildCanvasGridStyle(_lineAlphaPercent = 5): React.CSSProperties {
   return {
-    backgroundImage: `
-      linear-gradient(to right, ${color} 1px, transparent 1px),
-      linear-gradient(to bottom, ${color} 1px, transparent 1px)
-    `,
-    backgroundSize: `${BUILDER_CELL_STRIDE}px ${BUILDER_CELL_STRIDE}px`,
+    backgroundImage:
+      "radial-gradient(circle, rgba(148, 163, 184, 0.38) 1px, transparent 1px)",
+    backgroundSize: `${CANVAS_DOT_SPACING}px ${CANVAS_DOT_SPACING}px`,
   };
 }
 
 export function buildInternalGridStyle(borderColor: string): React.CSSProperties {
   return {
     backgroundImage: `
-      linear-gradient(to right, ${borderColor}33 1px, transparent 1px),
-      linear-gradient(to bottom, ${borderColor}33 1px, transparent 1px)
+      radial-gradient(circle, ${borderColor}55 1px, transparent 1px),
+      radial-gradient(circle, ${borderColor}33 1px, transparent 1px)
     `,
     backgroundSize: `${BUILDER_CELL_STRIDE}px ${BUILDER_CELL_STRIDE}px`,
+    backgroundPosition: `${BUILDER_CELL_PX / 2}px ${BUILDER_CELL_PX / 2}px`,
   };
 }
 
@@ -207,5 +207,114 @@ export function InspectorField({ label, htmlFor, children }: InspectorFieldProps
       </label>
       {children}
     </div>
+  );
+}
+
+type AlignmentGuidesOverlayProps = {
+  guides: AlignmentGuideLine[];
+  columnOffset?: number;
+  rowOffset?: number;
+};
+
+export function AlignmentGuidesOverlay({
+  guides,
+  columnOffset = 0,
+  rowOffset = 0,
+}: AlignmentGuidesOverlayProps) {
+  if (!guides.length) return null;
+
+  return (
+    <>
+      {guides.map((guide, index) => {
+        const isCenter = guide.kind === "center";
+        const strokeClass = isCenter ? "border-fuchsia-500/85" : "border-fuchsia-500/70";
+
+        if (guide.pixel) {
+          if (guide.axis === "vertical") {
+            return (
+              <div
+                key={`v-${index}-${guide.position}`}
+                className={cn(
+                  "pointer-events-none absolute z-[45] border-l border-dashed",
+                  strokeClass,
+                )}
+                style={{
+                  left: guide.position,
+                  top: guide.spanStart,
+                  height: guide.spanEnd - guide.spanStart,
+                }}
+              />
+            );
+          }
+          return (
+            <div
+              key={`h-${index}-${guide.position}`}
+              className={cn(
+                "pointer-events-none absolute z-[45] border-t border-dashed",
+                strokeClass,
+              )}
+              style={{
+                left: guide.spanStart,
+                top: guide.position,
+                width: guide.spanEnd - guide.spanStart,
+              }}
+            />
+          );
+        }
+
+        if (guide.axis === "vertical") {
+          const left = (guide.position + columnOffset) * BUILDER_CELL_STRIDE;
+          const top = (guide.spanStart + rowOffset) * BUILDER_CELL_STRIDE;
+          const height =
+            (guide.spanEnd - guide.spanStart) * BUILDER_CELL_STRIDE + BUILDER_CELL_PX;
+          return (
+            <div
+              key={`v-${index}-${guide.position}`}
+              className={cn(
+                "pointer-events-none absolute z-[45] border-l border-dashed",
+                strokeClass,
+              )}
+              style={{ left, top, height }}
+            />
+          );
+        }
+
+        const top = (guide.position + rowOffset) * BUILDER_CELL_STRIDE;
+        const left = (guide.spanStart + columnOffset) * BUILDER_CELL_STRIDE;
+        const width =
+          (guide.spanEnd - guide.spanStart) * BUILDER_CELL_STRIDE + BUILDER_CELL_PX;
+        return (
+          <div
+            key={`h-${index}-${guide.position}`}
+            className={cn(
+              "pointer-events-none absolute z-[45] border-t border-dashed",
+              strokeClass,
+            )}
+            style={{ left, top, width }}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+type SelectionMarqueeProps = {
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+};
+
+export function SelectionMarquee({ startX, startY, endX, endY }: SelectionMarqueeProps) {
+  const left = Math.min(startX, endX);
+  const top = Math.min(startY, endY);
+  const width = Math.abs(endX - startX);
+  const height = Math.abs(endY - startY);
+
+  return (
+    <div
+      className="pointer-events-none absolute z-[60] rounded-sm border border-primary/70 bg-primary/8 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]"
+      style={{ left, top, width, height }}
+    />
   );
 }

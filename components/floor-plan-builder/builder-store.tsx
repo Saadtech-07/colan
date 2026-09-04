@@ -12,6 +12,7 @@ import {
 } from "@/lib/floor-plan-builder/commands";
 import {
   addElement,
+  createBulkFreeformSeats,
   createBulkSeats,
   createBulkElements,
   createElement,
@@ -26,8 +27,10 @@ import {
   getSelectionRoots,
   insertClonedSubtrees,
   mergeSeats,
+  moveFreeformElement,
   resizeElement,
   resizeFloorGrid,
+  resizeFreeformElement,
   resolvePlacementTarget,
   snapFootprintStrict,
   splitMergedSeat,
@@ -45,6 +48,13 @@ import type {
   Footprint,
   WorkspaceBlock,
 } from "@/lib/floor-plan-builder/types";
+import {
+  createFreeformSeatProperties,
+  DEFAULT_SEAT_HEIGHT,
+  DEFAULT_SEAT_WIDTH,
+  getFreeformRect,
+  isFreeformSeat,
+} from "@/lib/floor-plan-builder/freeform-geometry";
 import {
   applyActiveWorkspaceBlock,
   createEmptyWorkspaceBlock,
@@ -91,6 +101,17 @@ type BuilderContextValue = {
     parentId?: string | null,
   ) => boolean;
   commitPlacementFootprint: (type: FloorPlanElementType, footprint: Footprint) => boolean;
+  commitFreeformSeatAt: (
+    localX: number,
+    localY: number,
+    parentId?: string | null,
+  ) => boolean;
+  commitBulkFreeformSeatsAt: (
+    localX: number,
+    localY: number,
+    count: number,
+    parentId?: string | null,
+  ) => boolean;
   commitBulkPlacement: (
     type: FloorPlanElementType,
     footprint: Footprint,
@@ -98,11 +119,18 @@ type BuilderContextValue = {
   ) => boolean;
   commitLayoutCloneAt: (worldRow: number, worldColumn: number) => boolean;
   tryMoveElement: (elementId: string, row: number, column: number) => boolean;
+  tryMoveFreeformElement: (elementId: string, x: number, y: number) => boolean;
   tryResizeElement: (
     elementId: string,
     edge: ResizeEdge,
     deltaRow: number,
     deltaCol: number,
+  ) => boolean;
+  tryResizeFreeformElement: (
+    elementId: string,
+    edge: ResizeEdge,
+    deltaX: number,
+    deltaY: number,
   ) => boolean;
   tryRotateElement: (elementId: string, rotation: 0 | 90 | 180 | 270) => boolean;
   updateSelected: (patch: Partial<FloorPlanElement>) => void;
@@ -298,6 +326,57 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     [commitLayout, layout, selection],
   );
 
+  const commitFreeformSeatAt = React.useCallback(
+    (localX: number, localY: number, parentId: string | null = null) => {
+      const element = createElement("seat", {
+        parentId,
+        seatId: createSeatId(getWorkspaceElements()),
+        properties: createFreeformSeatProperties(
+          Math.max(0, localX),
+          Math.max(0, localY),
+          DEFAULT_SEAT_WIDTH,
+          DEFAULT_SEAT_HEIGHT,
+        ),
+      });
+      const result = addElement(layout, element);
+      if (result.error) {
+        setError(result.error);
+        return false;
+      }
+      commitLayout(result.layout);
+      setSelection([element.id]);
+      setActiveTool(null);
+      setPlacementDrag(null);
+      setError(null);
+      return true;
+    },
+    [commitLayout, layout],
+  );
+
+  const commitBulkFreeformSeatsAt = React.useCallback(
+    (localX: number, localY: number, count: number, parentId: string | null = null) => {
+      const result = createBulkFreeformSeats(layout, {
+        parentId,
+        startX: Math.max(0, localX),
+        startY: Math.max(0, localY),
+        count,
+      });
+      if (result.error) {
+        setError(result.error);
+        return false;
+      }
+      commitLayout(result.layout);
+      if (result.elementIds?.length) {
+        setSelection(result.elementIds);
+      }
+      setActiveTool(null);
+      setPlacementDrag(null);
+      setError(null);
+      return true;
+    },
+    [commitLayout, layout],
+  );
+
   const commitPlacementFootprint = React.useCallback(
     (type: FloorPlanElementType, footprint: Footprint) => {
       const element = createElement(type, {
@@ -371,6 +450,11 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     (elementId: string, row: number, column: number) => {
       const element = layout.elements.find((el) => el.id === elementId);
       if (!element) return false;
+
+      if (isFreeformSeat(element)) {
+        return false;
+      }
+
       const footprint = snapFootprintStrict(
         layout,
         {
@@ -387,6 +471,32 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
         row: footprint.row,
         column: footprint.column,
       });
+      if (result.error) {
+        setError(result.error);
+        return false;
+      }
+      commitLayout(result.layout);
+      return true;
+    },
+    [commitLayout, layout],
+  );
+
+  const tryMoveFreeformElement = React.useCallback(
+    (elementId: string, x: number, y: number) => {
+      const result = moveFreeformElement(layout, elementId, x, y);
+      if (result.error) {
+        setError(result.error);
+        return false;
+      }
+      commitLayout(result.layout);
+      return true;
+    },
+    [commitLayout, layout],
+  );
+
+  const tryResizeFreeformElement = React.useCallback(
+    (elementId: string, edge: ResizeEdge, deltaX: number, deltaY: number) => {
+      const result = resizeFreeformElement(layout, elementId, edge, deltaX, deltaY);
       if (result.error) {
         setError(result.error);
         return false;
@@ -449,14 +559,23 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   }, [commitLayout, layout, selection]);
 
   const duplicateSelected = React.useCallback(() => {
-    if (selection.length !== 1) return;
-    const result = duplicateSubtree(layout, selection[0]);
-    if (result.error) {
-      setError(result.error);
-      return;
+    if (!selection.length) return;
+    const rootIds = getSelectionRoots(layout.elements, selection);
+    if (!rootIds.length) return;
+
+    let next = layout;
+    const newIds: string[] = [];
+    for (const rootId of rootIds) {
+      const result = duplicateSubtree(next, rootId);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      next = result.layout;
+      if (result.newRootId) newIds.push(result.newRootId);
     }
-    commitLayout(result.layout);
-    if (result.newRootId) setSelection([result.newRootId]);
+    commitLayout(next);
+    if (newIds.length) setSelection(newIds);
   }, [commitLayout, layout, selection]);
 
   const copySelected = React.useCallback(() => {
@@ -721,6 +840,17 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+        if (selection.length) {
+          e.preventDefault();
+          duplicateSelected();
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+        e.preventDefault();
+        const ids = layout.elements.filter((el) => el.type !== "floor").map((el) => el.id);
+        setSelection(ids);
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === "c") {
         if (selection.length) {
           e.preventDefault();
@@ -768,7 +898,20 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
         e.preventDefault();
         const el = layout.elements.find((x) => x.id === selection[0]);
         if (!el) return;
-        const step = e.shiftKey ? 2 : 1;
+        const step = e.shiftKey ? 10 : 1;
+        if (isFreeformSeat(el)) {
+          const rect = getFreeformRect(el);
+          const patch =
+            e.key === "ArrowUp"
+              ? { y: rect.y - step }
+              : e.key === "ArrowDown"
+                ? { y: rect.y + step }
+                : e.key === "ArrowLeft"
+                  ? { x: rect.x - step }
+                  : { x: rect.x + step };
+          updateSelected({ properties: { ...el.properties, ...patch } });
+          return;
+        }
         const patch =
           e.key === "ArrowUp"
             ? { row: el.row - step }
@@ -782,7 +925,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canPaste, copySelected, cutSelected, deleteSelected, layout.elements, pasteClipboard, redoChange, selection, setCanvasMode, undoChange, updateSelected]);
+  }, [canPaste, copySelected, cutSelected, deleteSelected, duplicateSelected, layout.elements, pasteClipboard, redoChange, selection, setCanvasMode, undoChange, updateSelected]);
 
   const value: BuilderContextValue = {
     layout,
@@ -810,10 +953,14 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     commitLayout,
     placeElementAt,
     commitPlacementFootprint,
+    commitFreeformSeatAt,
+    commitBulkFreeformSeatsAt,
     commitBulkPlacement,
     commitLayoutCloneAt,
     tryMoveElement,
+    tryMoveFreeformElement,
     tryResizeElement,
+    tryResizeFreeformElement,
     tryRotateElement,
     updateSelected,
     deleteSelected,

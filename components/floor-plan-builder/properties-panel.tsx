@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getElementDefinition } from "@/lib/floor-plan-builder/element-registry";
+import { getFreeformRect, isFreeformSeat } from "@/lib/floor-plan-builder/freeform-geometry";
 import { getParentElement } from "@/lib/floor-plan-builder/hierarchy";
 import { getContainerCapacity, getSeatDisplayName, seatCountInContainer } from "@/lib/floor-plan-builder/layout-engine";
 import { useFloorPlanBuilder } from "./builder-store";
@@ -146,7 +147,7 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
   const def = getElementDefinition(selected.type);
   const parent = getParentElement(layout.elements, selected.parentId);
   const capacity = getContainerCapacity(selected);
-  const seatCount = capacity !== null ? seatCountInContainer(layout.elements, selected.id) : null;
+  const seatCount = capacity !== null ? seatCountInContainer(layout.elements, selected.id, layout.grid) : null;
 
   const setCapacity = (value: number) => {
     updateSelected({
@@ -155,6 +156,7 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
   };
 
   const displayName = selected.type === "seat" ? getSeatDisplayName(selected) : selected.name;
+  const freeformRect = isFreeformSeat(selected) ? getFreeformRect(selected) : null;
 
   return (
     <aside className={panelClass}>
@@ -180,54 +182,126 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
       </InspectorSection>
 
       <InspectorSection title="Position">
-        <div className="grid grid-cols-2 gap-3">
-          <InspectorField label="Row" htmlFor="prop-row">
-            <Input
-              id="prop-row"
-              type="number"
-              min={0}
-              value={selected.row}
-              onChange={(e) => updateSelected({ row: Number(e.target.value) || 0 })}
-              className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
-            />
-          </InspectorField>
-          <InspectorField label="Column" htmlFor="prop-col">
-            <Input
-              id="prop-col"
-              type="number"
-              min={0}
-              value={selected.column}
-              onChange={(e) => updateSelected({ column: Number(e.target.value) || 0 })}
-              className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
-            />
-          </InspectorField>
-        </div>
-      </InspectorSection>
-
-      {def.supportsResize ? (
-        <InspectorSection title="Size">
+        {freeformRect ? (
           <div className="grid grid-cols-2 gap-3">
-            <InspectorField label="Rows" htmlFor="prop-h">
+            <InspectorField label="X (px)" htmlFor="prop-x">
               <Input
-                id="prop-h"
+                id="prop-x"
                 type="number"
-                min={def.minHeight}
-                value={selected.height}
-                onChange={(e) => updateSelected({ height: Number(e.target.value) || def.minHeight })}
+                min={0}
+                value={Math.round(freeformRect.x)}
+                onChange={(e) =>
+                  updateSelected({
+                    properties: { ...selected.properties, x: Number(e.target.value) || 0 },
+                  })
+                }
                 className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
               />
             </InspectorField>
-            <InspectorField label="Columns" htmlFor="prop-w">
+            <InspectorField label="Y (px)" htmlFor="prop-y">
               <Input
-                id="prop-w"
+                id="prop-y"
                 type="number"
-                min={def.minWidth}
-                value={selected.width}
-                onChange={(e) => updateSelected({ width: Number(e.target.value) || def.minWidth })}
+                min={0}
+                value={Math.round(freeformRect.y)}
+                onChange={(e) =>
+                  updateSelected({
+                    properties: { ...selected.properties, y: Number(e.target.value) || 0 },
+                  })
+                }
                 className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
               />
             </InspectorField>
           </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <InspectorField label="Row" htmlFor="prop-row">
+              <Input
+                id="prop-row"
+                type="number"
+                min={0}
+                value={selected.row}
+                onChange={(e) => updateSelected({ row: Number(e.target.value) || 0 })}
+                className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
+              />
+            </InspectorField>
+            <InspectorField label="Column" htmlFor="prop-col">
+              <Input
+                id="prop-col"
+                type="number"
+                min={0}
+                value={selected.column}
+                onChange={(e) => updateSelected({ column: Number(e.target.value) || 0 })}
+                className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
+              />
+            </InspectorField>
+          </div>
+        )}
+      </InspectorSection>
+
+      {def.supportsResize ? (
+        <InspectorSection title="Size">
+          {freeformRect ? (
+            <div className="grid grid-cols-2 gap-3">
+              <InspectorField label="Width (px)" htmlFor="prop-w">
+                <Input
+                  id="prop-w"
+                  type="number"
+                  min={48}
+                  value={Math.round(freeformRect.width)}
+                  onChange={(e) =>
+                    updateSelected({
+                      properties: {
+                        ...selected.properties,
+                        canvasWidth: Math.max(48, Number(e.target.value) || freeformRect.width),
+                      },
+                    })
+                  }
+                  className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
+                />
+              </InspectorField>
+              <InspectorField label="Height (px)" htmlFor="prop-h">
+                <Input
+                  id="prop-h"
+                  type="number"
+                  min={40}
+                  value={Math.round(freeformRect.height)}
+                  onChange={(e) =>
+                    updateSelected({
+                      properties: {
+                        ...selected.properties,
+                        canvasHeight: Math.max(40, Number(e.target.value) || freeformRect.height),
+                      },
+                    })
+                  }
+                  className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
+                />
+              </InspectorField>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <InspectorField label="Rows" htmlFor="prop-h">
+                <Input
+                  id="prop-h"
+                  type="number"
+                  min={def.minHeight}
+                  value={selected.height}
+                  onChange={(e) => updateSelected({ height: Number(e.target.value) || def.minHeight })}
+                  className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
+                />
+              </InspectorField>
+              <InspectorField label="Columns" htmlFor="prop-w">
+                <Input
+                  id="prop-w"
+                  type="number"
+                  min={def.minWidth}
+                  value={selected.width}
+                  onChange={(e) => updateSelected({ width: Number(e.target.value) || def.minWidth })}
+                  className="h-8 rounded-lg border-border/50 bg-background text-sm tabular-nums"
+                />
+              </InspectorField>
+            </div>
+          )}
         </InspectorSection>
       ) : null}
 

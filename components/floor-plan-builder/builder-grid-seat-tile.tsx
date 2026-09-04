@@ -47,7 +47,7 @@ export function BuilderGridSeatTile({
   const isMerged = element.width > 1 || element.height > 1 || Boolean(element.mergeGroupId);
 
   return (
-    <SeatingSeatBlock occupied={occupied} emphasized={emphasized} fillContainer>
+    <SeatingSeatBlock occupied={occupied} emphasized={emphasized} fillContainer staticVisual={!interactive}>
       <SeatCardContent
         seatId={displayName}
         occupant={occupant}
@@ -57,6 +57,7 @@ export function BuilderGridSeatTile({
         canAssign={interactive ? canAssign : false}
         asDiv={!interactive}
         floorPlanMode
+        builderCanvas={!interactive}
         onSelect={onSelect}
         onDragStart={onDragStart}
         onDrop={onDrop}

@@ -14,6 +14,7 @@ export async function signAuthToken(payload: JwtPayload): Promise<string> {
     appRole: payload.appRole,
     team: payload.team,
     companyId: payload.companyId,
+    appUserId: payload.appUserId,
     isProfileCompleted: payload.isProfileCompleted,
   })
     .setProtectedHeader({ alg: "HS256" })
@@ -45,6 +46,10 @@ export async function verifyAuthToken(token: string): Promise<JwtPayload | null>
         typeof payload.companyId === "string" && payload.companyId.trim()
           ? payload.companyId.trim()
           : "",
+      appUserId:
+        typeof payload.appUserId === "string" && payload.appUserId.trim()
+          ? payload.appUserId.trim()
+          : undefined,
       isProfileCompleted: payload.isProfileCompleted !== false,
     };
   } catch {

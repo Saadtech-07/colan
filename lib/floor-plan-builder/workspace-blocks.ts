@@ -1,4 +1,4 @@
-import { createElementId } from "./layout-engine";
+import { createElementId, ensureFreeformSeats } from "./layout-engine";
 import type { FloorPlanElement, FloorPlanGrid, FloorPlanLayoutState, WorkspaceBlock } from "./types";
 import { DEFAULT_FLOOR_GRID } from "./types";
 
@@ -79,10 +79,18 @@ export function normalizeWorkspaceLayout(
     preferredActiveBlockId && blocks.some((block) => block.id === preferredActiveBlockId)
       ? preferredActiveBlockId
       : blocks[0]!.id;
+  const migratedBlocks = blocks.map((block) => ({
+    ...block,
+    elements: ensureFreeformSeats(block.elements),
+  }));
+  const baseLayout = applyActiveWorkspaceBlock(layout, migratedBlocks, activeBlockId);
   return {
-    blocks,
+    blocks: migratedBlocks,
     activeBlockId,
-    layout: applyActiveWorkspaceBlock(layout, blocks, activeBlockId),
+    layout: {
+      ...baseLayout,
+      elements: ensureFreeformSeats(baseLayout.elements),
+    },
   };
 }
 

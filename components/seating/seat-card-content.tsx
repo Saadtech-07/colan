@@ -24,6 +24,8 @@ export type SeatCardContentProps = {
   asDiv?: boolean;
   /** Floor plan grid: larger text, name + squad role only (no avatar). */
   floorPlanMode?: boolean;
+  /** Builder canvas: suppress hover styling on the seat card. */
+  builderCanvas?: boolean;
 };
 
 export function SeatCardContent({
@@ -41,21 +43,26 @@ export function SeatCardContent({
   onPointerDown,
   asDiv = false,
   floorPlanMode = false,
+  builderCanvas = false,
 }: SeatCardContentProps) {
   const occupied = !!occupant;
   const teamColors = occupant ? teamColorClasses(occupant.team) : null;
 
   const className = cn(
     "flex h-full w-full flex-col items-center justify-start overflow-hidden border text-center transition-all duration-200 ease-out",
-    floorPlanMode ? "rounded-[12px] px-1.5 py-1.5" : "rounded-[18px] px-2.5 py-2.5",
+    floorPlanMode ? "rounded-[10px] px-1 py-1" : "rounded-[18px] px-2.5 py-2.5",
     occupied
-      ? "border-violet-200/90 bg-gradient-to-b from-violet-50 via-violet-100/80 to-violet-50 shadow-[inset_0_2px_0_rgba(255,255,255,0.9),0_4px_12px_rgba(139,92,246,0.12)]"
-      : "border-slate-200/80 bg-gradient-to-b from-white via-white to-slate-50 shadow-[inset_0_2px_0_rgba(255,255,255,0.95),0_4px_10px_rgba(15,23,42,0.06)]",
-    "group-hover/seat:shadow-[inset_0_2px_0_rgba(255,255,255,0.95),0_10px_22px_rgba(15,23,42,0.12)]",
+      ? floorPlanMode
+        ? "border-violet-300/80 bg-gradient-to-b from-violet-50 via-violet-100/90 to-violet-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_2px_8px_rgba(139,92,246,0.1)]"
+        : "border-violet-200/90 bg-gradient-to-b from-violet-50 via-violet-100/80 to-violet-50 shadow-[inset_0_2px_0_rgba(255,255,255,0.9),0_4px_12px_rgba(139,92,246,0.12)]"
+      : floorPlanMode
+        ? "border-slate-300/70 bg-gradient-to-b from-white via-slate-50/80 to-slate-100/60 shadow-[inset_0_1px_0_rgba(255,255,255,0.95),0_2px_6px_rgba(15,23,42,0.05)]"
+        : "border-slate-200/80 bg-gradient-to-b from-white via-white to-slate-50 shadow-[inset_0_2px_0_rgba(255,255,255,0.95),0_4px_10px_rgba(15,23,42,0.06)]",
+    !builderCanvas && "group-hover/seat:shadow-[inset_0_2px_0_rgba(255,255,255,0.95),0_10px_22px_rgba(15,23,42,0.12)]",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-white",
     canAssign && (occupied ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"),
-    !occupied && "group-hover/seat:border-primary/30",
-    occupied && teamColors && cn(teamColors.border, "group-hover/seat:brightness-[1.02]"),
+    !builderCanvas && !occupied && "group-hover/seat:border-primary/30",
+    !builderCanvas && occupied && teamColors && cn(teamColors.border, "group-hover/seat:brightness-[1.02]"),
     selected &&
       "ring-2 ring-primary ring-offset-1 ring-offset-white shadow-[0_0_0_1px_rgba(59,130,246,0.2),0_8px_20px_rgba(59,130,246,0.15)]",
     highlighted &&
@@ -77,8 +84,8 @@ export function SeatCardContent({
     <>
       <span
         className={cn(
-          "inline-flex min-h-5 items-center gap-1 rounded-full border px-2 font-mono font-bold leading-none shadow-sm",
-          floorPlanMode ? "text-[9px]" : "text-[10px]",
+          "inline-flex min-h-4 items-center gap-0.5 rounded-full border px-1.5 font-mono font-bold leading-none shadow-sm",
+          floorPlanMode ? "text-[8px]" : "text-[10px]",
           occupied
             ? highlighted && !selected
               ? "border-slate-500/40 bg-white text-slate-900"
@@ -86,7 +93,7 @@ export function SeatCardContent({
             : "border-slate-200/80 bg-white/95 text-slate-700",
         )}
       >
-        <Armchair className={cn("shrink-0 opacity-70", floorPlanMode ? "h-2.5 w-2.5" : "h-3 w-3")} aria-hidden />
+        <Armchair className={cn("shrink-0 opacity-70", floorPlanMode ? "h-2 w-2" : "h-3 w-3")} aria-hidden />
         {seatId}
         {inLayoutCanvas && !occupied && (
           <span className="rounded-full bg-violet-500 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white">
@@ -100,12 +107,12 @@ export function SeatCardContent({
             <span
               className={cn(
                 "line-clamp-2 w-full font-bold leading-snug",
-                highlighted && !selected ? "text-sm text-slate-900" : "text-[13px] text-slate-900",
+                highlighted && !selected ? "text-xs text-slate-900" : "text-[10px] text-slate-900",
               )}
             >
               {occupant.name}
             </span>
-            <span className="line-clamp-2 w-full text-[11px] font-semibold leading-tight text-violet-700">
+            <span className="line-clamp-2 w-full text-[9px] font-semibold leading-tight text-violet-700">
               {teamTabLabel(occupant.team)}
             </span>
           </div>
@@ -157,8 +164,8 @@ export function SeatCardContent({
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-1">
           {floorPlanMode ? (
             <>
-              <span className="text-sm font-bold text-slate-700">Vacant</span>
-              <span className="mt-1 text-[10px] text-slate-400">Available</span>
+              <span className="text-[11px] font-bold text-slate-700">Vacant</span>
+              <span className="mt-0.5 text-[8px] text-slate-400">Available</span>
             </>
           ) : (
             <>

@@ -45,3 +45,32 @@ export async function fetchProfileSettings(
 export function invalidateProfileSettingsCache() {
   profileCache = null;
 }
+
+/** Lightweight fetch for header avatar — single appUsers read on the server. */
+export async function fetchProfileAvatar(
+  email: string,
+  opts?: { force?: boolean },
+): Promise<ProfileSettingsDTO> {
+  const normalized = email.trim().toLowerCase();
+  if (
+    !opts?.force &&
+    profileCache &&
+    profileCache.email === normalized &&
+    Date.now() - profileCache.at < PROFILE_TTL_MS
+  ) {
+    return profileCache.data;
+  }
+
+  return dedupeAsync(`profile-avatar:${normalized}`, async () => {
+    const res = await fetch("/api/profile-settings?minimal=1", {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to load profile (${res.status})`);
+    }
+    const data = (await res.json()) as ProfileSettingsDTO;
+    profileCache = { email: normalized, at: Date.now(), data };
+    return data;
+  }, { ttlMs: PROFILE_TTL_MS, force: opts?.force });
+}

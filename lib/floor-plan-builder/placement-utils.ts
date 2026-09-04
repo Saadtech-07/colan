@@ -1,4 +1,10 @@
 import { canPlaceInParent, getElementDefinition } from "./element-registry";
+import {
+  getContainerPixelBounds,
+  getFreeformRect,
+  isFreeformSeat,
+  isRectFullyInsideBounds,
+} from "./freeform-geometry";
 import { getDescendants, getParentElement, GridOccupancyMap } from "./hierarchy";
 import type {
   FloorPlanElement,
@@ -156,12 +162,37 @@ export function getContainerCapacity(element: FloorPlanElement): number | null {
   return def.defaultCapacity ?? null;
 }
 
+function isSeatFullyInsideContainer(
+  elements: FloorPlanElement[],
+  seat: FloorPlanElement,
+  container: FloorPlanElement,
+  grid: FloorPlanGrid,
+): boolean {
+  if (seat.type !== "seat" || seat.parentId !== container.id) return false;
+
+  if (isFreeformSeat(seat)) {
+    const bounds = getContainerPixelBounds(elements, container.id, grid);
+    return isRectFullyInsideBounds(getFreeformRect(seat), bounds);
+  }
+
+  return (
+    seat.row >= 0 &&
+    seat.column >= 0 &&
+    seat.row + seat.height <= container.height &&
+    seat.column + seat.width <= container.width
+  );
+}
+
 export function seatCountInContainer(
   elements: FloorPlanElement[],
   containerId: string,
+  grid: FloorPlanGrid,
 ): number {
-  return elements.filter(
-    (el) => el.type === "seat" && el.parentId === containerId,
+  const container = elements.find((el) => el.id === containerId);
+  if (!container) return 0;
+
+  return elements.filter((el) =>
+    isSeatFullyInsideContainer(elements, el, container, grid),
   ).length;
 }
 
@@ -181,11 +212,13 @@ export function validateContainerCapacity(
   const current = seatCountInContainer(
     layout.elements.filter((el) => !ignoreSeatIds?.includes(el.id)),
     parentId,
+    layout.grid,
   );
   if (current + addingSeats > capacity) {
+    const label = parent.type === "cabin" ? "Cabin" : "Room";
     return {
       ok: false,
-      reason: `Room capacity reached. Maximum capacity is ${capacity}.`,
+      reason: `${label} capacity reached. Maximum capacity is ${capacity}.`,
     };
   }
   return { ok: true, footprint: { parentId: null, row: 0, column: 0, width: 1, height: 1 } };

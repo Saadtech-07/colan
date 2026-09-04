@@ -24,7 +24,8 @@ type Props = {
 };
 
 function BuilderStatusBar() {
-  const { layout, selection, activeBlockName, workspaceBlocks } = useFloorPlanBuilder();
+  const { layout, selection, activeBlockName, workspaceBlocks, zoom, canvasMode, snapEnabled } =
+    useFloorPlanBuilder();
   const seatCount = layout.elements.filter((el) => el.type === "seat").length;
   const pct = layout.grid.rows * layout.grid.columns > 0
     ? Math.round((seatCount / (layout.grid.rows * layout.grid.columns)) * 100)
@@ -47,7 +48,12 @@ function BuilderStatusBar() {
           </>
         ) : null}
         <span className="mx-1.5 text-border">|</span>
-        {pct}% floor utilization
+        {pct}% utilization
+        <span className="mx-1.5 text-border">|</span>
+        Zoom {Math.round(zoom * 100)}%
+        <span className="mx-1.5 text-border">|</span>
+        {canvasMode === "pan" ? "Pan" : "Select"}
+        {snapEnabled ? " · Snap on" : " · Snap off"}
       </span>
     </div>
   );

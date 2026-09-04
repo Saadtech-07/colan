@@ -20,13 +20,14 @@ export function sessionFromPayload(payload: JwtPayload): Session {
 
   return {
     user: {
-      id: payload.email,
+      id: payload.appUserId?.trim() || payload.email,
       email: payload.email,
       name: payload.name ?? null,
       image: image ?? null,
       appRole,
       team,
       companyId: payload.companyId ?? "",
+      appUserId: payload.appUserId?.trim() || undefined,
       isProfileCompleted: payload.isProfileCompleted !== false,
     },
   };
@@ -43,18 +44,39 @@ export async function getSession(): Promise<Session | null> {
   return hydrateSessionCompanyId(session);
 }
 
-/** Re-issue JWT when legacy cookies lack companyId. */
+/** Re-issue JWT when legacy cookies lack companyId or appUserId. */
 export async function refreshSessionCookieIfStale(): Promise<void> {
   const jar = await cookies();
   const token = jar.get(AUTH_COOKIE_NAME)?.value;
   if (!token) return;
   const payload = await verifyAuthToken(token);
-  if (!payload || payload.companyId?.trim()) return;
+  if (!payload || (payload.companyId?.trim() && payload.appUserId?.trim())) return;
 
   const fresh = await refreshJwtPayload(payload.email);
   if (!fresh?.companyId?.trim()) return;
 
   jar.set(AUTH_COOKIE_NAME, await signAuthToken(fresh), authCookieOptions());
+}
+
+/** Single JWT verify + optional cookie refresh for /api/auth/me. */
+export async function getAuthenticatedSession(): Promise<Session | null> {
+  const jar = await cookies();
+  const token = jar.get(AUTH_COOKIE_NAME)?.value;
+  if (!token) return null;
+
+  const payload = await verifyAuthToken(token);
+  if (!payload) return null;
+
+  const needsRefresh = !payload.companyId?.trim() || !payload.appUserId?.trim();
+  if (needsRefresh) {
+    const fresh = await refreshJwtPayload(payload.email);
+    if (fresh?.companyId?.trim()) {
+      jar.set(AUTH_COOKIE_NAME, await signAuthToken(fresh), authCookieOptions());
+      return hydrateSessionCompanyId(sessionFromPayload(fresh));
+    }
+  }
+
+  return hydrateSessionCompanyId(sessionFromPayload(payload));
 }
 
 export async function getSessionFromCookieHeader(

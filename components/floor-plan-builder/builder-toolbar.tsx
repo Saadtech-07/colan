@@ -8,6 +8,7 @@ import {
   Maximize2,
   MousePointer2,
   Redo2,
+  RotateCcw,
   Save,
   Trash2,
   Undo2,
@@ -113,6 +114,15 @@ export function BuilderToolbar({
           size="sm"
         />
         <ToolIconButton icon={Maximize2} title="Fit to view" onClick={fitToView} size="sm" />
+        <ToolIconButton
+          icon={RotateCcw}
+          title="Reset zoom (100%)"
+          onClick={() => {
+            setZoom(1);
+            fitToView();
+          }}
+          size="sm"
+        />
         {onPreview ? (
           <Button
             type="button"

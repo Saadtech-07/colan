@@ -96,10 +96,10 @@ export type BulkElementOptions = {
   count: number;
 };
 
-/** Builder / floor-plan grid seat tile size (px per cell). */
-export const BUILDER_CELL_PX = 140;
-export const BUILDER_CELL_GAP = 16;
+/** Builder / floor-plan grid seat tile size (px per cell). Compact single-seat footprint. */
+export const BUILDER_CELL_PX = 88;
+export const BUILDER_CELL_GAP = 12;
 export const BUILDER_CELL_STRIDE = BUILDER_CELL_PX + BUILDER_CELL_GAP;
 
 export const DEFAULT_FLOOR_GRID: FloorPlanGrid = { rows: 12, columns: 12 };
-export const DEFAULT_ROOM_SIZE = { width: 5, height: 5 };
+export const DEFAULT_ROOM_SIZE = { width: 5, height: 3 };

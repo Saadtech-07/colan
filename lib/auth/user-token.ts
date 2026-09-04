@@ -23,6 +23,7 @@ export async function buildJwtPayloadFromCredentials(
     appRole,
     team,
     companyId: row.companyId,
+    appUserId: row.appUserId,
     isProfileCompleted: row.isProfileCompleted,
   };
 }
@@ -42,6 +43,7 @@ export async function refreshJwtPayload(email: string): Promise<JwtPayload | nul
     appRole,
     team,
     companyId: fresh.companyId || DEMO_COMPANY_ID,
+    appUserId: fresh.appUserId,
     isProfileCompleted: fresh.isProfileCompleted,
   };
 }

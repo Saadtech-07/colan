@@ -8,6 +8,8 @@ export type AuthUser = {
   appRole: AppRole;
   team?: TeamName;
   companyId: string;
+  /** MongoDB appUsers _id — avoids a DB lookup on chat/notification routes. */
+  appUserId?: string;
   isProfileCompleted: boolean;
 };
 
@@ -23,5 +25,6 @@ export type JwtPayload = {
   appRole: AppRole;
   team?: TeamName;
   companyId: string;
+  appUserId?: string;
   isProfileCompleted: boolean;
 };

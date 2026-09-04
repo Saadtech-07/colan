@@ -1,9 +1,9 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { normalizeAppRole } from "@/lib/permissions";
+import { ensureWorkspaceReady } from "@/lib/workspace-ready";
 import {
   COLLECTIONS,
-  ensureColanModelIndexes,
   notificationDocToDTO,
   type AppUserDocument,
   type NotificationDocument,
@@ -17,11 +17,16 @@ export type NotificationActor = {
   name: string;
 };
 
-async function listWorkflowNotificationRecipientUserIds(): Promise<string[]> {
+async function ensureNotificationsDb() {
   const db = await getDb();
-  if (!db) return [];
+  if (!db) return null;
+  await ensureWorkspaceReady(db);
+  return db;
+}
 
-  await ensureColanModelIndexes(db);
+async function listWorkflowNotificationRecipientUserIds(): Promise<string[]> {
+  const db = await ensureNotificationsDb();
+  if (!db) return [];
   const users = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).find({}).toArray();
   const recipientIds = new Set<string>();
 
@@ -62,7 +67,7 @@ export async function listNotificationsForUser(
   limit = 50,
   unreadOnly = false,
 ): Promise<NotificationDTO[]> {
-  const db = await getDb();
+  const db = await ensureNotificationsDb();
   if (!db) {
     return sortNotifications(
       memoryNotifications.filter(
@@ -72,7 +77,6 @@ export async function listNotificationsForUser(
     ).slice(0, limit);
   }
 
-  await ensureColanModelIndexes(db);
   const docs = await db
     .collection<NotificationDocument>(COLLECTIONS.notifications)
     .find({
@@ -92,12 +96,11 @@ export async function listNotificationsForUser(
 }
 
 export async function countNotificationsForUser(recipientUserId: string): Promise<number> {
-  const db = await getDb();
+  const db = await ensureNotificationsDb();
   if (!db) {
     return memoryNotifications.filter((item) => item.recipientUserId === recipientUserId).length;
   }
 
-  await ensureColanModelIndexes(db);
   return db.collection<NotificationDocument>(COLLECTIONS.notifications).countDocuments({
     recipientUserId,
   });
@@ -136,7 +139,7 @@ export async function listAllNotifications(
   limit = 100,
   unreadOnly = false,
 ): Promise<NotificationDTO[]> {
-  const db = await getDb();
+  const db = await ensureNotificationsDb();
   if (!db) {
     const items = memoryNotifications
       .filter((item) => !unreadOnly || !item.readAt)
@@ -146,7 +149,6 @@ export async function listAllNotifications(
     return enrichNotificationsWithRecipients(items);
   }
 
-  await ensureColanModelIndexes(db);
   const docs = await db
     .collection<NotificationDocument>(COLLECTIONS.notifications)
     .find(
@@ -160,24 +162,22 @@ export async function listAllNotifications(
 }
 
 export async function countAllNotifications(): Promise<number> {
-  const db = await getDb();
+  const db = await ensureNotificationsDb();
   if (!db) {
     return memoryNotifications.length;
   }
 
-  await ensureColanModelIndexes(db);
   return db.collection<NotificationDocument>(COLLECTIONS.notifications).countDocuments({});
 }
 
 export async function getUnreadNotificationCount(recipientUserId: string): Promise<number> {
-  const db = await getDb();
+  const db = await ensureNotificationsDb();
   if (!db) {
     return memoryNotifications.filter(
       (item) => item.recipientUserId === recipientUserId && !item.readAt,
     ).length;
   }
 
-  await ensureColanModelIndexes(db);
   return db.collection<NotificationDocument>(COLLECTIONS.notifications).countDocuments({
     recipientUserId,
     $or: [{ readAt: { $exists: false } }, { readAt: null }],
@@ -190,7 +190,7 @@ export async function markNotificationRead(
 ): Promise<NotificationDTO | null> {
   if (!ObjectId.isValid(notificationId)) return null;
 
-  const db = await getDb();
+  const db = await ensureNotificationsDb();
   const readAt = new Date();
 
   if (!db) {
@@ -204,7 +204,6 @@ export async function markNotificationRead(
     return notificationDocToDTO(item);
   }
 
-  await ensureColanModelIndexes(db);
   const result = await db
     .collection<NotificationDocument>(COLLECTIONS.notifications)
     .findOneAndUpdate(
@@ -217,7 +216,7 @@ export async function markNotificationRead(
 }
 
 export async function markAllNotificationsRead(recipientUserId: string): Promise<number> {
-  const db = await getDb();
+  const db = await ensureNotificationsDb();
   const readAt = new Date();
 
   if (!db) {
@@ -231,7 +230,6 @@ export async function markAllNotificationsRead(recipientUserId: string): Promise
     return count;
   }
 
-  await ensureColanModelIndexes(db);
   const result = await db
     .collection<NotificationDocument>(COLLECTIONS.notifications)
     .updateMany(
@@ -248,7 +246,7 @@ export async function markAllNotificationsRead(recipientUserId: string): Promise
 export async function createNotification(
   input: Omit<NotificationDocument, "_id" | "createdAt" | "readAt">,
 ): Promise<NotificationDTO> {
-  const db = await getDb();
+  const db = await ensureNotificationsDb();
   const doc: NotificationDocument = {
     _id: new ObjectId(),
     ...input,
@@ -261,7 +259,6 @@ export async function createNotification(
     return notificationDocToDTO(doc);
   }
 
-  await ensureColanModelIndexes(db);
   await db.collection<NotificationDocument>(COLLECTIONS.notifications).insertOne(doc);
   return notificationDocToDTO(doc);
 }
@@ -271,10 +268,9 @@ export async function findAppUserIdForEmployeeMongoId(
 ): Promise<string | null> {
   if (!ObjectId.isValid(employeeMongoId)) return null;
 
-  const db = await getDb();
+  const db = await ensureNotificationsDb();
   if (!db) return null;
 
-  await ensureColanModelIndexes(db);
   const employeeCol = db.collection(COLLECTIONS.employees);
   const employee = await employeeCol.findOne({ _id: new ObjectId(employeeMongoId) });
   if (!employee) return null;
