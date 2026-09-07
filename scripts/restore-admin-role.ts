@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { getDb } from "../lib/mongodb";
+import { resolveDefaultCompanyId } from "../lib/companies";
 import { ensureAdminRoleFullAccess } from "../lib/roles-data";
 
 function loadEnvLocal() {
@@ -29,7 +30,8 @@ async function main() {
     process.exit(1);
   }
 
-  const restored = await ensureAdminRoleFullAccess(db, { force: true });
+  const companyId = await resolveDefaultCompanyId();
+  const restored = await ensureAdminRoleFullAccess(db, companyId, { force: true });
   console.log(
     restored ? "Admin role restored to full access." : "Admin role already has full access.",
   );

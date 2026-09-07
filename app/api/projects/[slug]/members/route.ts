@@ -1,6 +1,6 @@
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import { getProjectById, getProjectBySlug } from "@/lib/data-service";
 import { filterProjectsForUser, sessionAccessAsync } from "@/lib/session-access";
 import { addProjectMember, listProjectMembers } from "@/lib/people-data";
@@ -21,7 +21,9 @@ const memberCreateSchema = z.object({
 });
 
 export async function GET(_req: Request, { params }: Params) {
-  const access = await sessionAccessAsync(await auth());
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { slug } = await params;
@@ -31,12 +33,14 @@ export async function GET(_req: Request, { params }: Params) {
   const visible = filterProjectsForUser([project], access.role, access.team);
   if (visible.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const members = await listProjectMembers(project.id);
+  const members = await listProjectMembers(ctx.companyId, project.id);
   return NextResponse.json(members ?? [], { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(req: Request, { params }: Params) {
-  const access = await sessionAccessAsync(await auth());
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { slug } = await params;
@@ -63,6 +67,6 @@ export async function POST(req: Request, { params }: Params) {
 
   const updated = await addProjectMember(project.id, parsed.data.memberId);
   if (!updated) return NextResponse.json({ error: "Failed to add member" }, { status: 500 });
-  const members = await listProjectMembers(project.id);
+  const members = await listProjectMembers(ctx.companyId, project.id);
   return NextResponse.json(members ?? [], { status: 201 });
 }

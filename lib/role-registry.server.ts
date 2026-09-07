@@ -2,31 +2,26 @@ import {
   hydrateRoleRegistry,
   resetRoleRegistry,
 } from "@/lib/role-registry";
+import { resolveDefaultCompanyId } from "@/lib/companies";
 import { listWorkspaceRoles } from "@/lib/roles-data";
 import type { WorkspaceRole } from "@/models";
 
-let loadPromise: Promise<WorkspaceRole[]> | null = null;
+const loadPromises = new Map<string, Promise<WorkspaceRole[]>>();
 
 export function invalidateServerRoleCache(): void {
-  loadPromise = null;
+  loadPromises.clear();
   resetRoleRegistry();
 }
 
 /** Server-only: load roles from MongoDB into the in-memory registry. */
-export async function ensureRoleRegistry(): Promise<Map<string, WorkspaceRole>> {
-  let rolesPromise = loadPromise;
+export async function ensureRoleRegistry(
+  companyId?: string,
+): Promise<Map<string, WorkspaceRole>> {
+  const resolvedCompanyId = companyId ?? (await resolveDefaultCompanyId());
+  let rolesPromise = loadPromises.get(resolvedCompanyId);
   if (!rolesPromise) {
-    const { getDb } = await import("@/lib/mongodb");
-    const db = await getDb();
-    if (db) {
-      const { ensureAdminRoleFullAccess } = await import("@/lib/roles-data");
-      const restored = await ensureAdminRoleFullAccess(db);
-      if (restored) {
-        invalidateServerRoleCache();
-      }
-    }
-    rolesPromise = listWorkspaceRoles();
-    loadPromise = rolesPromise;
+    rolesPromise = listWorkspaceRoles(resolvedCompanyId);
+    loadPromises.set(resolvedCompanyId, rolesPromise);
   }
 
   const roles = await rolesPromise;

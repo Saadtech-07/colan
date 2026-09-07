@@ -13,6 +13,8 @@ import {
   seatIdsFromRows,
 } from "@/lib/floor-plan-layouts";
 import { getDb } from "@/lib/mongodb";
+import { deleteFloorPlanDesigns } from "@/lib/floor-plan-layouts.server";
+import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { COLLECTIONS } from "@/models/collections";
 import {
   floorPlanDocToDTO,
@@ -113,13 +115,15 @@ function ensureMemorySeeds() {
   }
 }
 
-async function ensureFloorPlanSeeds(db: Db): Promise<void> {
+export async function ensureFloorPlanSeeds(db: Db, companyId: string): Promise<void> {
   const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
+  const scope = companyScope<FloorPlanDocument>(companyId);
   for (const seed of buildFloorPlanSeeds()) {
-    const existing = await col.findOne({ slug: seed.slug });
+    const existing = await col.findOne({ ...scope, slug: seed.slug });
     if (!existing) {
       await col.insertOne({
         _id: new ObjectId(),
+        companyId: toCompanyObjectId(companyId),
         ...seed,
       });
       continue;
@@ -167,7 +171,7 @@ async function ensureFloorPlanSeeds(db: Db): Promise<void> {
   }
 }
 
-async function withDb(): Promise<Db | null> {
+async function withDb(companyId: string): Promise<Db | null> {
   const db = await getDb();
   if (!db) {
     if (!allowInMemoryFallback()) {
@@ -175,14 +179,16 @@ async function withDb(): Promise<Db | null> {
     }
     return null;
   }
-  await ensureFloorPlanSeeds(db);
+  await ensureFloorPlanSeeds(db, companyId);
   return db;
 }
 
-export async function listFloorPlans(opts?: {
+export async function listFloorPlans(
+  companyId: string,
+  opts?: {
   includeInactive?: boolean;
 }): Promise<FloorPlanSummary[]> {
-  const db = await withDb();
+  const db = await withDb(companyId);
   if (!db) {
     ensureMemorySeeds();
     return memoryFloorPlans
@@ -199,7 +205,9 @@ export async function listFloorPlans(opts?: {
       }));
   }
 
-  const filter = opts?.includeInactive ? {} : { isActive: true };
+  const filter = opts?.includeInactive
+    ? companyScope<FloorPlanDocument>(companyId)
+    : { ...companyScope<FloorPlanDocument>(companyId), isActive: true };
   const rows = await db
     .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
     .find(filter)
@@ -208,10 +216,14 @@ export async function listFloorPlans(opts?: {
   return rows.map(floorPlanDocToSummary);
 }
 
-export async function getFloorPlanBySlug(slug: string): Promise<FloorPlanDTO | null> {
+export async function getFloorPlanBySlug(
+  companyId: string,
+  slug: string,
+): Promise<FloorPlanDTO | null> {
   const normalized = slug.trim().toLowerCase();
-  const db = await withDb();
+  const db = await withDb(companyId);
   const catalogRows = catalogRowsForSlug(normalized);
+  const scope = companyScope<FloorPlanDocument>(companyId);
 
   if (!db) {
     ensureMemorySeeds();
@@ -227,7 +239,7 @@ export async function getFloorPlanBySlug(slug: string): Promise<FloorPlanDTO | n
 
   const doc = await db
     .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
-    .findOne({ slug: normalized });
+    .findOne({ ...scope, slug: normalized });
   if (!doc) return null;
   const plan = floorPlanDocToDTO(doc);
   const patch: Partial<FloorPlanDocument> = { updatedAt: new Date() };
@@ -257,7 +269,10 @@ export type CreateFloorPlanInput = {
   sortOrder?: number;
 };
 
-export async function createFloorPlan(input: CreateFloorPlanInput): Promise<FloorPlanDTO> {
+export async function createFloorPlan(
+  companyId: string,
+  input: CreateFloorPlanInput,
+): Promise<FloorPlanDTO> {
   const slug = input.slug.trim().toLowerCase();
   if (!slug) throw new Error("slug is required");
   if (!input.name.trim()) throw new Error("name is required");
@@ -280,7 +295,7 @@ export async function createFloorPlan(input: CreateFloorPlanInput): Promise<Floo
     source: "manual",
   };
 
-  const db = await withDb();
+  const db = await withDb(companyId);
   if (!db) {
     ensureMemorySeeds();
     if (memoryFloorPlans.some((p) => p.slug === slug)) {
@@ -291,7 +306,8 @@ export async function createFloorPlan(input: CreateFloorPlanInput): Promise<Floo
   }
 
   const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
-  const existing = await col.findOne({ slug });
+  const scope = companyScope<FloorPlanDocument>(companyId);
+  const existing = await col.findOne({ ...scope, slug });
   if (existing) {
     // Soft-deleted leftovers block recreating the same slug — remove them first.
     if (existing.isActive === false) {
@@ -304,6 +320,7 @@ export async function createFloorPlan(input: CreateFloorPlanInput): Promise<Floo
   const now = new Date();
   await col.insertOne({
     _id: new ObjectId(),
+    companyId: toCompanyObjectId(companyId),
     ...payload,
     createdAt: now,
     updatedAt: now,
@@ -316,11 +333,13 @@ export type UpdateFloorPlanInput = Partial<Omit<CreateFloorPlanInput, "slug">> &
 };
 
 export async function updateFloorPlan(
+  companyId: string,
   slug: string,
   patch: UpdateFloorPlanInput,
 ): Promise<FloorPlanDTO> {
   const normalized = slug.trim().toLowerCase();
-  const db = await withDb();
+  const db = await withDb(companyId);
+  const scope = companyScope<FloorPlanDocument>(companyId);
 
   const applyPatch = (current: FloorPlanDTO): FloorPlanDTO => {
     const rows = patch.rows ?? current.rows;
@@ -349,12 +368,12 @@ export async function updateFloorPlan(
   }
 
   const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
-  const existing = await col.findOne({ slug: normalized });
+  const existing = await col.findOne({ ...scope, slug: normalized });
   if (!existing) throw new Error("Floor plan not found");
 
   const next = applyPatch(floorPlanDocToDTO(existing));
   await col.updateOne(
-    { slug: normalized },
+    { ...scope, slug: normalized },
     {
       $set: {
         name: next.name,
@@ -373,11 +392,12 @@ export async function updateFloorPlan(
   return next;
 }
 
-export async function deleteFloorPlan(slug: string): Promise<FloorPlanDTO> {
+export async function deleteFloorPlan(companyId: string, slug: string): Promise<FloorPlanDTO> {
   const normalized = slug.trim().toLowerCase();
   if (!normalized) throw new Error("slug is required");
 
-  const db = await withDb();
+  const db = await withDb(companyId);
+  const scope = companyScope<FloorPlanDocument>(companyId);
   if (!db) {
     ensureMemorySeeds();
     const idx = memoryFloorPlans.findIndex((p) => p.slug === normalized);
@@ -387,19 +407,21 @@ export async function deleteFloorPlan(slug: string): Promise<FloorPlanDTO> {
   }
 
   const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
-  const existing = await col.findOne({ slug: normalized });
+  const existing = await col.findOne({ ...scope, slug: normalized });
   if (!existing) throw new Error("Floor plan not found");
 
   const dto = floorPlanDocToDTO(existing);
-  const result = await col.deleteOne({ slug: normalized });
+  const result = await col.deleteOne({ ...scope, slug: normalized });
   if (result.deletedCount < 1) {
     throw new Error("Floor plan not found");
   }
+  await deleteFloorPlanDesigns(companyId, normalized);
   return dto;
 }
 
 /** Swap two cabin places on a floor plan (labels + ids move; slot sizes stay). */
 export async function swapFloorPlanCabins(
+  companyId: string,
   slug: string,
   cabinIdA: string,
   cabinIdB: string,
@@ -409,12 +431,12 @@ export async function swapFloorPlanCabins(
   if (!a || !b) throw new Error("Both cabin ids are required");
   if (a === b) throw new Error("Choose two different cabins to swap");
 
-  const plan = await getFloorPlanBySlug(slug);
+  const plan = await getFloorPlanBySlug(companyId, slug);
   if (!plan) throw new Error("Floor plan not found");
   if (!plan.cabins) throw new Error("This floor plan has no cabins");
 
   const nextCabins = swapCabinIdentitiesInLayout(plan.cabins, a, b);
-  return updateFloorPlan(slug, { cabins: nextCabins });
+  return updateFloorPlan(companyId, slug, { cabins: nextCabins });
 }
 
 export type ImportFloorPlanRow = CreateFloorPlanInput & {
@@ -423,6 +445,7 @@ export type ImportFloorPlanRow = CreateFloorPlanInput & {
 
 /** Upsert plans from JSON import (Excel → JSON pipeline). */
 export async function importFloorPlans(
+  companyId: string,
   plans: ImportFloorPlanRow[],
 ): Promise<{ created: string[]; updated: string[] }> {
   const created: string[] = [];
@@ -430,13 +453,13 @@ export async function importFloorPlans(
 
   for (const plan of plans) {
     const slug = plan.slug.trim().toLowerCase();
-    const existing = await getFloorPlanBySlug(slug);
+    const existing = await getFloorPlanBySlug(companyId, slug);
     if (!existing) {
-      await createFloorPlan(plan);
+      await createFloorPlan(companyId, plan);
       created.push(slug);
       continue;
     }
-    await updateFloorPlan(slug, {
+    await updateFloorPlan(companyId, slug, {
       name: plan.name,
       city: plan.city,
       building: plan.building,

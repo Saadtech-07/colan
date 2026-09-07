@@ -48,7 +48,8 @@ import { parseApiError, useAppState } from "@/providers/app-state";
 import { useGlobalLoading } from "@/providers/global-loading";
 import { consumeCreateAccountToast } from "@/lib/create-app-user-client";
 import { consumeEditAccountSuccess } from "@/lib/edit-app-user-client";
-import { fetchAppUsersList, getCachedAppUsers } from "@/lib/app-users-client";
+import { fetchAppUsersList, getCachedAppUsers, clearCachedAppUsers } from "@/lib/app-users-client";
+import { readAppUsersListState, writeAppUsersListState, buildAppUsersListHref } from "@/lib/app-users-list-state";
 import { resolveAppUserFromQuery } from "@/lib/app-user-navigation";
 import type { AppRole } from "@/types";
 import type { AppUserPublicDTO } from "@/models/app-user.model";
@@ -82,6 +83,7 @@ export default function AppUsersPage() {
   const { isAdmin, user, refreshData, workspaceRoles, employees, dataLoading } =
     useAppState();
   const { withLoading, isLoadingKey } = useGlobalLoading();
+  const initialListState = React.useRef(readAppUsersListState(searchParams));
 
   const [users, setUsers] = React.useState<AppUserPublicDTO[]>(
     () => getCachedAppUsers() ?? [],
@@ -91,9 +93,15 @@ export default function AppUsersPage() {
   const [success, setSuccess] = React.useState<string | null>(null);
   const [toast, setToast] = React.useState<CreateAccountToast | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<ConfirmDeleteTarget | null>(null);
-  const [searchQuery, setSearchQuery] = React.useState("");
-  const [roleFilter, setRoleFilter] = React.useState("all");
-  const [teamFilter, setTeamFilter] = React.useState("all");
+  const [searchQuery, setSearchQuery] = React.useState(
+    () => initialListState.current.searchQuery,
+  );
+  const [roleFilter, setRoleFilter] = React.useState(
+    () => initialListState.current.roleFilter,
+  );
+  const [teamFilter, setTeamFilter] = React.useState(
+    () => initialListState.current.teamFilter,
+  );
 
   const openedFromQueryRef = React.useRef(false);
 
@@ -208,7 +216,23 @@ export default function AppUsersPage() {
     searchQuery,
     roleFilter,
     teamFilter,
-  ]);
+  ], { initialPage: initialListState.current.page });
+
+  React.useEffect(() => {
+    writeAppUsersListState({ page, searchQuery, roleFilter, teamFilter });
+  }, [page, roleFilter, searchQuery, teamFilter]);
+
+  const handlePageChange = React.useCallback(
+    (nextPage: number) => {
+      setPage(nextPage);
+      const nextState = { page: nextPage, searchQuery, roleFilter, teamFilter };
+      writeAppUsersListState(nextState);
+      if (!pathname.includes("/edit")) {
+        router.replace(buildAppUsersListHref(nextState), { scroll: false });
+      }
+    },
+    [pathname, roleFilter, router, searchQuery, setPage, teamFilter],
+  );
 
   const getRoleMeta = React.useCallback(
     (roleKey: AppRole) => workspaceRoles.find((role) => role.key === roleKey),
@@ -283,6 +307,8 @@ export default function AppUsersPage() {
         if (!res.ok) {
           throw new Error(await parseApiError(res));
         }
+        setUsers((prev) => prev.filter((record) => record.id !== id));
+        clearCachedAppUsers();
         await fetchUsers({ silent: true, force: true });
         await refreshData();
         showSuccessMessage("Account removed.");
@@ -295,9 +321,11 @@ export default function AppUsersPage() {
 
   const openEdit = React.useCallback(
     (userRecord: AppUserPublicDTO) => {
-      router.push(`/app-users/${userRecord.id}/edit`);
+      const nextState = { page, searchQuery, roleFilter, teamFilter };
+      writeAppUsersListState(nextState);
+      router.push(buildAppUsersListHref(nextState, `/app-users/${userRecord.id}/edit`));
     },
-    [router],
+    [page, roleFilter, router, searchQuery, teamFilter],
   );
 
   React.useEffect(() => {
@@ -604,7 +632,7 @@ export default function AppUsersPage() {
                 totalItems={paginatedTotal}
                 rangeStart={rangeStart}
                 rangeEnd={rangeEnd}
-                onPageChange={setPage}
+                onPageChange={handlePageChange}
               />
             </div>
             )

@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CreateAppUserSheet } from "@/components/features/create-app-user-sheet";
 import { EditAppUserSheet } from "@/components/features/edit-app-user-sheet";
+import { appUsersListHref } from "@/lib/app-users-list-state";
 import { useAppState } from "@/providers/app-state";
 
 const EDIT_APP_USER_PATH = /^\/app-users\/([^/]+)\/edit$/;
@@ -11,6 +12,7 @@ const EDIT_APP_USER_PATH = /^\/app-users\/([^/]+)\/edit$/;
 export default function AppUsersLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { isAdmin } = useAppState();
   const isCreateRoute = pathname === "/app-users/new";
   const editUserId = pathname.match(EDIT_APP_USER_PATH)?.[1] ?? null;
@@ -22,8 +24,8 @@ export default function AppUsersLayout({ children }: { children: React.ReactNode
   }, [editUserId, isAdmin, isCreateRoute, router]);
 
   const closePanel = React.useCallback(() => {
-    router.push("/app-users");
-  }, [router]);
+    router.replace(appUsersListHref(undefined, searchParams));
+  }, [router, searchParams]);
 
   const handleCreateOpenChange = React.useCallback(
     (open: boolean) => {

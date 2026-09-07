@@ -10,6 +10,7 @@ export const APP_USER_COLLECTION = COLLECTIONS.appUsers;
  */
 export type AppUserDocument = {
   _id: ObjectId;
+  companyId: ObjectId;
   email: string;
   passwordHash: string;
   name: string;

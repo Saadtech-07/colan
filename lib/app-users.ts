@@ -17,9 +17,11 @@ import {
   type TeamAssignableAccount,
 } from "@/lib/team-assignees";
 import type { ProjectManagerSummary } from "@/types";
-import { addressesFromDirectory, directoryPatchFromAddresses } from "@/lib/employee-address";
+import { addressesFromDirectory, directoryPatchFromAddresses, employeeDetailsFieldsFromDirectory, LEGACY_EMPLOYEE_DETAILS_UNSET, LEGACY_EMPLOYEE_DIRECTORY_UNSET } from "@/lib/employee-address";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { getRoleFromRegistry } from "@/lib/role-registry";
+import { resolveDefaultCompanyId } from "@/lib/companies";
+import { DEMO_COMPANY_ID, toCompanyObjectId } from "@/lib/tenant-scope";
 import { isValidSeatId } from "@/lib/seating-layout";
 import {
   roleEligibleForOfficeSeat,
@@ -33,6 +35,7 @@ export type VerifiedAppUser = {
   team?: TeamName;
   imageUrl: string;
   isProfileCompleted: boolean;
+  companyId: string;
 };
 
 type SeedUser = {
@@ -126,9 +129,13 @@ async function upsertSeedUser(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
   u: SeedUser,
   rounds: number,
+  companyId: import("mongodb").ObjectId,
 ) {
   const existing = await col.findOne({ email: u.email });
   if (existing) {
+    if (!existing.companyId) {
+      await col.updateOne({ _id: existing._id }, { $set: { companyId, updatedAt: new Date() } });
+    }
     if (!existing.employeeId?.trim()) {
       await col.updateOne(
         { _id: existing._id },
@@ -141,6 +148,7 @@ async function upsertSeedUser(
 
   await col.insertOne({
     _id: new ObjectId(),
+    companyId,
     email: u.email,
     passwordHash: await bcrypt.hash(u.password, rounds),
     name: u.name,
@@ -161,9 +169,11 @@ export async function ensureAppUsersSeed(
 ) {
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   await col.createIndex({ email: 1 }, { unique: true });
+  const { ensureDefaultCompany } = await import("@/lib/tenant-migration");
+  const companyId = await ensureDefaultCompany(db);
   const rounds = 10;
   for (const u of SEED_USERS) {
-    await upsertSeedUser(col, db, u, rounds);
+    await upsertSeedUser(col, db, u, rounds, companyId);
   }
   await col.updateMany(
     { isProfileCompleted: { $exists: false } },
@@ -242,6 +252,7 @@ export type AppUserSessionRefresh = {
   team?: TeamName;
   imageUrl: string;
   isProfileCompleted: boolean;
+  companyId: string;
 };
 
 export type ProfileSetupUpdateInput = {
@@ -254,12 +265,15 @@ export type ProfileSetupUpdateInput = {
   newPassword?: string;
 };
 
-export async function listAppUsers(): Promise<ReturnType<typeof appUserDocToPublic>[]> {
+export async function listAppUsers(companyId: string): Promise<ReturnType<typeof appUserDocToPublic>[]> {
   const db = await getDb();
   if (!db) throw new Error("MongoDB is not configured.");
   await ensureAppUsersSeed(db);
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
-  const docs = await col.find({}).sort({ email: 1 }).toArray();
+  const docs = await col
+    .find({ companyId: toCompanyObjectId(companyId) })
+    .sort({ email: 1 })
+    .toArray();
   const users = docs.map(appUserDocToPublic);
   return enrichAppUsersWithEmployeeProfiles(users, db);
 }
@@ -307,10 +321,7 @@ async function enrichAppUsersWithEmployeeProfiles(
       workEmail: directory.workEmail ?? user.email,
       personalEmail: directory.personalEmail ?? "",
       phone: directory.phone ?? "",
-      location: directory.location ?? "",
-      fullAddress: directory.fullAddress ?? directory.location ?? "",
-      currentAddress: directory.currentAddress ?? "",
-      permanentAddress: directory.permanentAddress ?? "",
+      ...addressesFromDirectory(directory),
       joinedDate: directory.joinedDate ?? "",
       bayNumber: typeof employee.bayNumber === "string" ? employee.bayNumber : "",
       gender:
@@ -333,9 +344,9 @@ export async function getAppUserPublicById(
   return doc ? appUserDocToPublic(doc) : null;
 }
 
-export async function listProjectManagerAccounts(): Promise<ProjectManagerSummary[]> {
-  await ensureRoleRegistry();
-  const users = await listAppUsers();
+export async function listProjectManagerAccounts(companyId: string): Promise<ProjectManagerSummary[]> {
+  await ensureRoleRegistry(companyId);
+  const users = await listAppUsers(companyId);
   return users
     .filter((user) => isProjectManagerAppRole(user.appRole))
     .map((user) => ({
@@ -359,15 +370,16 @@ function toTeamAssignableAccount(
   };
 }
 
-export async function listTeamAssignableAccounts(): Promise<TeamAssignableAccount[]> {
-  await ensureRoleRegistry();
-  const users = await listAppUsers().then((rows) => rows.map(toTeamAssignableAccount));
+export async function listTeamAssignableAccounts(companyId: string): Promise<TeamAssignableAccount[]> {
+  await ensureRoleRegistry(companyId);
+  const users = await listAppUsers(companyId).then((rows) => rows.map(toTeamAssignableAccount));
   return users.filter(
     (user) => isTeamLeadAppRole(user.appRole) || isTeamManagerAppRole(user.appRole),
   );
 }
 
 export async function createAppUser(
+  companyId: string,
   input: AppUserCreateInput,
 ): Promise<ReturnType<typeof appUserDocToPublic>> {
   const db = await getDb();
@@ -386,18 +398,22 @@ export async function createAppUser(
   if (existing) throw new Error("An account with this email already exists.");
 
   const employeeCol = db.collection(COLLECTIONS.employees);
+  const scope = { companyId: toCompanyObjectId(companyId) };
 
   const userIdPattern = new RegExp(
     `^${userId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
     "i",
   );
-  const appUserIdTaken = await col.findOne({ employeeId: { $regex: userIdPattern } });
+  const appUserIdTaken = await col.findOne({ ...scope, employeeId: { $regex: userIdPattern } });
   if (appUserIdTaken) {
     throw new Error("An account with this user ID already exists.");
   }
 
   if (needsEmployeeIdentity) {
-    const employeeIdTaken = await employeeCol.findOne({ employeeId: { $regex: userIdPattern } });
+    const employeeIdTaken = await employeeCol.findOne({
+      ...scope,
+      employeeId: { $regex: userIdPattern },
+    });
     if (employeeIdTaken) {
       throw new Error("An employee with this user ID already exists.");
     }
@@ -411,7 +427,7 @@ export async function createAppUser(
         `Invalid seat "${bayNumber}". Choose a seat from the office floor plan (e.g. A1, D3).`,
       );
     }
-    const seatTaken = await employeeCol.findOne({ bayNumber });
+    const seatTaken = await employeeCol.findOne({ ...scope, bayNumber });
     if (seatTaken) {
       throw new Error(`Seat ${bayNumber} is already assigned to another employee.`);
     }
@@ -443,6 +459,7 @@ export async function createAppUser(
 
   const doc: AppUserDocument = {
     _id: new ObjectId(),
+    companyId: toCompanyObjectId(companyId),
     email: loginEmail,
     passwordHash,
     name: input.name.trim(),
@@ -461,7 +478,7 @@ export async function createAppUser(
     return appUserDocToPublic(doc);
   }
 
-  const roleRegistry = await ensureRoleRegistry();
+  const roleRegistry = await ensureRoleRegistry(companyId);
   const employeeRole =
     roleRegistry.get(normalizeAppRole(input.appRole))?.name ?? "Employee";
 
@@ -469,6 +486,7 @@ export async function createAppUser(
   const nextGender = input.gender ?? "male";
   await employeeCol.insertOne({
     _id: employeeObjectId,
+    companyId: toCompanyObjectId(companyId),
     employeeId: userId,
     email: loginEmail,
     name: input.name.trim(),
@@ -488,17 +506,11 @@ export async function createAppUser(
     {
       $set: {
         employeeRef: employeeObjectId,
-        workEmail: directory.workEmail,
-        personalEmail: directory.personalEmail,
-        phone: directory.phone || undefined,
-        location: directory.location || undefined,
-        fullAddress: directory.fullAddress || undefined,
-        currentAddress: directory.currentAddress || undefined,
-        permanentAddress: directory.permanentAddress || undefined,
-        joinedDate: directory.joinedDate || undefined,
+        ...employeeDetailsFieldsFromDirectory(directory),
         notes: directory.notes || undefined,
         updatedAt: new Date(),
       },
+      $unset: LEGACY_EMPLOYEE_DETAILS_UNSET,
       $setOnInsert: {
         _id: new ObjectId(),
         createdAt: new Date(),
@@ -660,8 +672,6 @@ export async function updateAppUser(
     "directory.workEmail": nextWorkEmail,
     "directory.personalEmail": nextPersonalEmail,
     "directory.phone": nextPhone,
-    "directory.location": nextDirectory.location ?? "",
-    "directory.fullAddress": nextDirectory.fullAddress ?? "",
     "directory.currentAddress": nextDirectory.currentAddress ?? "",
     "directory.permanentAddress": nextDirectory.permanentAddress ?? "",
     "directory.joinedDate": nextJoinedDate,
@@ -670,6 +680,7 @@ export async function updateAppUser(
 
   const employeeUpdate = await employeeCol.updateOne(employeeFilter, {
     $set: employeeSet,
+    $unset: LEGACY_EMPLOYEE_DIRECTORY_UNSET,
   });
 
   let employeeRef = existingEmployee?._id;
@@ -691,8 +702,6 @@ export async function updateAppUser(
         workEmail: nextWorkEmail,
         personalEmail: nextPersonalEmail || undefined,
         phone: nextPhone,
-        location: nextDirectory.location ?? "",
-        fullAddress: nextDirectory.fullAddress ?? "",
         currentAddress: nextDirectory.currentAddress ?? "",
         permanentAddress: nextDirectory.permanentAddress ?? "",
         joinedDate: nextJoinedDate,
@@ -713,16 +722,10 @@ export async function updateAppUser(
       {
         $set: {
           employeeRef,
-          workEmail: nextWorkEmail,
-          personalEmail: nextPersonalEmail || undefined,
-          phone: nextPhone || undefined,
-          location: nextDirectory.location || undefined,
-          fullAddress: nextDirectory.fullAddress || undefined,
-          currentAddress: nextDirectory.currentAddress || undefined,
-          permanentAddress: nextDirectory.permanentAddress || undefined,
-          joinedDate: nextJoinedDate || undefined,
+          ...employeeDetailsFieldsFromDirectory(nextDirectory),
           updatedAt: new Date(),
         },
+        $unset: LEGACY_EMPLOYEE_DETAILS_UNSET,
         $setOnInsert: {
           _id: new ObjectId(),
           createdAt: new Date(),
@@ -775,25 +778,13 @@ export async function deleteAppUser(id: string) {
     throw new Error("Invalid user id.");
   }
 
-  const col = db.collection<AppUserDocument>(
-    COLLECTIONS.appUsers
-  );
+  const userObjectId = new ObjectId(id);
+  const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
 
-  // Find user before deleting
-  const user = await col.findOne({
-    _id: new ObjectId(id),
-  });
-
+  const user = await col.findOne({ _id: userObjectId });
   if (!user) {
     throw new Error("User not found.");
   }
-
-  // Delete from app-users
-  await col.deleteOne({
-    _id: new ObjectId(id),
-  });
-
-  await suppressSeedUser(db, user.email);
 
   const employeeCol = db.collection(COLLECTIONS.employees);
   const detailsCol = db.collection(COLLECTIONS.employeeDetails);
@@ -817,13 +808,57 @@ export async function deleteAppUser(id: string) {
 
   const linkedEmployees = await employeeCol
     .find({ $or: employeeFilters })
-    .project({ _id: 1 })
     .toArray();
 
-  if (linkedEmployees.length > 0) {
-    const refs = linkedEmployees.map((row) => row._id);
-    await detailsCol.deleteMany({ employeeRef: { $in: refs } });
-    await employeeCol.deleteMany({ _id: { $in: refs } });
+  const employeeIds = linkedEmployees
+    .map((row) => row._id.toHexString())
+    .filter(Boolean);
+  const employeeRefs = linkedEmployees.map((row) => row._id);
+
+  const conversationCol = db.collection(COLLECTIONS.conversations);
+  const messageCol = db.collection(COLLECTIONS.messages);
+  const notificationCol = db.collection(COLLECTIONS.notifications);
+
+  const participantKeys = [userObjectId, id];
+  const linkedConversations = await conversationCol
+    .find({
+      $or: [
+        { "participants.0": { $in: participantKeys } },
+        { "participants.1": { $in: participantKeys } },
+      ],
+    })
+    .project({ _id: 1 })
+    .toArray();
+  const conversationIds = linkedConversations.map((row) => row._id);
+
+  if (conversationIds.length > 0) {
+    await messageCol.deleteMany({ conversationId: { $in: conversationIds } });
+    await conversationCol.deleteMany({ _id: { $in: conversationIds } });
+  }
+
+  await messageCol.deleteMany({
+    $or: [{ senderId: userObjectId }, { receiverId: userObjectId }],
+  });
+  await notificationCol.deleteMany({
+    $or: [{ recipientUserId: id }, { actorUserId: id }],
+  });
+
+  for (const employeeId of employeeIds) {
+    await db.collection(COLLECTIONS.projects).updateMany(
+      { memberIds: employeeId },
+      {
+        $pull: { memberIds: employeeId },
+        $set: { updatedAt: new Date() },
+      } as Record<string, unknown>,
+    );
+  }
+
+  await col.deleteOne({ _id: userObjectId });
+  await suppressSeedUser(db, user.email);
+
+  if (employeeRefs.length > 0) {
+    await detailsCol.deleteMany({ employeeRef: { $in: employeeRefs } });
+    await employeeCol.deleteMany({ _id: { $in: employeeRefs } });
   }
 
   return user;
@@ -847,6 +882,7 @@ export async function verifyAppUserCredentials(
       team: u.team,
       imageUrl: u.imageUrl,
       isProfileCompleted: normalizeProfileCompleted(u.isProfileCompleted),
+      companyId: DEMO_COMPANY_ID,
     };
   }
 
@@ -883,6 +919,7 @@ export async function verifyAppUserCredentials(
     team,
     imageUrl: doc.imageUrl,
     isProfileCompleted: normalizeProfileCompleted(doc.isProfileCompleted),
+    companyId: doc.companyId?.toHexString() ?? (await resolveDefaultCompanyId()),
   };
 }
 
@@ -902,6 +939,7 @@ export async function getAppUserSessionRefresh(
       team: user.team,
       imageUrl: user.imageUrl,
       isProfileCompleted: normalizeProfileCompleted(user.isProfileCompleted),
+      companyId: DEMO_COMPANY_ID,
     };
   }
 
@@ -919,6 +957,7 @@ export async function getAppUserSessionRefresh(
     team,
     imageUrl: doc.imageUrl,
     isProfileCompleted: normalizeProfileCompleted(doc.isProfileCompleted),
+    companyId: doc.companyId?.toHexString() ?? (await resolveDefaultCompanyId()),
   };
 }
 
@@ -997,6 +1036,7 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
   const embeddedDirectory = employee.directory as
     | {
         phone?: string;
+        personalEmail?: string;
         location?: string;
         workEmail?: string;
         joinedDate?: string;
@@ -1011,23 +1051,24 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
   });
 
   const mergedDirectory = {
-    location: details?.location ?? embeddedDirectory?.location,
-    fullAddress: details?.fullAddress ?? embeddedDirectory?.fullAddress,
-    currentAddress: details?.currentAddress ?? embeddedDirectory?.currentAddress,
-    permanentAddress: details?.permanentAddress ?? embeddedDirectory?.permanentAddress,
+    personalEmail: details?.personalEmail ?? embeddedDirectory?.personalEmail,
     workEmail: embeddedDirectory?.workEmail ?? details?.workEmail,
     phone: details?.phone ?? embeddedDirectory?.phone,
+    currentAddress: details?.currentAddress ?? embeddedDirectory?.currentAddress,
+    permanentAddress: details?.permanentAddress ?? embeddedDirectory?.permanentAddress,
+    location: details?.location ?? embeddedDirectory?.location,
+    fullAddress: details?.fullAddress ?? embeddedDirectory?.fullAddress,
     joinedDate: details?.joinedDate ?? embeddedDirectory?.joinedDate,
   };
 
   profile.workEmail = mergedDirectory.workEmail?.trim() || doc.email;
+  profile.personalEmail = mergedDirectory.personalEmail?.trim() || undefined;
   profile.phone = mergedDirectory.phone?.trim() || undefined;
   profile.joinedDate = mergedDirectory.joinedDate?.trim() || undefined;
 
   const { currentAddress, permanentAddress } = addressesFromDirectory(mergedDirectory);
   profile.currentAddress = currentAddress || undefined;
   profile.permanentAddress = permanentAddress || undefined;
-  profile.location = currentAddress || mergedDirectory.location?.trim() || undefined;
 
   const embeddedResume = embeddedDirectory as
     | {

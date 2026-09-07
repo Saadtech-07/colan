@@ -21,7 +21,23 @@ function sleep(ms: number) {
 function isMissingManifestError(err: unknown) {
   if (!(err instanceof Error)) return false;
   const errno = err as NodeJS.ErrnoException;
-  return errno.code === "ENOENT" && errno.path?.includes("required-server-files.json");
+  const message = err.message.replace(/\\/g, "/");
+  const normalizedPath = errno.path?.replace(/\\/g, "/") ?? "";
+
+  if (
+    message.includes("required-server-files.json") ||
+    message.includes("-manifest.json")
+  ) {
+    return true;
+  }
+
+  if (errno.code !== "ENOENT" || !normalizedPath) return false;
+
+  return (
+    normalizedPath.includes("/.next/") &&
+    (normalizedPath.includes("-manifest.json") ||
+      normalizedPath.endsWith("required-server-files.json"))
+  );
 }
 
 /** Dev cache under `.next/dev` must not be reused when incomplete or from another bundler. */
@@ -34,8 +50,8 @@ function resetDevOutput() {
   if (!fs.existsSync(devDir)) return;
 
   const hasDevManifest =
-    fs.existsSync(path.join(devDir, "routes-manifest.json")) ||
-    fs.existsSync(path.join(devDir, "required-server-files.json"));
+    fs.existsSync(path.join(devDir, "routes-manifest.json")) &&
+    fs.existsSync(path.join(devDir, "server", "app-paths-manifest.json"));
 
   if (hasDevManifest) {
     for (const folder of ["cache"]) {
@@ -64,7 +80,11 @@ async function warmUpDevServer(baseUrl: string) {
           signal: AbortSignal.timeout(120_000),
         });
 
-        if (response.status < 500) {
+        if (response.status < 500 || response.status === 503) {
+          if (response.status === 503) {
+            await sleep(500);
+            continue;
+          }
           warmed = true;
           break;
         }

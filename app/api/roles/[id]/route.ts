@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import {
   canAccessModuleAction,
   canManageModule,
@@ -17,12 +17,10 @@ export const dynamic = "force-dynamic";
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(req: Request, { params }: Params) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (
     !canManageModule(roleKey, "roles") &&
     !canAccessModuleAction(roleKey, "roles", "editRoles") &&
@@ -48,7 +46,7 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   try {
-    const updated = await updateWorkspaceRole(id, {
+    const updated = await updateWorkspaceRole(ctx.companyId, id, {
       ...parsed.data,
       permissions: parsed.data.permissions
         ? parseRolePermissionsInput(parsed.data.permissions)
@@ -65,12 +63,10 @@ export async function PATCH(req: Request, { params }: Params) {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (
     !canManageModule(roleKey, "roles") &&
     !canAccessModuleAction(roleKey, "roles", "deleteRoles")
@@ -80,7 +76,7 @@ export async function DELETE(_req: Request, { params }: Params) {
 
   const { id } = await params;
   try {
-    const ok = await deleteWorkspaceRole(id);
+    const ok = await deleteWorkspaceRole(ctx.companyId, id);
     if (!ok) {
       return NextResponse.json({ error: "Role not found" }, { status: 404 });
     }

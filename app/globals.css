@@ -119,6 +119,13 @@
     overflow-x: clip;
   }
 
+  button:not(:disabled),
+  input[type="button"]:not(:disabled),
+  input[type="submit"]:not(:disabled),
+  input[type="reset"]:not(:disabled) {
+    cursor: pointer;
+  }
+
   @media (prefers-reduced-motion: no-preference) {
     html,
     body {

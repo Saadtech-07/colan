@@ -1,4 +1,5 @@
 import { ObjectId } from "mongodb";
+import { resolveDefaultCompanyId } from "@/lib/companies";
 import { listEmployees } from "@/lib/data-service";
 import { getChatActorByEmail } from "@/lib/chat-data";
 import { getRoleFromRegistry } from "@/lib/role-registry";
@@ -56,7 +57,8 @@ export async function resolveTaskActor(email: string): Promise<TaskActor | null>
   if (!normalized) return null;
 
   const chatActor = await getChatActorByEmail(normalized);
-  const employees = await listEmployees();
+  const companyId = await resolveDefaultCompanyId();
+  const employees = await listEmployees({ companyId });
   const employee = employees.find((row) => {
     const workEmail = row.directory?.workEmail?.trim().toLowerCase();
     const loginEmail = row.email?.trim().toLowerCase();

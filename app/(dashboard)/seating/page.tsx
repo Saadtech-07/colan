@@ -19,6 +19,7 @@ import {
   SeatingFloorPlan,
   type SeatingFloorPlanHandle,
 } from "@/components/seating/seating-floor-plan";
+import { BuilderFloorPlanView } from "@/components/floor-plan-builder/builder-floor-plan-view";
 import {
   SeatingFloorPlanFullscreen,
   type SeatingFullscreenBlock,
@@ -58,6 +59,8 @@ import {
   fetchFloorPlanSummaries,
   invalidateFloorPlanClientCache,
 } from "@/lib/floor-plans-client";
+import { fetchFloorPlanPublishedLayout } from "@/lib/floor-plan-layouts-client";
+import type { FloorPlanLayoutState } from "@/lib/floor-plan-builder/types";
 import type { FloorPlanDTO, FloorPlanSummary } from "@/models/floor-plan.model";
 import { applyOccupancySwaps } from "@/lib/seating-layout-prompt";
 import {
@@ -181,6 +184,8 @@ export default function SeatingPage() {
   const [listMode, setListMode] = React.useState(true);
   const [officePlans, setOfficePlans] = React.useState<FloorPlanSummary[]>([]);
   const [plansLoading, setPlansLoading] = React.useState(true);
+  const [builderLayout, setBuilderLayout] = React.useState<FloorPlanLayoutState | null>(null);
+  const [builderLayoutLoading, setBuilderLayoutLoading] = React.useState(false);
 
   React.useEffect(() => {
     try {
@@ -254,6 +259,7 @@ export default function SeatingPage() {
   const activePlan = fetchedActivePlan
     ? (planOverrides[fetchedActivePlan.slug] ?? fetchedActivePlan)
     : null;
+  const isBuilderFloor = activePlan?.migrationStatus === "builder";
   const companionPlan = fetchedCompanionPlan
     ? (planOverrides[fetchedCompanionPlan.slug] ?? fetchedCompanionPlan)
     : null;
@@ -398,6 +404,40 @@ export default function SeatingPage() {
       cancelled = true;
     };
   }, [listMode, officeSlug]);
+
+  React.useEffect(() => {
+    if (listMode || !isBuilderFloor) {
+      setBuilderLayout(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setBuilderLayoutLoading(true);
+      try {
+        const layout = await fetchFloorPlanPublishedLayout(officeSlug);
+        if (cancelled) return;
+        if (layout) {
+          setBuilderLayout({
+            name: layout.name,
+            status: layout.status,
+            version: layout.version,
+            grid: layout.grid,
+            elements: layout.elements,
+            floorPlanSlug: layout.floorPlanSlug,
+          });
+        } else {
+          setBuilderLayout(null);
+        }
+      } catch {
+        if (!cancelled) setBuilderLayout(null);
+      } finally {
+        if (!cancelled) setBuilderLayoutLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isBuilderFloor, listMode, officeSlug]);
 
   React.useEffect(() => {
     if (listMode || !fullscreenOpen || !activePlan) return;
@@ -1368,9 +1408,16 @@ export default function SeatingPage() {
                 className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
                 asChild
               >
-                <Link href={`/seating/floors/${encodeURIComponent(officeSlug)}/edit`} prefetch={false}>
+                <Link
+                  href={
+                    isBuilderFloor
+                      ? `/seating/floors/${encodeURIComponent(officeSlug)}/builder`
+                      : `/seating/floors/${encodeURIComponent(officeSlug)}/edit`
+                  }
+                  prefetch={false}
+                >
                   <Pencil className="h-3.5 w-3.5" />
-                  Edit floor
+                  {isBuilderFloor ? "Edit in Builder" : "Edit floor"}
                 </Link>
               </Button>
             ) : !listMode ? (
@@ -1572,6 +1619,38 @@ export default function SeatingPage() {
           paddingClassName="p-3 sm:p-5"
           className="bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)]"
         >
+          {isBuilderFloor && builderLayoutLoading ? (
+            <div className="flex min-h-[320px] items-center justify-center p-12 text-sm text-muted-foreground">
+              Loading floor layout…
+            </div>
+          ) : isBuilderFloor && !builderLayout ? (
+            <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-12 text-sm text-muted-foreground">
+              <p>No published layout yet. Open the builder to design and publish this floor.</p>
+              {canAssign ? (
+                <Button type="button" size="sm" className="rounded-xl" asChild>
+                  <Link href={`/seating/floors/${encodeURIComponent(officeSlug)}/builder`}>
+                    Open Builder
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
+          ) : isBuilderFloor && builderLayout ? (
+            <BuilderFloorPlanView
+              layout={builderLayout}
+              occupancy={displayOccupancy}
+              selectedSeat={selectedSeat}
+              highlightSeats={highlights}
+              teamFilter={teamFilter}
+              search={search}
+              viewMode={viewMode}
+              canAssign={allowAssign && !promptLayoutActive}
+              zoom={zoom}
+              onSeatClick={handleSeatClick}
+              onViewSeatHistory={openSeatHistory}
+              onAssignSeat={(seatId, employeeId) => requestMoveSeat(seatId, employeeId)}
+              onSwapSeats={(fromSeatId, toSeatId) => requestSwapSeats(fromSeatId, toSeatId)}
+            />
+          ) : (
           <SeatingFloorPlan
             ref={floorPlanRef}
             occupancy={displayOccupancy}
@@ -1609,6 +1688,7 @@ export default function SeatingPage() {
               requestSwapCabins(fromCabinId, toCabinId)
             }
           />
+          )}
         </SeatingScrollViewport>
       </section>
 

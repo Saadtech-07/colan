@@ -10,12 +10,12 @@ import {
 } from "@/lib/team-utils";
 import {
   COLLECTIONS,
-  ensureColanModelIndexes,
   teamDocToDTO,
   type TeamDocument,
   type TeamDTO,
   type TeamUpsertInput,
 } from "@/models";
+import { ensureWorkspaceReady } from "@/lib/workspace-ready";
 
 function isDuplicateKeyError(e: unknown): boolean {
   return e instanceof MongoServerError && (e.code === 11000 || e.code === 11001);
@@ -54,8 +54,7 @@ export async function listTeams(): Promise<TeamDTO[]> {
     return [...memoryStore.teams].sort((a, b) => a.displayOrder - b.displayOrder);
   }
 
-  await ensureColanModelIndexes(db);
-  await ensureTeamsSeed(db);
+  await ensureWorkspaceReady(db);
 
   const col = db.collection<TeamDocument>(COLLECTIONS.teams);
   const docs = await col.find({}).sort({ displayOrder: 1, name: 1 }).toArray();
@@ -148,7 +147,7 @@ export async function createTeam(input: TeamUpsertInput): Promise<TeamDTO> {
     return row;
   }
 
-  await ensureColanModelIndexes(db);
+  await ensureWorkspaceReady(db);
   await ensureTeamsSeed(db);
 
   const col = db.collection<TeamDocument>(COLLECTIONS.teams);
@@ -200,7 +199,7 @@ export async function getTeamById(id: string): Promise<TeamDTO | null> {
 
   if (!ObjectId.isValid(id)) return null;
 
-  await ensureColanModelIndexes(db);
+  await ensureWorkspaceReady(db);
   await ensureTeamsSeed(db);
 
   const doc = await db
@@ -290,7 +289,7 @@ export async function updateTeam(id: string, input: TeamUpsertInput): Promise<Te
 
   if (!ObjectId.isValid(id)) return null;
 
-  await ensureColanModelIndexes(db);
+  await ensureWorkspaceReady(db);
   await ensureTeamsSeed(db);
 
   const col = db.collection<TeamDocument>(COLLECTIONS.teams);
@@ -377,7 +376,7 @@ export async function deleteTeam(id: string): Promise<boolean> {
 
   if (!ObjectId.isValid(id)) return false;
 
-  await ensureColanModelIndexes(db);
+  await ensureWorkspaceReady(db);
   await ensureTeamsSeed(db);
 
   const col = db.collection<TeamDocument>(COLLECTIONS.teams);

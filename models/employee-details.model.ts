@@ -11,12 +11,15 @@ export type EmployeeDetailsDocument = {
   _id: ObjectId;
   /** References `employees._id`. */
   employeeRef: ObjectId;
+  personalEmail?: string;
   workEmail?: string;
   phone?: string;
-  location?: string;
-  fullAddress?: string;
   currentAddress?: string;
   permanentAddress?: string;
+  /** @deprecated Legacy field; no longer written. */
+  location?: string;
+  /** @deprecated Legacy field; no longer written. */
+  fullAddress?: string;
   /** ISO date string YYYY-MM-DD */
   joinedDate?: string;
   reportsToEmployeeRef?: ObjectId;
@@ -36,10 +39,9 @@ export type EmployeeDetailsDTO = {
   id: string;
   /** Hex id of linked `employees` document. */
   employeeRefId: string;
+  personalEmail?: string;
   workEmail?: string;
   phone?: string;
-  location?: string;
-  fullAddress?: string;
   currentAddress?: string;
   permanentAddress?: string;
   joinedDate?: string;
@@ -60,10 +62,9 @@ export function employeeDetailsDocToDTO(
   return {
     id: doc._id.toHexString(),
     employeeRefId: doc.employeeRef.toHexString(),
+    personalEmail: doc.personalEmail,
     workEmail: doc.workEmail,
     phone: doc.phone,
-    location: doc.location,
-    fullAddress: doc.fullAddress,
     currentAddress: doc.currentAddress,
     permanentAddress: doc.permanentAddress,
     joinedDate: doc.joinedDate,
