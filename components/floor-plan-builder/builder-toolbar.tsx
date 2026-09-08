@@ -10,14 +10,17 @@ import {
   Redo2,
   RotateCcw,
   Save,
+  SplitSquareHorizontal,
   Trash2,
   Undo2,
   Upload,
+  Users,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isMergedSeat } from "@/lib/floor-plan-builder/freeform-geometry";
 import { ToolbarGroup, ToolIconButton } from "./builder-ui";
 import { useFloorPlanBuilder } from "./builder-store";
 
@@ -61,7 +64,19 @@ export function BuilderToolbar({
     redoChange,
     fitToView,
     layout,
+    selection,
+    mergeSelectedSeats,
+    unmergeGroup,
   } = useFloorPlanBuilder();
+
+  const selectedSeats = selection
+    .map((id) => layout.elements.find((el) => el.id === id))
+    .filter((el): el is NonNullable<typeof el> => el?.type === "seat");
+  const canMergeSeats = selectedSeats.length >= 2;
+  const mergedSeatSelected =
+    selection.length === 1 &&
+    selectedSeats.length === 1 &&
+    isMergedSeat(selectedSeats[0]!);
 
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
@@ -95,6 +110,36 @@ export function BuilderToolbar({
           active={canvasMode === "pan"}
           onClick={() => setCanvasMode("pan")}
         />
+      </ToolbarGroup>
+
+      <ToolbarGroup label="Seats">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 rounded-md px-2 text-xs font-medium"
+          disabled={!canMergeSeats}
+          onClick={() => void mergeSelectedSeats()}
+          title="Merge selected seats (Ctrl+click to multi-select)"
+        >
+          <Users className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Merge</span>
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 rounded-md px-2 text-xs font-medium"
+          disabled={!mergedSeatSelected}
+          onClick={() => {
+            const seat = selectedSeats[0];
+            if (seat) unmergeGroup(seat.id);
+          }}
+          title="Split merged seat back into individual seats"
+        >
+          <SplitSquareHorizontal className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Unmerge</span>
+        </Button>
       </ToolbarGroup>
 
       <ToolbarGroup label="View">

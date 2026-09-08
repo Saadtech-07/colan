@@ -36,6 +36,7 @@ import {
   resolvePlacementTarget,
   snapFootprintStrict,
   splitMergedSeat,
+  splitFreeformMergedSeat,
   unmergeSeats,
   updateElement,
   validateContainerCapacity,
@@ -63,6 +64,7 @@ import {
   getFreeformRect,
   isFreeformCanvasElement,
   isFreeformSeat,
+  isMergedSeat,
   getEffectiveSeatContainer,
   getContainerDisplayLabel,
   resolveFreeformSeatDrop,
@@ -765,22 +767,22 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
       const originY = origin?.originY ?? getFreeformRect(element).y;
       const originParentId =
         origin?.originParentId !== undefined ? origin.originParentId : element.parentId;
-      const originContainer =
-        originParentId ??
-        resolveSeatContainerParent(layout.elements, element, originX, originY);
 
       const drop = resolveFreeformSeatDrop(layout.elements, element, localX, localY);
       const rect = getFreeformRect(element);
       const dropRect = { x: drop.localX, y: drop.localY, width: rect.width, height: rect.height };
       const targetContainer = drop.parentId;
 
-      if (targetContainer !== originContainer) {
+      if (targetContainer !== originParentId) {
+        const originContainerForMessage =
+          originParentId ??
+          resolveSeatContainerParent(layout.elements, element, originX, originY);
         const confirmOptions = buildSeatReparentConfirmOptions(
           layout.elements,
           element,
           targetContainer,
           activeBlockName,
-          originContainer,
+          originContainerForMessage,
         );
         if (!(await requestConfirm(confirmOptions))) {
           return false;
@@ -1006,7 +1008,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     const allFreeform = seats.every((s) => isFreeformSeat(s));
     const result = allFreeform
       ? mergeFreeformSeats(layout, seatIds)
-      : mergeSeats(layout, selection);
+      : mergeSeats(layout, seatIds);
 
     if (result.error) {
       setError(result.error);
@@ -1057,17 +1059,22 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   const unmergeGroup = React.useCallback(
     (groupId: string) => {
       const seat = layout.elements.find((el) => el.id === groupId && el.type === "seat");
-      if (seat && (seat.width > 1 || seat.height > 1)) {
-        const result = splitMergedSeat(layout, groupId);
-        if (result.error) {
-          setError(result.error);
-          return;
-        }
-        commitLayout(result.layout);
-        setError(null);
+      if (!seat || !isMergedSeat(seat)) {
+        setError("This seat is not merged.");
         return;
       }
-      commitLayout(unmergeSeats(layout, groupId));
+
+      const result =
+        isFreeformSeat(seat) ? splitFreeformMergedSeat(layout, groupId) : splitMergedSeat(layout, groupId);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      commitLayout(result.layout);
+      if (isFreeformSeat(seat) && "newSeatIds" in result && Array.isArray(result.newSeatIds)) {
+        setSelection(result.newSeatIds);
+      }
+      setError(null);
     },
     [commitLayout, layout],
   );

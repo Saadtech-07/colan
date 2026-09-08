@@ -1666,25 +1666,22 @@ export function FloorPlanCanvas() {
                         top: pixelRect
                           ? pixelRect.y + previewRowOff * CANVAS_BOUNDS_PX
                           : (world.worldRow + previewRowOff) * BUILDER_CELL_STRIDE,
+                        width: size.width,
+                        height: size.height,
                       }}
                     >
                       <div
-                        className="relative overflow-visible"
-                        style={{ width: size.width, height: size.height }}
+                        className="relative h-full w-full overflow-visible"
+                        style={{
+                          transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+                          transformOrigin: "center center",
+                        }}
                       >
-                        <div
-                          className="h-full w-full"
-                          style={{
-                            transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-                            transformOrigin: "center center",
-                          }}
-                        >
-                          <ElementVisual
-                            element={element}
-                            selected={isSelected}
-                            onPointerDown={(event) => handleElementPointerDown(element, block.id, event)}
-                          />
-                        </div>
+                        <ElementVisual
+                          element={element}
+                          selected={isSelected}
+                          onPointerDown={(event) => handleElementPointerDown(element, block.id, event)}
+                        />
                         {isSelected && selection.length === 1 && canvasMode === "select" ? (
                           <>
                             <SelectionBadge

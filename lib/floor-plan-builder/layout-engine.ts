@@ -55,6 +55,7 @@ import {
   isSingleFreeformSeat,
   findOverlappingFreeformSeat,
   findOverlappingFreeformSibling,
+  isMergedSeat,
   getFreeformSeatBlockRect,
   blockRectToParentLocal,
   computeMergedFreeformSeatRect,
@@ -1130,6 +1131,74 @@ export function mergeFreeformSeatWithRect(
   };
 }
 
+export function splitFreeformMergedSeat(
+  layout: FloorPlanLayoutState,
+  seatElementId: string,
+): { layout: FloorPlanLayoutState; error?: string; newSeatIds?: string[] } {
+  const seat = layout.elements.find((el) => el.id === seatElementId && el.type === "seat");
+  if (!seat || !isFreeformSeat(seat)) {
+    return { layout, error: "Seat not found." };
+  }
+  if (isSingleFreeformSeat(seat)) {
+    return { layout, error: "This seat is not merged." };
+  }
+
+  const rect = getFreeformRect(seat);
+  const horizontal = rect.width >= rect.height;
+  const halfPrimary = horizontal ? Math.round(rect.width / 2) : Math.round(rect.height / 2);
+  const splitRects: FreeformRect[] = horizontal
+    ? [
+        { x: rect.x, y: rect.y, width: halfPrimary, height: rect.height },
+        {
+          x: rect.x + halfPrimary,
+          y: rect.y,
+          width: rect.width - halfPrimary,
+          height: rect.height,
+        },
+      ]
+    : [
+        { x: rect.x, y: rect.y, width: rect.width, height: halfPrimary },
+        {
+          x: rect.x,
+          y: rect.y + halfPrimary,
+          width: rect.width,
+          height: rect.height - halfPrimary,
+        },
+      ];
+
+  const without = layout.elements.filter((el) => el.id !== seat.id);
+  const newSeats: FloorPlanElement[] = [];
+  for (let index = 0; index < splitRects.length; index += 1) {
+    const splitRect = splitRects[index]!;
+    const isPrimary = index === 0;
+    const seatId = isPrimary ? seat.seatId : createSeatId([...without, ...newSeats]);
+    newSeats.push(
+      createElement("seat", {
+        parentId: seat.parentId,
+        seatId,
+        name: isPrimary ? seat.name : seatId,
+        properties: createFreeformSeatProperties(
+          splitRect.x,
+          splitRect.y,
+          splitRect.width,
+          splitRect.height,
+        ),
+      }),
+    );
+  }
+
+  let nextLayout: FloorPlanLayoutState = { ...layout, elements: without };
+  const createdIds: string[] = [];
+  for (const newSeat of newSeats) {
+    const result = addElement(nextLayout, newSeat);
+    if (result.error) return { layout, error: result.error };
+    nextLayout = result.layout;
+    createdIds.push(newSeat.id);
+  }
+
+  return { layout: nextLayout, newSeatIds: createdIds };
+}
+
 export function splitMergedSeat(
   layout: FloorPlanLayoutState,
   seatElementId: string,
@@ -1174,6 +1243,9 @@ export function unmergeSeats(
   groupId: string,
 ): FloorPlanLayoutState {
   const seat = layout.elements.find((el) => el.id === groupId && el.type === "seat");
+  if (seat && isFreeformSeat(seat) && isMergedSeat(seat)) {
+    return splitFreeformMergedSeat(layout, groupId).layout;
+  }
   if (seat && (seat.width > 1 || seat.height > 1)) {
     return splitMergedSeat(layout, groupId).layout;
   }

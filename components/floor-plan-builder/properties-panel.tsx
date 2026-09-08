@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getElementDefinition } from "@/lib/floor-plan-builder/element-registry";
-import { getFreeformRect, isFreeformCanvasElement, isFreeformSeat } from "@/lib/floor-plan-builder/freeform-geometry";
+import { getFreeformRect, isFreeformCanvasElement, isFreeformSeat, isMergedSeat } from "@/lib/floor-plan-builder/freeform-geometry";
 import { getParentElement } from "@/lib/floor-plan-builder/hierarchy";
 import { getContainerCapacity, getSeatDisplayName, seatCountInContainer } from "@/lib/floor-plan-builder/layout-engine";
 import { useFloorPlanBuilder } from "./builder-store";
@@ -350,7 +350,7 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
 
       <InspectorSection title="Actions">
         <div className="flex flex-col gap-2">
-          {selected.type === "seat" && (selected.width > 1 || selected.height > 1) ? (
+          {selected.type === "seat" && isMergedSeat(selected) ? (
             <Button
               type="button"
               variant="outline"

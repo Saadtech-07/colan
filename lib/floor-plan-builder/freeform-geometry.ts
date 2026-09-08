@@ -528,6 +528,13 @@ export function isSingleFreeformSeat(element: FloorPlanElement): boolean {
   return rect.width <= DEFAULT_SEAT_WIDTH + 1 && rect.height <= DEFAULT_SEAT_HEIGHT + 1;
 }
 
+/** Whether a seat spans multiple slots (grid merge or freeform merged footprint). */
+export function isMergedSeat(element: FloorPlanElement): boolean {
+  if (element.type !== "seat") return false;
+  if (isFreeformSeat(element)) return !isSingleFreeformSeat(element);
+  return element.width > 1 || element.height > 1;
+}
+
 export function findOverlappingFreeformSeat(
   elements: FloorPlanElement[],
   localRect: FreeformRect,
