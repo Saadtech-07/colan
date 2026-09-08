@@ -19,6 +19,7 @@ export type AppUserDocument = {
   employeeId: string;
   imageUrl: string;
   isProfileCompleted?: boolean;
+  isActive?: boolean;
   updatedProfileAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;

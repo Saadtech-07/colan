@@ -33,6 +33,7 @@ export default function NewFloorPlanPage() {
   const canAssign = access?.canAssignSeating ?? false;
   const [designs, setDesigns] = React.useState<FloorPlanSummary[]>([]);
   const [loadingDesigns, setLoadingDesigns] = React.useState(true);
+  const [designsError, setDesignsError] = React.useState<string | null>(null);
   const [deletingSlug, setDeletingSlug] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -46,10 +47,16 @@ export default function NewFloorPlanPage() {
     let cancelled = false;
     (async () => {
       setLoadingDesigns(true);
+      setDesignsError(null);
       try {
         const plans = await fetchFloorPlanSummaries({ force: true });
         if (!cancelled) {
           setDesigns(plans.filter((p) => p.migrationStatus === "builder"));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setDesigns([]);
+          setDesignsError(e instanceof Error ? e.message : "Unable to load saved designs.");
         }
       } finally {
         if (!cancelled) setLoadingDesigns(false);
@@ -148,6 +155,10 @@ export default function NewFloorPlanPage() {
 
         {loadingDesigns ? (
           <div className="mt-4 h-24 animate-pulse rounded-2xl bg-muted/30" />
+        ) : designsError ? (
+          <div className="mt-4 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-6 text-center text-sm text-destructive">
+            {designsError}
+          </div>
         ) : designs.length === 0 ? (
           <div className="mt-4 rounded-2xl border border-dashed border-border/70 bg-muted/10 px-4 py-8 text-center text-sm text-muted-foreground">
             No saved builder designs yet. Create one above — it will appear here after the first

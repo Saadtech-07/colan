@@ -29,6 +29,7 @@ export function sessionFromPayload(payload: JwtPayload): Session {
       companyId: payload.companyId ?? "",
       appUserId: payload.appUserId?.trim() || undefined,
       isProfileCompleted: payload.isProfileCompleted !== false,
+      accessLevel: payload.accessLevel === "platform" ? "platform" : "tenant",
     },
   };
 }
@@ -50,12 +51,15 @@ export async function refreshSessionCookieIfStale(): Promise<void> {
   const token = jar.get(AUTH_COOKIE_NAME)?.value;
   if (!token) return;
   const payload = await verifyAuthToken(token);
-  if (!payload || (payload.companyId?.trim() && payload.appUserId?.trim())) return;
+  if (!payload) return;
+  if (payload.accessLevel === "platform") return;
+  if (payload.companyId?.trim() && payload.appUserId?.trim()) return;
 
   const fresh = await refreshJwtPayload(payload.email);
-  if (!fresh?.companyId?.trim()) return;
-
-  jar.set(AUTH_COOKIE_NAME, await signAuthToken(fresh), authCookieOptions());
+  if (!fresh) return;
+  if (fresh.accessLevel === "platform" || fresh.companyId?.trim()) {
+    jar.set(AUTH_COOKIE_NAME, await signAuthToken(fresh), authCookieOptions());
+  }
 }
 
 /** Single JWT verify + optional cookie refresh for /api/auth/me. */
@@ -67,10 +71,12 @@ export async function getAuthenticatedSession(): Promise<Session | null> {
   const payload = await verifyAuthToken(token);
   if (!payload) return null;
 
-  const needsRefresh = !payload.companyId?.trim() || !payload.appUserId?.trim();
+  const needsRefresh =
+    payload.accessLevel !== "platform" &&
+    (!payload.companyId?.trim() || !payload.appUserId?.trim());
   if (needsRefresh) {
     const fresh = await refreshJwtPayload(payload.email);
-    if (fresh?.companyId?.trim()) {
+    if (fresh && (fresh.accessLevel === "platform" || fresh.companyId?.trim())) {
       jar.set(AUTH_COOKIE_NAME, await signAuthToken(fresh), authCookieOptions());
       return hydrateSessionCompanyId(sessionFromPayload(fresh));
     }

@@ -905,9 +905,16 @@ export async function verifyAppUserCredentials(
       doc = await col.findOne({ email: linkedLoginEmail });
     }
   }
-  if (!doc) return null;
+  if (!doc || doc.isActive === false) return null;
   const ok = await bcrypt.compare(password, doc.passwordHash);
   if (!ok) return null;
+
+  const companyOid = doc.companyId;
+  if (companyOid) {
+    const companyCol = db.collection(COLLECTIONS.companies);
+    const company = await companyCol.findOne({ _id: companyOid });
+    if (company?.status === "inactive") return null;
+  }
   const appRole = normalizeAppRole(doc.appRole);
   const seedRow = SEED_USERS.find((s) => s.email === normalized);
   const teamFromSeed = seedRow?.team;

@@ -23,6 +23,7 @@ const memoryCompanies: MemoryCompany[] = [
     id: DEMO_COMPANY_ID,
     name: "Colan Infotech",
     slug: "colan",
+    status: "active",
   },
 ];
 
@@ -111,6 +112,7 @@ export async function onboardCompany(input: OnboardCompanyInput): Promise<Onboar
       id: new ObjectId().toHexString(),
       name: companyName,
       slug: teamSlugFromName(companyName) || "workspace",
+      status: "active",
     };
     memoryCompanies.push(company);
     return {
@@ -146,6 +148,7 @@ export async function onboardCompany(input: OnboardCompanyInput): Promise<Onboar
     _id: companyId,
     name: companyName,
     slug,
+    status: "active",
     createdAt: now,
     updatedAt: now,
   });
@@ -193,6 +196,7 @@ export async function onboardCompany(input: OnboardCompanyInput): Promise<Onboar
       id: companyId.toHexString(),
       name: companyName,
       slug,
+      status: "active",
       createdAt: now.toISOString(),
     },
     admin: {

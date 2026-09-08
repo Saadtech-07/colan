@@ -18,4 +18,6 @@ export * from "./message.model";
 export * from "./notification.model";
 export * from "./task.model";
 export * from "./daily-update.model";
+export * from "./platform-user.model";
+export * from "./platform-audit-log.model";
 

@@ -27,7 +27,8 @@ export async function fetchFloorPlanSummaries(opts?: {
     async () => {
       const res = await fetch("/api/floor-plans", { credentials: "include" });
       if (!res.ok) {
-        throw new Error(`Failed to load floor plans (${res.status})`);
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Failed to load floor plans (${res.status})`);
       }
       const plans = (await res.json()) as FloorPlanSummary[];
       summaryCache = plans;

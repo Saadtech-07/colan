@@ -27,6 +27,8 @@ export const COLLECTIONS = {
   taskComments: "task_comments",
   taskActivity: "task_activity",
   dailyUpdates: "daily_updates",
+  platformUsers: "platform_users",
+  platformAuditLogs: "platform_audit_logs",
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

@@ -1,4 +1,4 @@
-import { ObjectId, type Db } from "mongodb";
+import { MongoServerError, ObjectId, type Db } from "mongodb";
 import { allowInMemoryFallback } from "@/lib/data-backend";
 import { swapCabinIdentitiesInLayout } from "@/lib/cabin-utils";
 import {
@@ -16,6 +16,7 @@ import { getDb } from "@/lib/mongodb";
 import { deleteFloorPlanDesigns } from "@/lib/floor-plan-layouts.server";
 import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { COLLECTIONS } from "@/models/collections";
+import type { CompanyDocument } from "@/models/company.model";
 import {
   floorPlanDocToDTO,
   floorPlanDocToSummary,
@@ -180,6 +181,19 @@ function ensureMemorySeeds() {
   }
 }
 
+function isDuplicateKeyError(e: unknown): boolean {
+  return e instanceof MongoServerError && (e.code === 11000 || e.code === 11001);
+}
+
+/** Demo Chennai/Bangalore layouts belong only on the legacy Colan workspace. */
+async function isDefaultColanCompany(db: Db, companyId: string): Promise<boolean> {
+  if (!ObjectId.isValid(companyId)) return false;
+  const doc = await db
+    .collection<CompanyDocument>(COLLECTIONS.companies)
+    .findOne({ _id: new ObjectId(companyId) }, { projection: { slug: 1 } });
+  return doc?.slug === "colan";
+}
+
 export async function ensureFloorPlanSeeds(db: Db, companyId: string): Promise<void> {
   const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
   const scope = companyScope<FloorPlanDocument>(companyId);
@@ -188,11 +202,15 @@ export async function ensureFloorPlanSeeds(db: Db, companyId: string): Promise<v
     if (suppressed.has(seed.slug)) continue;
     const existing = await col.findOne({ ...scope, slug: seed.slug });
     if (!existing) {
-      await col.insertOne({
-        _id: new ObjectId(),
-        companyId: toCompanyObjectId(companyId),
-        ...seed,
-      });
+      try {
+        await col.insertOne({
+          _id: new ObjectId(),
+          companyId: toCompanyObjectId(companyId),
+          ...seed,
+        });
+      } catch (e) {
+        if (!isDuplicateKeyError(e)) throw e;
+      }
       continue;
     }
 
@@ -246,7 +264,13 @@ async function withDb(companyId: string): Promise<Db | null> {
     }
     return null;
   }
-  await ensureFloorPlanSeeds(db, companyId);
+  if (await isDefaultColanCompany(db, companyId)) {
+    try {
+      await ensureFloorPlanSeeds(db, companyId);
+    } catch (e) {
+      console.error("[floor-plans] seed failed for default company:", e);
+    }
+  }
   return db;
 }
 

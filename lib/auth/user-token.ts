@@ -1,4 +1,5 @@
 import { getAppUserSessionRefresh, verifyAppUserCredentials } from "@/lib/app-users";
+import { verifyPlatformCredentials, getPlatformUserByEmail } from "@/lib/platform/platform-users";
 import { roleNeedsTeam } from "@/lib/permissions";
 import { sanitizeSessionImageUrl } from "@/lib/session-token";
 import { DEMO_COMPANY_ID } from "@/lib/tenant-scope";
@@ -10,6 +11,20 @@ export async function buildJwtPayloadFromCredentials(
   email: string,
   password: string,
 ): Promise<JwtPayload | null> {
+  const platform = await verifyPlatformCredentials(email, password);
+  if (platform) {
+    return {
+      sub: platform.email,
+      email: platform.email,
+      name: platform.name,
+      appRole: "admin",
+      companyId: "",
+      appUserId: platform.platformUserId,
+      isProfileCompleted: true,
+      accessLevel: "platform",
+    };
+  }
+
   const row = await verifyAppUserCredentials(email, password);
   if (!row) return null;
   const appRole = row.appRole;
@@ -25,11 +40,26 @@ export async function buildJwtPayloadFromCredentials(
     companyId: row.companyId,
     appUserId: row.appUserId,
     isProfileCompleted: row.isProfileCompleted,
+    accessLevel: "tenant",
   };
 }
 
 export async function refreshJwtPayload(email: string): Promise<JwtPayload | null> {
   const normalized = email.toLowerCase().trim();
+  const platformUser = await getPlatformUserByEmail(normalized);
+  if (platformUser) {
+    return {
+      sub: normalized,
+      email: normalized,
+      name: platformUser.name,
+      appRole: "admin",
+      companyId: "",
+      appUserId: platformUser.id,
+      isProfileCompleted: true,
+      accessLevel: "platform",
+    };
+  }
+
   const fresh = await getAppUserSessionRefresh(normalized);
   if (!fresh) return null;
   const appRole = fresh.appRole;
@@ -45,6 +75,7 @@ export async function refreshJwtPayload(email: string): Promise<JwtPayload | nul
     companyId: fresh.companyId || DEMO_COMPANY_ID,
     appUserId: fresh.appUserId,
     isProfileCompleted: fresh.isProfileCompleted,
+    accessLevel: "tenant",
   };
 }
 

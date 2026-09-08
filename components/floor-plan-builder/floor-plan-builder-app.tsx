@@ -315,7 +315,7 @@ export function FloorPlanBuilderApp({ slug, initialName, initialLayout, mode, re
   return (
     <div className="h-full min-h-0 w-full">
       <FloorPlanBuilderProvider initialLayout={initialLayout}>
-        <BuilderShell slug={slug} initialName={initialName} mode={mode} returnHref={returnHref} />
+        <BuilderShell slug={slug} initialName={initialName} returnHref={returnHref} />
       </FloorPlanBuilderProvider>
     </div>
   );

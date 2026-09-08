@@ -266,6 +266,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       team: u.team,
       avatarUrl: profileAvatarUrl ?? sessionAvatar ?? linkedEmployeeAvatar,
       isProfileCompleted: u.isProfileCompleted !== false,
+      accessLevel: u.accessLevel === "platform" ? "platform" : "tenant",
     };
     lastKnownUserRef.current = next;
     return next;
@@ -735,8 +736,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (sessionStatus === "unauthenticated" && pathname !== "/login") {
       router.replace("/login");
+      return;
     }
-  }, [sessionStatus, pathname, router]);
+    if (sessionStatus === "authenticated" && user?.accessLevel === "platform") {
+      router.replace("/super-admin/dashboard");
+    }
+  }, [sessionStatus, pathname, router, user?.accessLevel]);
 
   if (sessionStatus === "unauthenticated") {
     return null;

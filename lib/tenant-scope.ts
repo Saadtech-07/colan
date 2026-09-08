@@ -38,6 +38,7 @@ export async function resolveCompanyIdForEmail(email: string): Promise<string> {
 }
 
 export async function hydrateSessionCompanyId(session: Session): Promise<Session> {
+  if (session.user.accessLevel === "platform") return session;
   if (session.user.companyId?.trim()) return session;
   const companyId = await resolveCompanyIdForEmail(session.user.email);
   return {

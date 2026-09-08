@@ -11,6 +11,8 @@ export type AuthUser = {
   /** MongoDB appUsers _id — avoids a DB lookup on chat/notification routes. */
   appUserId?: string;
   isProfileCompleted: boolean;
+  /** Platform super admin vs tenant workspace user. */
+  accessLevel?: "platform" | "tenant";
 };
 
 export type Session = {
@@ -27,4 +29,5 @@ export type JwtPayload = {
   companyId: string;
   appUserId?: string;
   isProfileCompleted: boolean;
+  accessLevel?: "platform" | "tenant";
 };

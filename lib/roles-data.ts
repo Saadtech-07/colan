@@ -246,6 +246,28 @@ export async function ensureRolesSeedForCompany(
   globalThis.__colanRolesSeeded.add(key);
 }
 
+export function clearRolesSeedCache(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  companyId: string,
+): void {
+  const key = rolesSyncKey(db, companyId);
+  globalThis.__colanRolesSeeded?.delete(key);
+  globalThis.__colanRolesSynced?.delete(key);
+}
+
+export async function loadTenantRoles(companyId: string): Promise<WorkspaceRole[]> {
+  let roles = await listWorkspaceRoles(companyId);
+  if (roles.length > 0) return roles;
+
+  const db = await getDb();
+  if (!db) return roles;
+
+  clearRolesSeedCache(db, companyId);
+  invalidateServerRoleCache();
+  await ensureRolesSeedForCompany(db, companyId);
+  return listWorkspaceRoles(companyId);
+}
+
 export async function ensureRolesSeed(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
 ): Promise<void> {

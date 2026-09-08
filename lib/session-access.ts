@@ -10,6 +10,7 @@ import {
   normalizeAppRole,
 } from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
+import { resolveCompanyIdForEmail } from "@/lib/tenant-scope";
 import type { AppRole, Employee, TeamName } from "@/types";
 
 export type SessionAccess = {
@@ -31,7 +32,11 @@ export function sessionAccess(session: Session | null): SessionAccess | null {
 export async function sessionAccessAsync(
   session: Session | null,
 ): Promise<SessionAccess | null> {
-  await ensureRoleRegistry();
+  if (!session?.user?.email) return null;
+  const companyId = session.user.companyId?.trim()
+    ? session.user.companyId.trim()
+    : await resolveCompanyIdForEmail(session.user.email);
+  await ensureRoleRegistry(companyId);
   return sessionAccess(session);
 }
 

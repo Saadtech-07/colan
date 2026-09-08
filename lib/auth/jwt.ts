@@ -16,6 +16,7 @@ export async function signAuthToken(payload: JwtPayload): Promise<string> {
     companyId: payload.companyId,
     appUserId: payload.appUserId,
     isProfileCompleted: payload.isProfileCompleted,
+    accessLevel: payload.accessLevel === "platform" ? "platform" : "tenant",
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)
@@ -51,6 +52,7 @@ export async function verifyAuthToken(token: string): Promise<JwtPayload | null>
           ? payload.appUserId.trim()
           : undefined,
       isProfileCompleted: payload.isProfileCompleted !== false,
+      accessLevel: payload.accessLevel === "platform" ? "platform" : "tenant",
     };
   } catch {
     return null;
