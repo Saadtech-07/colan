@@ -73,8 +73,8 @@ export const ELEMENT_REGISTRY: Record<FloorPlanElementType, ElementDefinition> =
     defaultCapacity: 5,
     canContain: ["seat", "desk", "workstation", "meeting_table", "pillar", "wall", "door"],
     validParents: ["floor", "block"],
-    color: "#f0fdf4",
-    borderColor: "#86efac",
+    color: "#e2e8f0",
+    borderColor: "#64748b",
     icon: "door-open",
   },
   cabin: {
@@ -92,8 +92,8 @@ export const ELEMENT_REGISTRY: Record<FloorPlanElementType, ElementDefinition> =
     defaultCapacity: 1,
     canContain: ["seat", "desk", "workstation"],
     validParents: ["floor", "block"],
-    color: "#fef3c7",
-    borderColor: "#fcd34d",
+    color: "#e2e8f0",
+    borderColor: "#64748b",
     icon: "briefcase",
   },
   meeting_room: {
@@ -198,8 +198,8 @@ export const ELEMENT_REGISTRY: Record<FloorPlanElementType, ElementDefinition> =
     supportsRotation: true,
     canContain: [],
     validParents: ["floor", "block", "room", "cabin", "common_area"],
-    color: "#e2e8f0",
-    borderColor: "#64748b",
+    color: "#f1f5f9",
+    borderColor: "#94a3b8",
     icon: "laptop",
   },
   meeting_table: {

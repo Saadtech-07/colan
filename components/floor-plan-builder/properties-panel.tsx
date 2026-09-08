@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getElementDefinition } from "@/lib/floor-plan-builder/element-registry";
-import { getFreeformRect, isFreeformSeat } from "@/lib/floor-plan-builder/freeform-geometry";
+import { getFreeformRect, isFreeformCanvasElement, isFreeformSeat } from "@/lib/floor-plan-builder/freeform-geometry";
 import { getParentElement } from "@/lib/floor-plan-builder/hierarchy";
 import { getContainerCapacity, getSeatDisplayName, seatCountInContainer } from "@/lib/floor-plan-builder/layout-engine";
 import { useFloorPlanBuilder } from "./builder-store";
@@ -156,7 +156,7 @@ export function PropertiesPanel({ floorName = "", onFloorNameChange }: Props) {
   };
 
   const displayName = selected.type === "seat" ? getSeatDisplayName(selected) : selected.name;
-  const freeformRect = isFreeformSeat(selected) ? getFreeformRect(selected) : null;
+  const freeformRect = isFreeformCanvasElement(selected) ? getFreeformRect(selected) : null;
 
   return (
     <aside className={panelClass}>

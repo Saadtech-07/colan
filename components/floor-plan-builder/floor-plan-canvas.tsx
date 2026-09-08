@@ -33,8 +33,14 @@ import {
   getContainerPixelBounds,
   getFreeformRect,
   getWorldPixelRect,
+  getDefaultElementPixelSize,
+  isFreeformCanvasElement,
   isFreeformSeat,
   localPointToBlockPixel,
+  MIN_FREEFORM_ELEMENT_SIZE,
+  MIN_SEAT_HEIGHT,
+  MIN_SEAT_WIDTH,
+  usesFreeformCanvas,
   withFreeformRect,
   type FreeformRect,
 } from "@/lib/floor-plan-builder/freeform-geometry";
@@ -213,6 +219,7 @@ function ElementVisual({
         element.type === "meeting_table" && "rounded-lg border-violet-300/70 bg-gradient-to-b from-violet-50 to-violet-100",
         def.category === "structure" &&
           !["pillar", "entrance", "wall", "stairs"].includes(element.type) &&
+          !isRoomOrCabin &&
           "bg-white/98 shadow-[0_1px_0_rgba(255,255,255,0.9)_inset,0_6px_20px_rgba(15,23,42,0.06)]",
       )}
       style={{
@@ -302,6 +309,14 @@ type PendingPlacement =
       previewHeight: number;
     }
   | {
+      mode: "freeform-canvas";
+      valid: boolean;
+      localX: number;
+      localY: number;
+      elementType: FloorPlanElementType;
+      parentId?: string | null;
+    }
+  | {
       mode: "freeform-seat";
       valid: boolean;
       localX: number;
@@ -355,7 +370,7 @@ function ResizeHandles({
   onResizeStart: (edge: ResizeEdge, event: React.PointerEvent) => void;
 }) {
   const canResize =
-    isFreeformSeat(element) || getElementDefinition(element.type).supportsResize;
+    isFreeformCanvasElement(element) || getElementDefinition(element.type).supportsResize;
   if (!canResize) return null;
   return (
     <>
@@ -414,6 +429,7 @@ export function FloorPlanCanvas() {
     clearSelection,
     commitPlacementFootprint,
     commitFreeformSeatAt,
+    commitFreeformElementAt,
     commitBulkFreeformSeatsAt,
     commitBulkPlacement,
     commitLayoutCloneAt,
@@ -716,6 +732,51 @@ export function FloorPlanCanvas() {
         return;
       }
 
+      if (
+        placementDrag.mode === "element" &&
+        usesFreeformCanvas(placementDrag.type) &&
+        placementDrag.type !== "seat"
+      ) {
+        const size = getDefaultElementPixelSize(placementDrag.type);
+        const dropX = Math.max(0, localX - size.width / 2);
+        const dropY = Math.max(0, localY - size.height / 2);
+        const hit = findContainerAtPixel(layout.elements, localX, localY, placementDrag.type);
+        const parentId = hit?.container.id ?? null;
+        const startX = hit
+          ? Math.max(0, hit.localX - size.width / 2)
+          : dropX;
+        const startY = hit
+          ? Math.max(0, hit.localY - size.height / 2)
+          : dropY;
+        const bounds = getContainerPixelBounds(layout.elements, parentId, layout.grid);
+        const valid =
+          startX >= 0 &&
+          startY >= 0 &&
+          startX + size.width <= bounds.width &&
+          startY + size.height <= bounds.height;
+        const blockPos = localPointToBlockPixel(layout.elements, parentId, startX, startY);
+        pendingPlacementRef.current = {
+          mode: "freeform-canvas",
+          valid,
+          localX: startX,
+          localY: startY,
+          parentId,
+          elementType: placementDrag.type,
+        };
+        setPlacementPreview({
+          worldRow: blockPos.y,
+          worldColumn: blockPos.x,
+          width: 1,
+          height: 1,
+          valid,
+          pixelMode: true,
+          pixelWidth: size.width,
+          pixelHeight: size.height,
+          previewParentId: parentId,
+        });
+        return;
+      }
+
       const { row, column } = clientToWorldGrid(clientX, clientY);
 
       if (placementDrag.mode === "layout-clone") {
@@ -832,6 +893,15 @@ export function FloorPlanCanvas() {
         cancelPlacementDrag();
         return;
       }
+      if (pending.mode === "freeform-canvas") {
+        commitFreeformElementAt(
+          pending.elementType,
+          pending.localX,
+          pending.localY,
+          pending.parentId ?? null,
+        );
+        return;
+      }
       if (pending.mode === "freeform-seat") {
         if (pending.quantity && pending.quantity > 1) {
           commitBulkFreeformSeatsAt(
@@ -939,14 +1009,18 @@ export function FloorPlanCanvas() {
   React.useEffect(() => {
     if (!resize) return;
 
-    const isFreeform = isFreeformSeat(resize.origin);
+    const isFreeform = isFreeformCanvasElement(resize.origin);
 
     const onMove = (event: PointerEvent) => {
       if (isFreeform) {
         const deltaX = (event.clientX - resize.startClientX) / zoom;
         const deltaY = (event.clientY - resize.startClientY) / zoom;
         const originRect = getFreeformRect(resize.origin);
-        const patch = computeFreeformResizePatch(originRect, resize.edge, deltaX, deltaY);
+        const resizeMins =
+          resize.origin.type === "seat"
+            ? { minWidth: MIN_SEAT_WIDTH, minHeight: MIN_SEAT_HEIGHT }
+            : { minWidth: MIN_FREEFORM_ELEMENT_SIZE, minHeight: MIN_FREEFORM_ELEMENT_SIZE };
+        const patch = computeFreeformResizePatch(originRect, resize.edge, deltaX, deltaY, resizeMins);
         setFreeformResizePreview(patch);
         setResizePreview(null);
         return;
@@ -1284,7 +1358,7 @@ export function FloorPlanCanvas() {
     }
     select([element.id], event.shiftKey || event.ctrlKey || event.metaKey);
     (event.target as HTMLElement).setPointerCapture(event.pointerId);
-    if (isFreeformSeat(element)) {
+    if (isFreeformCanvasElement(element)) {
       const rect = getFreeformRect(element);
       setDrag({
         elementId: element.id,
@@ -1314,7 +1388,7 @@ export function FloorPlanCanvas() {
     if (drag?.elementId === element.id && dragPreview && !drag.freeform) {
       return { ...element, row: dragPreview.row, column: dragPreview.column };
     }
-    if (resize?.elementId === element.id && freeformResizePreview && isFreeformSeat(element)) {
+    if (resize?.elementId === element.id && freeformResizePreview && isFreeformCanvasElement(element)) {
       return withFreeformRect(element, freeformResizePreview);
     }
     if (resize?.elementId === element.id && resizePreview) {
@@ -1438,7 +1512,7 @@ export function FloorPlanCanvas() {
                 ) : null}
 
                 {sortedBlockElements.map((element) => {
-                  const isFreeform = isFreeformSeat(element);
+                  const isFreeform = isFreeformCanvasElement(element);
                   const pixelRect = isFreeform ? getWorldPixelRect(blockElements, element) : null;
                   const world = getWorldFootprint(blockElements, element);
                   const isSelected = isActive && selection.includes(element.id);
@@ -1461,25 +1535,31 @@ export function FloorPlanCanvas() {
                         top: pixelRect
                           ? pixelRect.y + previewRowOff * CANVAS_BOUNDS_PX
                           : (world.worldRow + previewRowOff) * BUILDER_CELL_STRIDE,
-                        transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-                        transformOrigin: "center center",
                       }}
                     >
                       <div
                         className="relative overflow-visible"
                         style={{ width: size.width, height: size.height }}
                       >
-                        <ElementVisual
-                          element={element}
-                          selected={isSelected}
-                          onPointerDown={(event) => handleElementPointerDown(element, block.id, event)}
-                        />
+                        <div
+                          className="h-full w-full"
+                          style={{
+                            transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+                            transformOrigin: "center center",
+                          }}
+                        >
+                          <ElementVisual
+                            element={element}
+                            selected={isSelected}
+                            onPointerDown={(event) => handleElementPointerDown(element, block.id, event)}
+                          />
+                        </div>
                         {isSelected && selection.length === 1 && canvasMode === "select" ? (
                           <>
                             <SelectionBadge
                               label={def.label}
                               sublabel={
-                                isFreeformSeat(element)
+                                isFreeformCanvasElement(element)
                                   ? `${Math.round(getFreeformRect(element).width)}×${Math.round(getFreeformRect(element).height)}`
                                   : `${element.width}×${element.height}`
                               }

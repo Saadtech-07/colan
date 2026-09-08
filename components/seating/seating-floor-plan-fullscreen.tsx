@@ -29,6 +29,7 @@ export type SeatingFullscreenBlock = {
   sideCabins?: SideCabinsConfig;
   outsideEntrance?: { text: string } | null;
   builderLayout?: FloorPlanLayoutState | null;
+  builderLayoutPending?: boolean;
 };
 
 type SharedFloorProps = {
@@ -187,7 +188,12 @@ export function SeatingFloorPlanFullscreen({
                   </span>
                 </div>
               )}
-              {block.builderLayout ? (
+              {block.builderLayoutPending ? (
+                <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-12 text-sm text-muted-foreground">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                  <p>Loading floor layout…</p>
+                </div>
+              ) : block.builderLayout ? (
                 <BuilderFloorPlanView
                   layout={block.builderLayout}
                   zoom={zoom}

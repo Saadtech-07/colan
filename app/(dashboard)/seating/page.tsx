@@ -188,6 +188,8 @@ export default function SeatingPage() {
   const [companionBuilderLayout, setCompanionBuilderLayout] =
     React.useState<FloorPlanLayoutState | null>(null);
   const [builderLayoutLoading, setBuilderLayoutLoading] = React.useState(false);
+  const [companionBuilderLayoutLoading, setCompanionBuilderLayoutLoading] =
+    React.useState(false);
 
   React.useEffect(() => {
     try {
@@ -262,6 +264,8 @@ export default function SeatingPage() {
     ? (planOverrides[fetchedActivePlan.slug] ?? fetchedActivePlan)
     : null;
   const isBuilderFloor = activePlan?.migrationStatus === "builder";
+  const awaitingBuilderLayout =
+    isBuilderFloor && (builderLayoutLoading || !builderLayout);
   const companionPlan = fetchedCompanionPlan
     ? (planOverrides[fetchedCompanionPlan.slug] ?? fetchedCompanionPlan)
     : null;
@@ -375,6 +379,10 @@ export default function SeatingPage() {
       return;
     }
     let cancelled = false;
+    setActivePlan(null);
+    setCompanionPlan(null);
+    setBuilderLayout(null);
+    setCompanionBuilderLayout(null);
     (async () => {
       setPlanLoading(true);
       try {
@@ -427,11 +435,13 @@ export default function SeatingPage() {
   React.useEffect(() => {
     if (listMode || !isBuilderFloor) {
       setBuilderLayout(null);
+      setBuilderLayoutLoading(false);
       return;
     }
     let cancelled = false;
+    setBuilderLayout(null);
+    setBuilderLayoutLoading(true);
     (async () => {
-      setBuilderLayoutLoading(true);
       try {
         const layout = await fetchFloorPlanViewLayout(officeSlug);
         if (cancelled) return;
@@ -462,9 +472,12 @@ export default function SeatingPage() {
   React.useEffect(() => {
     if (listMode || !pairedCompanionPlan || pairedCompanionPlan.migrationStatus !== "builder") {
       setCompanionBuilderLayout(null);
+      setCompanionBuilderLayoutLoading(false);
       return;
     }
     let cancelled = false;
+    setCompanionBuilderLayout(null);
+    setCompanionBuilderLayoutLoading(true);
     (async () => {
       try {
         const layout = await fetchFloorPlanViewLayout(pairedCompanionPlan.slug);
@@ -483,6 +496,8 @@ export default function SeatingPage() {
         }
       } catch {
         if (!cancelled) setCompanionBuilderLayout(null);
+      } finally {
+        if (!cancelled) setCompanionBuilderLayoutLoading(false);
       }
     })();
     return () => {
@@ -1082,6 +1097,7 @@ export default function SeatingPage() {
       plan: FloorPlanDTO,
       slug: string,
       builderLayoutForPlan?: FloorPlanLayoutState | null,
+      builderLayoutPending = false,
     ): SeatingFullscreenBlock => {
       const slots = listCabinSlotsOnPlan(plan);
       return {
@@ -1110,6 +1126,7 @@ export default function SeatingPage() {
           : EMPTY_SIDE_CABINS,
         outsideEntrance: plan.cabins?.outsideEntrance ?? null,
         builderLayout: builderLayoutForPlan ?? null,
+        builderLayoutPending,
       };
     };
 
@@ -1118,11 +1135,14 @@ export default function SeatingPage() {
         activePlan,
         activePlan.slug,
         activePlan.migrationStatus === "builder" ? builderLayout : null,
+        activePlan.migrationStatus === "builder" && (builderLayoutLoading || !builderLayout),
       );
       const secondary = toBlock(
         pairedCompanionPlan,
         pairedCompanionPlan.slug,
         pairedCompanionPlan.migrationStatus === "builder" ? companionBuilderLayout : null,
+        pairedCompanionPlan.migrationStatus === "builder" &&
+          (companionBuilderLayoutLoading || !companionBuilderLayout),
       );
       const ordered =
         activePlan.building === "Block B" || activePlan.slug.endsWith("-block-b")
@@ -1143,6 +1163,7 @@ export default function SeatingPage() {
           activePlan,
           officeSlug,
           activePlan.migrationStatus === "builder" ? builderLayout : null,
+          activePlan.migrationStatus === "builder" && (builderLayoutLoading || !builderLayout),
         ),
       ];
     }
@@ -1173,7 +1194,9 @@ export default function SeatingPage() {
     activePlan,
     pairedCompanionPlan,
     companionBuilderLayout,
+    companionBuilderLayoutLoading,
     builderLayout,
+    builderLayoutLoading,
     employees,
     activeCabinsBeforeA,
     activeCabinsAfterG,
@@ -1480,7 +1503,7 @@ export default function SeatingPage() {
                 <Link
                   href={
                     isBuilderFloor
-                      ? `/seating/floors/${encodeURIComponent(officeSlug)}/builder`
+                      ? `/seating/floors/${encodeURIComponent(officeSlug)}/builder?returnTo=${encodeURIComponent(`/seating?office=${officeSlug}`)}`
                       : `/seating/floors/${encodeURIComponent(officeSlug)}/edit`
                   }
                   prefetch={false}
@@ -1690,9 +1713,10 @@ export default function SeatingPage() {
           paddingClassName="p-3 sm:p-5"
           className="bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)]"
         >
-          {isBuilderFloor && builderLayoutLoading ? (
-            <div className="flex min-h-[320px] items-center justify-center p-12 text-sm text-muted-foreground">
-              Loading floor layout…
+          {planLoading || awaitingBuilderLayout ? (
+            <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-12 text-sm text-muted-foreground">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+              <p>Loading floor layout…</p>
             </div>
           ) : isBuilderFloor && !builderLayout ? (
             <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-12 text-sm text-muted-foreground">

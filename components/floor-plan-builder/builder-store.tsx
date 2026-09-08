@@ -49,10 +49,13 @@ import type {
   WorkspaceBlock,
 } from "@/lib/floor-plan-builder/types";
 import {
+  createFreeformElementProperties,
   createFreeformSeatProperties,
   DEFAULT_SEAT_HEIGHT,
   DEFAULT_SEAT_WIDTH,
+  getDefaultElementPixelSize,
   getFreeformRect,
+  isFreeformCanvasElement,
   isFreeformSeat,
 } from "@/lib/floor-plan-builder/freeform-geometry";
 import {
@@ -102,6 +105,12 @@ type BuilderContextValue = {
   ) => boolean;
   commitPlacementFootprint: (type: FloorPlanElementType, footprint: Footprint) => boolean;
   commitFreeformSeatAt: (
+    localX: number,
+    localY: number,
+    parentId?: string | null,
+  ) => boolean;
+  commitFreeformElementAt: (
+    type: FloorPlanElementType,
     localX: number,
     localY: number,
     parentId?: string | null,
@@ -353,6 +362,34 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     [commitLayout, layout],
   );
 
+  const commitFreeformElementAt = React.useCallback(
+    (type: FloorPlanElementType, localX: number, localY: number, parentId: string | null = null) => {
+      const size = getDefaultElementPixelSize(type);
+      const element = createElement(type, {
+        parentId,
+        name: type === "room" ? createRoomName(getWorkspaceElements()) : undefined,
+        properties: createFreeformElementProperties(
+          Math.max(0, localX),
+          Math.max(0, localY),
+          size.width,
+          size.height,
+        ),
+      });
+      const result = addElement(layout, element);
+      if (result.error) {
+        setError(result.error);
+        return false;
+      }
+      commitLayout(result.layout);
+      setSelection([element.id]);
+      setActiveTool(null);
+      setPlacementDrag(null);
+      setError(null);
+      return true;
+    },
+    [commitLayout, layout],
+  );
+
   const commitBulkFreeformSeatsAt = React.useCallback(
     (localX: number, localY: number, count: number, parentId: string | null = null) => {
       const result = createBulkFreeformSeats(layout, {
@@ -451,7 +488,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
       const element = layout.elements.find((el) => el.id === elementId);
       if (!element) return false;
 
-      if (isFreeformSeat(element)) {
+      if (isFreeformCanvasElement(element)) {
         return false;
       }
 
@@ -899,7 +936,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
         const el = layout.elements.find((x) => x.id === selection[0]);
         if (!el) return;
         const step = e.shiftKey ? 10 : 1;
-        if (isFreeformSeat(el)) {
+        if (isFreeformCanvasElement(el)) {
           const rect = getFreeformRect(el);
           const patch =
             e.key === "ArrowUp"
@@ -954,6 +991,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     placeElementAt,
     commitPlacementFootprint,
     commitFreeformSeatAt,
+    commitFreeformElementAt,
     commitBulkFreeformSeatsAt,
     commitBulkPlacement,
     commitLayoutCloneAt,

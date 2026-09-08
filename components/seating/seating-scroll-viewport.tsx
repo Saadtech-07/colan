@@ -127,47 +127,8 @@ export function SeatingScrollViewport({
     };
   }, [fitWidth]);
 
-  React.useEffect(() => {
-    const node = scrollRef.current;
-    if (!node) return;
-
-    const onWheel = (event: WheelEvent) => {
-      if (event.ctrlKey || event.metaKey) return;
-
-      const canScrollY = node.scrollHeight > node.clientHeight + 1;
-      const canScrollX = !fitWidth && node.scrollWidth > node.clientWidth + 1;
-      if (!canScrollY && !canScrollX) return;
-      if (!node.contains(event.target as Node)) return;
-
-      let moved = false;
-
-      if (canScrollY && event.deltaY !== 0) {
-        const before = node.scrollTop;
-        node.scrollTop += event.deltaY;
-        moved = moved || node.scrollTop !== before;
-      }
-
-      if (!fitWidth) {
-        const horizontalDelta =
-          event.deltaX !== 0 ? event.deltaX : event.shiftKey ? event.deltaY : 0;
-
-        if (canScrollX && horizontalDelta !== 0) {
-          const before = node.scrollLeft;
-          node.scrollLeft += horizontalDelta;
-          moved = moved || node.scrollLeft !== before;
-        }
-      }
-
-      if (moved) {
-        event.preventDefault();
-      }
-    };
-
-    node.addEventListener("wheel", onWheel, { passive: false });
-    return () => node.removeEventListener("wheel", onWheel);
-  }, [fitWidth]);
-
-  const scaledHeight = natural.height > 0 ? natural.height * scale : undefined;
+  const scaledHeight =
+    natural.height > 0 ? Math.ceil(natural.height * scale) : undefined;
 
   return (
     <div
@@ -176,8 +137,10 @@ export function SeatingScrollViewport({
       role="region"
       aria-label="Seating floor plan scroll area"
       className={cn(
-        "min-h-0 h-0 flex-1 overscroll-auto scroll-smooth focus:outline-none",
-        fitWidth ? "overflow-x-hidden overflow-y-auto" : "overflow-x-auto overflow-y-auto",
+        "min-h-0 h-0 flex-1 overscroll-contain focus:outline-none",
+        fitWidth
+          ? "overflow-x-hidden overflow-y-scroll [scrollbar-gutter:stable]"
+          : "overflow-x-auto overflow-y-auto",
         className,
       )}
     >

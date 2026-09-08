@@ -172,7 +172,11 @@ export default function NewFloorPlanPage() {
                     size="sm"
                     variant="outline"
                     className="rounded-xl gap-1.5"
-                    onClick={() => router.push(`/seating/floors/${encodeURIComponent(plan.slug)}/builder`)}
+                    onClick={() =>
+                      router.push(
+                        `/seating/floors/${encodeURIComponent(plan.slug)}/builder?returnTo=${encodeURIComponent("/seating/floors/new")}`,
+                      )
+                    }
                   >
                     <Pencil className="h-3.5 w-3.5" />
                     Edit

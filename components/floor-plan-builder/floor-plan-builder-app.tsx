@@ -21,6 +21,7 @@ type Props = {
   initialName: string;
   initialLayout?: FloorPlanLayoutState;
   mode: "create" | "edit";
+  returnHref?: string;
 };
 
 function BuilderStatusBar() {
@@ -59,7 +60,11 @@ function BuilderStatusBar() {
   );
 }
 
-function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">) {
+function BuilderShell({
+  slug,
+  initialName,
+  returnHref = "/seating/floors/new",
+}: Omit<Props, "initialLayout" | "mode">) {
   const router = useRouter();
   const { layout, error, placementDrag, loadLayout, resetToEmptyLayout, layoutRevision, activeBlockId, fitToView } = useFloorPlanBuilder();
   const [floorName, setFloorName] = React.useState(initialName);
@@ -176,15 +181,14 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       if (!res.ok) throw new Error(await parseApiError(res));
       invalidateFloorPlanLayoutCache(targetSlug);
       invalidateFloorPlanClientCache(targetSlug);
-      setStatusIsError(false);
-      setStatusMessage("Floor published.");
+      router.push(returnHref);
+      return;
     } catch (e) {
       setStatusIsError(true);
       setStatusMessage(e instanceof Error ? e.message : "Publish failed.");
-    } finally {
       setPublishing(false);
     }
-  }, [buildSavePayload, currentSlug, persistDraft]);
+  }, [buildSavePayload, currentSlug, persistDraft, returnHref, router]);
 
   const deleteWorkspace = React.useCallback(async () => {
     if (!currentSlug) {
@@ -231,6 +235,14 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
 
   return (
     <div className={cn("flex h-full min-h-0 w-full flex-col overflow-hidden", BUILDER_CHROME.shellBg)}>
+      {publishing ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/60 bg-card px-10 py-8 shadow-xl">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+            <p className="text-sm font-semibold text-foreground">Publishing…</p>
+          </div>
+        </div>
+      ) : null}
       {(error || statusMessage) && (
         <div
           className={
@@ -244,7 +256,7 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       )}
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <ElementToolbox onBack={() => router.push("/seating/floors/new")} />
+        <ElementToolbox onBack={() => router.push(returnHref)} />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#fafbfc]">
           <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-[#fafbfc] px-3 py-2">
             <WorkspaceBlockTabs />
@@ -299,11 +311,11 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
   );
 }
 
-export function FloorPlanBuilderApp({ slug, initialName, initialLayout, mode }: Props) {
+export function FloorPlanBuilderApp({ slug, initialName, initialLayout, mode, returnHref }: Props) {
   return (
     <div className="h-full min-h-0 w-full">
       <FloorPlanBuilderProvider initialLayout={initialLayout}>
-        <BuilderShell slug={slug} initialName={initialName} mode={mode} />
+        <BuilderShell slug={slug} initialName={initialName} mode={mode} returnHref={returnHref} />
       </FloorPlanBuilderProvider>
     </div>
   );

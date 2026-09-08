@@ -30,16 +30,24 @@ import {
   computeFreeformResizePatch,
   CANVAS_BOUNDS_PX,
   computeBulkFreeformSeatPositions,
+  createFreeformElementProperties,
   createFreeformSeatProperties,
   DEFAULT_SEAT_HEIGHT,
   DEFAULT_SEAT_WIDTH,
+  MIN_SEAT_HEIGHT,
+  MIN_SEAT_WIDTH,
   getContainerPixelBounds,
+  getDefaultElementPixelSize,
   getElementLocalPixelRect,
   getFreeformRect,
   inferRowStartX,
+  isFreeformCanvasElement,
   isFreeformSeat,
   isRectFullyInsideBounds,
+  MIN_FREEFORM_ELEMENT_SIZE,
+  migrateElementToFreeform,
   migrateSeatToFreeform,
+  usesFreeformCanvas,
   SEAT_BULK_GAP,
   SEAT_BULK_ROW_GAP,
   withFreeformRect,
@@ -143,14 +151,37 @@ export function createElement(
                   ? Number(options.properties.canvasHeight)
                   : DEFAULT_SEAT_HEIGHT,
               ))
-        : def.supportsCapacity && def.defaultCapacity
-          ? { capacity: def.defaultCapacity, ...options.properties }
-          : options.properties,
+        : usesFreeformCanvas(type)
+          ? (() => {
+              const defaultSize = getDefaultElementPixelSize(type);
+              const freeformProps = options.properties?.freeform
+                ? options.properties
+                : createFreeformElementProperties(
+                    Number(options.properties?.x ?? 0),
+                    Number(options.properties?.y ?? 0),
+                    options.properties?.canvasWidth != null
+                      ? Number(options.properties.canvasWidth)
+                      : defaultSize.width,
+                    options.properties?.canvasHeight != null
+                      ? Number(options.properties.canvasHeight)
+                      : defaultSize.height,
+                  );
+              return def.supportsCapacity && def.defaultCapacity
+                ? { capacity: def.defaultCapacity, ...freeformProps, ...options.properties }
+                : { ...freeformProps, ...options.properties };
+            })()
+          : def.supportsCapacity && def.defaultCapacity
+            ? { capacity: def.defaultCapacity, ...options.properties }
+            : options.properties,
   };
 }
 
 export function ensureFreeformSeats(elements: FloorPlanElement[]): FloorPlanElement[] {
   return elements.map((el) => (el.type === "seat" ? migrateSeatToFreeform(el) : el));
+}
+
+export function ensureFreeformCanvasElements(elements: FloorPlanElement[]): FloorPlanElement[] {
+  return elements.map((el) => migrateElementToFreeform(el));
 }
 
 export function validatePlacement(
@@ -170,15 +201,17 @@ export function validatePlacement(
     if (!cap.ok) return cap;
   }
 
-  if (isFreeformSeat(element)) {
+  if (isFreeformCanvasElement(element)) {
     const bounds = getContainerPixelBounds(layout.elements, element.parentId, layout.grid);
     const rect = getFreeformRect(element);
     if (!isRectFullyInsideBounds(rect, bounds)) {
       return {
         ok: false,
         reason: element.parentId
-          ? "Seat must remain fully inside the container."
-          : "Seat is outside the workspace boundary.",
+          ? "Element must remain fully inside the container."
+          : element.type === "seat"
+            ? "Seat is outside the workspace boundary."
+            : "Element is outside the workspace boundary.",
       };
     }
     return { ok: true, footprint: { parentId: element.parentId, row: 0, column: 0, width: 1, height: 1 } };
@@ -226,7 +259,7 @@ export function moveFreeformElement(
   y: number,
 ): { layout: FloorPlanLayoutState; error?: string } {
   const current = layout.elements.find((el) => el.id === elementId);
-  if (!current || !isFreeformSeat(current)) {
+  if (!current || !isFreeformCanvasElement(current)) {
     return { layout, error: "Element not found." };
   }
 
@@ -255,17 +288,21 @@ export function resizeFreeformElement(
   deltaY: number,
 ): { layout: FloorPlanLayoutState; error?: string; preview?: FreeformRect } {
   const current = layout.elements.find((el) => el.id === elementId);
-  if (!current || !isFreeformSeat(current)) {
+  if (!current || !isFreeformCanvasElement(current)) {
     return { layout, error: "Element not found." };
   }
 
   const currentRect = getFreeformRect(current);
-  const patch = computeFreeformResizePatch(currentRect, edge, deltaX, deltaY);
+  const resizeMins =
+    current.type === "seat"
+      ? { minWidth: MIN_SEAT_WIDTH, minHeight: MIN_SEAT_HEIGHT }
+      : { minWidth: MIN_FREEFORM_ELEMENT_SIZE, minHeight: MIN_FREEFORM_ELEMENT_SIZE };
+  const patch = computeFreeformResizePatch(currentRect, edge, deltaX, deltaY, resizeMins);
   if (!patch) return { layout, error: "Invalid resize." };
 
   const bounds = getContainerPixelBounds(layout.elements, current.parentId, layout.grid);
   if (!isRectFullyInsideBounds(patch, bounds)) {
-    return { layout, error: "Seat must remain fully inside the container." };
+    return { layout, error: "Element must remain fully inside the container." };
   }
 
   const next = withFreeformRect(current, patch);
@@ -294,8 +331,8 @@ export function resizeElement(
   const current = layout.elements.find((el) => el.id === elementId);
   if (!current) return { layout, error: "Element not found." };
 
-  if (isFreeformSeat(current)) {
-    return { layout, error: "Use freeform resize for seats." };
+  if (isFreeformCanvasElement(current)) {
+    return { layout, error: "Use freeform resize for this element." };
   }
 
   const patch = computeResizePatch(current, edge, deltaRow, deltaCol);
@@ -336,7 +373,7 @@ export function updateElement(
 
   let next: FloorPlanElement = { ...current, ...patch, id: current.id, type: current.type };
 
-  if (isFreeformSeat(current)) {
+  if (isFreeformCanvasElement(current)) {
     const props = patch.properties ?? {};
     const rectPatch: Partial<FreeformRect> = {};
     if (props.x !== undefined) rectPatch.x = Number(props.x);
@@ -348,7 +385,7 @@ export function updateElement(
     }
   }
 
-  if (patch.rotation !== undefined && patch.rotation !== (current.rotation ?? 0) && !isFreeformSeat(current)) {
+  if (patch.rotation !== undefined && patch.rotation !== (current.rotation ?? 0) && !isFreeformCanvasElement(current)) {
     const oldVertical = (current.rotation ?? 0) === 90 || (current.rotation ?? 0) === 270;
     const newVertical = patch.rotation === 90 || patch.rotation === 270;
     if (oldVertical !== newVertical) {
@@ -392,7 +429,7 @@ function inferRowStartColumn(
   let minColumn = Infinity;
   let found = false;
   for (const el of elements) {
-    if (el.parentId !== parentId || isFreeformSeat(el)) continue;
+    if (el.parentId !== parentId || isFreeformCanvasElement(el)) continue;
     if (el.row !== row) continue;
     found = true;
     minColumn = Math.min(minColumn, el.column);
@@ -412,7 +449,7 @@ export function computeDuplicateAdjacentPosition(
   layout: FloorPlanLayoutState,
   element: FloorPlanElement,
 ): { ok: true; row: number; column: number; x?: number; y?: number } | { ok: false; error: string } {
-  if (isFreeformSeat(element)) {
+  if (isFreeformCanvasElement(element)) {
     const rect = getFreeformRect(element);
     const bounds = getContainerPixelBounds(layout.elements, element.parentId, layout.grid);
     let newX = rect.x + rect.width + SEAT_BULK_GAP;
@@ -488,7 +525,7 @@ export function duplicateSubtree(
       if (useGridOffset) {
         next = { ...next, row: el.row + offsetRow!, column: el.column + offsetColumn! };
       } else if (adjacentPosition?.ok) {
-        if (isFreeformSeat(el) && adjacentPosition.x != null && adjacentPosition.y != null) {
+        if (isFreeformCanvasElement(el) && adjacentPosition.x != null && adjacentPosition.y != null) {
           next = withFreeformRect(next, { x: adjacentPosition.x, y: adjacentPosition.y });
         } else {
           next = { ...next, row: adjacentPosition.row, column: adjacentPosition.column };
@@ -997,7 +1034,7 @@ export function resizeFloorGrid(
     elements: layout.elements.map((el) => {
       if (el.parentId !== null) return el;
 
-      if (isFreeformSeat(el)) {
+      if (isFreeformCanvasElement(el)) {
         const rect = getFreeformRect(el);
         return withFreeformRect(el, {
           x: rect.x + columnOffset * CANVAS_BOUNDS_PX,

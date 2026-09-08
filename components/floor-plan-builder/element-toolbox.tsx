@@ -7,7 +7,6 @@ import {
   Bell,
   Briefcase,
   Columns3,
-  GripVertical,
   Grid2x2,
   LayoutGrid,
   LogIn,
@@ -41,15 +40,9 @@ const ICONS: Partial<Record<FloorPlanElementType, React.ComponentType<{ classNam
 
 const TOOLBOX_CATEGORIES: { label: string; types: FloorPlanElementType[] }[] = [
   { label: "Workspace", types: ["seat"] },
-  { label: "Structure", types: ["room", "cabin", "block", "common_area", "reception"] },
+  { label: "Structure", types: ["room", "cabin", "reception"] },
   { label: "Infrastructure", types: ["pillar", "wall", "entrance", "stairs"] },
 ];
-
-const SHORT_LABELS: Partial<Record<FloorPlanElementType, string>> = {
-  common_area: "Common",
-  entrance: "Entrance",
-  reception: "Reception",
-};
 
 const DEFAULT_QUANTITY = 1;
 const MAX_QUANTITY = 64;
@@ -74,7 +67,7 @@ export function ElementToolbox({ onBack }: ElementToolboxProps) {
   };
 
   const activeQty = getQty(activeType);
-  const activeLabel = SHORT_LABELS[activeType] ?? getElementDefinition(activeType).label;
+  const activeLabel = getElementDefinition(activeType).label;
   const searchLower = search.trim().toLowerCase();
 
   const filteredCategories = React.useMemo(() => {
@@ -83,8 +76,7 @@ export function ElementToolbox({ onBack }: ElementToolboxProps) {
       ...cat,
       types: cat.types.filter((type) => {
         const def = getElementDefinition(type);
-        const label = SHORT_LABELS[type] ?? def.label;
-        return label.toLowerCase().includes(searchLower) || def.label.toLowerCase().includes(searchLower);
+        return def.label.toLowerCase().includes(searchLower);
       }),
     })).filter((cat) => cat.types.length > 0);
   }, [searchLower]);
@@ -96,14 +88,14 @@ export function ElementToolbox({ onBack }: ElementToolboxProps) {
   };
 
   return (
-    <aside className="flex h-full min-h-0 w-[116px] shrink-0 flex-col border-r border-border/50 bg-[#fafbfc]">
+    <aside className="flex h-full min-h-0 w-[172px] shrink-0 flex-col border-r border-border/50 bg-[#fafbfc]">
       {onBack ? (
         <div className="shrink-0 border-b border-border/50 p-2">
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 w-full gap-1.5 rounded-lg px-2 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+            className="h-8 w-full gap-1.5 rounded-lg px-2 text-[11px] font-medium text-muted-foreground hover:text-foreground"
             onClick={onBack}
           >
             <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
@@ -112,7 +104,7 @@ export function ElementToolbox({ onBack }: ElementToolboxProps) {
         </div>
       ) : null}
 
-      <div className="shrink-0 border-b border-border/50 px-2.5 py-2.5">
+      <div className="shrink-0 border-b border-border/50 px-3 py-2.5">
         <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Elements
         </p>
@@ -122,7 +114,7 @@ export function ElementToolbox({ onBack }: ElementToolboxProps) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter…"
-            className="h-7 rounded-md border-border/50 bg-background pl-7 text-[10px] placeholder:text-muted-foreground/50"
+            className="h-7 rounded-md border-border/50 bg-background pl-7 text-[11px] placeholder:text-muted-foreground/50"
           />
         </div>
       </div>
@@ -139,7 +131,6 @@ export function ElementToolbox({ onBack }: ElementToolboxProps) {
                 const Icon = ICONS[type] ?? LayoutGrid;
                 const qty = getQty(type);
                 const isActive = activeType === type;
-                const label = SHORT_LABELS[type] ?? def.label;
 
                 return (
                   <button
@@ -147,30 +138,26 @@ export function ElementToolbox({ onBack }: ElementToolboxProps) {
                     type="button"
                     onClick={() => setActiveType(type)}
                     onPointerDown={(e) => beginDrag(type, e)}
-                    title={`Drag ${def.label} onto the grid`}
+                    title={`Drag ${def.label} onto the canvas`}
                     className={cn(
-                      "group/element relative flex w-full cursor-grab items-center gap-1.5 rounded-lg border px-1.5 py-2 transition-all duration-150 active:cursor-grabbing",
+                      "group/element relative flex w-full cursor-grab flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 transition-all duration-150 active:cursor-grabbing",
                       isActive
                         ? "border-primary/40 bg-primary/8 shadow-sm ring-1 ring-primary/20"
                         : "border-transparent bg-background hover:border-border/60 hover:bg-muted/40 hover:shadow-sm",
                     )}
                   >
-                    <GripVertical
-                      className="h-3 w-3 shrink-0 text-muted-foreground/30 group-hover/element:text-muted-foreground/60"
-                      aria-hidden
-                    />
                     <div
-                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/40 bg-background shadow-sm"
+                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/40 bg-background shadow-sm"
                       style={{ borderColor: `${def.borderColor}55` }}
                     >
                       <Icon
-                        className="h-3.5 w-3.5"
+                        className="h-4 w-4"
                         style={{ color: def.borderColor }}
                         strokeWidth={2}
                       />
                     </div>
-                    <span className="min-w-0 flex-1 truncate text-left text-[9px] font-semibold leading-tight text-foreground/85">
-                      {label}
+                    <span className="w-full text-center text-[10px] font-semibold leading-snug text-foreground/90">
+                      {def.label}
                     </span>
                     {qty > 1 ? (
                       <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[8px] font-bold text-primary-foreground shadow-sm">
@@ -186,7 +173,7 @@ export function ElementToolbox({ onBack }: ElementToolboxProps) {
       </div>
 
       <div className="shrink-0 border-t border-border/50 bg-muted/20 p-2.5">
-        <p className="mb-2 truncate text-center text-[9px] font-medium text-muted-foreground">
+        <p className="mb-2 text-center text-[10px] font-medium leading-snug text-muted-foreground">
           Place {activeQty > 1 ? `${activeQty}× ` : ""}
           {activeLabel}
         </p>
@@ -229,7 +216,7 @@ export function getToolHint(placementDrag: PlacementDrag | null): string {
   }
   const label = getElementDefinition(placementDrag.type).label;
   if (placementDrag.quantity > 1) {
-    return `Dragging ${placementDrag.quantity}× ${label} — release on a valid grid area.`;
+    return `Dragging ${placementDrag.quantity}× ${label} — release on the canvas.`;
   }
-  return `Dragging ${label} — release on a valid cell.`;
+  return `Dragging ${label} — release on the canvas.`;
 }
