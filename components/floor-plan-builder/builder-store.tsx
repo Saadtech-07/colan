@@ -27,6 +27,8 @@ import {
   getSelectionRoots,
   insertClonedSubtrees,
   mergeSeats,
+  mergeFreeformSeats,
+  mergeFreeformSeatWithRect,
   moveFreeformElement,
   resizeElement,
   resizeFloorGrid,
@@ -36,8 +38,11 @@ import {
   splitMergedSeat,
   unmergeSeats,
   updateElement,
+  validateContainerCapacity,
 } from "@/lib/floor-plan-builder/layout-engine";
 import { getElementDefinition } from "@/lib/floor-plan-builder/element-registry";
+import { getParentElement } from "@/lib/floor-plan-builder/hierarchy";
+import { useBuilderConfirmDialog, type BuilderConfirmOptions } from "./builder-confirm-dialog";
 import type { ResizeEdge } from "@/lib/floor-plan-builder/placement-utils";
 import type {
   BulkSeatOptions,
@@ -53,10 +58,15 @@ import {
   createFreeformSeatProperties,
   DEFAULT_SEAT_HEIGHT,
   DEFAULT_SEAT_WIDTH,
+  findOverlappingFreeformSeat,
   getDefaultElementPixelSize,
   getFreeformRect,
   isFreeformCanvasElement,
   isFreeformSeat,
+  getEffectiveSeatContainer,
+  getContainerDisplayLabel,
+  resolveFreeformSeatDrop,
+  resolveSeatContainerParent,
 } from "@/lib/floor-plan-builder/freeform-geometry";
 import {
   applyActiveWorkspaceBlock,
@@ -86,6 +96,7 @@ type BuilderContextValue = {
   error: string | null;
   canUndo: boolean;
   canRedo: boolean;
+  notifyBlockedPlacement: (message?: string) => void;
   setActiveTool: (tool: FloorPlanElementType | null) => void;
   startPlacementDrag: (drag: PlacementDrag) => void;
   cancelPlacementDrag: () => void;
@@ -108,7 +119,7 @@ type BuilderContextValue = {
     localX: number,
     localY: number,
     parentId?: string | null,
-  ) => boolean;
+  ) => Promise<boolean>;
   commitFreeformElementAt: (
     type: FloorPlanElementType,
     localX: number,
@@ -120,7 +131,7 @@ type BuilderContextValue = {
     localY: number,
     count: number,
     parentId?: string | null,
-  ) => boolean;
+  ) => Promise<boolean>;
   commitBulkPlacement: (
     type: FloorPlanElementType,
     footprint: Footprint,
@@ -128,7 +139,14 @@ type BuilderContextValue = {
   ) => boolean;
   commitLayoutCloneAt: (worldRow: number, worldColumn: number) => boolean;
   tryMoveElement: (elementId: string, row: number, column: number) => boolean;
+  tryMoveElementAtWorld: (elementId: string, worldRow: number, worldColumn: number) => Promise<boolean>;
   tryMoveFreeformElement: (elementId: string, x: number, y: number) => boolean;
+  tryMoveFreeformSeatAt: (
+    elementId: string,
+    localX: number,
+    localY: number,
+    origin?: { originX: number; originY: number; originParentId: string | null },
+  ) => Promise<boolean>;
   tryResizeElement: (
     elementId: string,
     edge: ResizeEdge,
@@ -150,8 +168,8 @@ type BuilderContextValue = {
   pasteClipboard: () => void;
   canPaste: boolean;
   bulkCreateSeats: (options: BulkSeatOptions) => void;
-  mergeSelectedSeats: () => void;
-  mergeSeatsByDrag: (draggedId: string, targetId: string) => boolean;
+  mergeSelectedSeats: () => Promise<void>;
+  mergeSeatsByDrag: (draggedId: string, targetId: string) => Promise<boolean>;
   unmergeGroup: (groupId: string) => void;
   resizeGrid: (
     grid: FloorPlanGrid,
@@ -175,16 +193,61 @@ type BuilderContextValue = {
 
 const BuilderContext = React.createContext<BuilderContextValue | null>(null);
 
-function confirmSeatMerge(elements: FloorPlanElement[], seatIds: string[]): boolean {
+function buildSeatMergeConfirmOptions(
+  elements: FloorPlanElement[],
+  seatIds: string[],
+): BuilderConfirmOptions | null {
   const seats = seatIds
     .map((id) => elements.find((el) => el.id === id))
     .filter((el): el is FloorPlanElement => el?.type === "seat");
-  if (seats.length < 2) return false;
+  if (seats.length < 2) return null;
 
+  const primary = [...seats].sort((a, b) =>
+    (a.seatId ?? a.name).localeCompare(b.seatId ?? b.name, undefined, { numeric: true }),
+  )[0];
   const labels = seats.map((seat) => getSeatDisplayName(seat)).join(" and ");
-  return window.confirm(
-    `Merge ${labels} into one wider seat?\n\nOnly confirm if you intend to combine these seats. Use Undo (Ctrl+Z) to revert.`,
-  );
+  const primaryLabel = primary ? getSeatDisplayName(primary) : "seat";
+
+  return {
+    title: "Merge seats?",
+    description: `Merge ${labels} into one seat named "${primaryLabel}"? The merged seat will use the combined size of both seats (e.g. 200×96 for two side-by-side seats).`,
+    confirmLabel: "Merge seats",
+  };
+}
+
+function buildSeatReparentConfirmOptions(
+  elements: FloorPlanElement[],
+  seat: FloorPlanElement,
+  newParentId: string | null,
+  floorName: string,
+  originParentId?: string | null,
+): BuilderConfirmOptions {
+  const seatLabel = getSeatDisplayName(seat);
+
+  if (newParentId) {
+    const container = getParentElement(elements, newParentId);
+    const kind = container ? getContainerDisplayLabel(container.type) : "room";
+    const containerName = container?.name ?? kind;
+    return {
+      title: `Move seat into ${kind}?`,
+      description: `Move ${seatLabel} into ${containerName}?`,
+      confirmLabel: `Move into ${kind}`,
+    };
+  }
+
+  const originContainer = originParentId
+    ? getParentElement(elements, originParentId)
+    : null;
+  const originKind = originContainer
+    ? getContainerDisplayLabel(originContainer.type)
+    : "container";
+  const originName = originContainer?.name ?? originKind;
+
+  return {
+    title: "Move seat to floor?",
+    description: `Move ${seatLabel} out of ${originName} to ${floorName}?`,
+    confirmLabel: "Move to floor",
+  };
 }
 
 export function useFloorPlanBuilder() {
@@ -248,6 +311,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   const [selection, setSelection] = React.useState<string[]>([]);
   const clipboardRef = React.useRef<BuilderClipboard | null>(null);
   const [canPaste, setCanPaste] = React.useState(false);
+  const { requestConfirm, dialog: confirmDialog } = useBuilderConfirmDialog();
 
   const registerFitToView = React.useCallback((fn: (() => void) | null) => {
     fitToViewRef.current = fn;
@@ -267,6 +331,10 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     layoutRevisionRef.current += 1;
     setError(nextError);
     bump();
+  }, []);
+
+  const notifyBlockedPlacement = React.useCallback((message?: string) => {
+    setError(message ?? "Cannot place here — position is invalid or occupied.");
   }, []);
 
   const select = React.useCallback((ids: string[], additive = false) => {
@@ -336,13 +404,72 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   );
 
   const commitFreeformSeatAt = React.useCallback(
-    (localX: number, localY: number, parentId: string | null = null) => {
+    async (localX: number, localY: number, parentId: string | null = null) => {
+      const dropRect = {
+        x: Math.max(0, localX),
+        y: Math.max(0, localY),
+        width: DEFAULT_SEAT_WIDTH,
+        height: DEFAULT_SEAT_HEIGHT,
+      };
+
+      const overlapping = findOverlappingFreeformSeat(layout.elements, dropRect, parentId);
+      if (overlapping) {
+        const primaryLabel = getSeatDisplayName(overlapping);
+        if (
+          !(await requestConfirm({
+            title: "Merge seats?",
+            description: `Merge a new seat with ${primaryLabel}? The merged seat will keep the name "${primaryLabel}" and use the space of both seats.`,
+            confirmLabel: "Merge seats",
+          }))
+        ) {
+          return false;
+        }
+        const result = mergeFreeformSeatWithRect(layout, overlapping.id, dropRect);
+        if (result.error) {
+          setError(result.error);
+          return false;
+        }
+        commitLayout(result.layout);
+        if (result.groupId) setSelection([result.groupId]);
+        setActiveTool(null);
+        setPlacementDrag(null);
+        setError(null);
+        return true;
+      }
+
+      if (parentId) {
+        const confirmOptions = buildSeatReparentConfirmOptions(
+          layout.elements,
+          {
+            id: "pending",
+            type: "seat",
+            name: "New seat",
+            parentId: null,
+            row: 0,
+            column: 0,
+            width: 1,
+            height: 1,
+          },
+          parentId,
+          activeBlockName,
+        );
+        if (!(await requestConfirm(confirmOptions))) {
+          return false;
+        }
+
+        const cap = validateContainerCapacity(layout, parentId, 1);
+        if (!cap.ok) {
+          setError(cap.reason);
+          return false;
+        }
+      }
+
       const element = createElement("seat", {
         parentId,
         seatId: createSeatId(getWorkspaceElements()),
         properties: createFreeformSeatProperties(
-          Math.max(0, localX),
-          Math.max(0, localY),
+          dropRect.x,
+          dropRect.y,
           DEFAULT_SEAT_WIDTH,
           DEFAULT_SEAT_HEIGHT,
         ),
@@ -359,7 +486,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
       setError(null);
       return true;
     },
-    [commitLayout, layout],
+    [activeBlockName, commitLayout, layout, requestConfirm],
   );
 
   const commitFreeformElementAt = React.useCallback(
@@ -391,7 +518,35 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
   );
 
   const commitBulkFreeformSeatsAt = React.useCallback(
-    (localX: number, localY: number, count: number, parentId: string | null = null) => {
+    async (localX: number, localY: number, count: number, parentId: string | null = null) => {
+      if (parentId) {
+        const confirmOptions = buildSeatReparentConfirmOptions(
+          layout.elements,
+          {
+            id: "pending",
+            type: "seat",
+            name: "New seats",
+            parentId: null,
+            row: 0,
+            column: 0,
+            width: 1,
+            height: 1,
+          },
+          parentId,
+          activeBlockName,
+          null,
+        );
+        if (!(await requestConfirm(confirmOptions))) {
+          return false;
+        }
+
+        const cap = validateContainerCapacity(layout, parentId, count);
+        if (!cap.ok) {
+          setError(cap.reason);
+          return false;
+        }
+      }
+
       const result = createBulkFreeformSeats(layout, {
         parentId,
         startX: Math.max(0, localX),
@@ -411,7 +566,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
       setError(null);
       return true;
     },
-    [commitLayout, layout],
+    [activeBlockName, commitLayout, layout, requestConfirm],
   );
 
   const commitPlacementFootprint = React.useCallback(
@@ -518,6 +673,69 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     [commitLayout, layout],
   );
 
+  const tryMoveElementAtWorld = React.useCallback(
+    async (elementId: string, worldRow: number, worldColumn: number) => {
+      const element = layout.elements.find((el) => el.id === elementId);
+      if (!element || isFreeformCanvasElement(element)) return false;
+
+      if (element.type !== "seat" || isFreeformSeat(element)) {
+        return tryMoveElement(elementId, worldRow, worldColumn);
+      }
+
+      const originContainer = element.parentId;
+      const target = resolvePlacementTarget(layout, element.type, worldRow, worldColumn);
+      const targetContainer = target.parentId;
+
+      if (targetContainer !== originContainer) {
+        const confirmOptions = buildSeatReparentConfirmOptions(
+          layout.elements,
+          element,
+          targetContainer,
+          activeBlockName,
+          originContainer,
+        );
+        if (!(await requestConfirm(confirmOptions))) {
+          return false;
+        }
+      }
+
+      if (targetContainer) {
+        const cap = validateContainerCapacity(layout, targetContainer, 1, [elementId]);
+        if (!cap.ok) {
+          setError(cap.reason);
+          return false;
+        }
+      }
+
+      const footprint = snapFootprintStrict(
+        layout,
+        {
+          parentId: target.parentId,
+          row: target.row,
+          column: target.column,
+          width: element.width,
+          height: element.height,
+        },
+        { ignoreElementId: elementId, elementType: element.type },
+      );
+      if (!footprint) return false;
+
+      const result = updateElement(layout, elementId, {
+        parentId: footprint.parentId,
+        row: footprint.row,
+        column: footprint.column,
+      });
+      if (result.error) {
+        setError(result.error);
+        return false;
+      }
+      commitLayout(result.layout);
+      setError(null);
+      return true;
+    },
+    [activeBlockName, commitLayout, layout, requestConfirm, tryMoveElement],
+  );
+
   const tryMoveFreeformElement = React.useCallback(
     (elementId: string, x: number, y: number) => {
       const result = moveFreeformElement(layout, elementId, x, y);
@@ -529,6 +747,98 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
       return true;
     },
     [commitLayout, layout],
+  );
+
+  const tryMoveFreeformSeatAt = React.useCallback(
+    async (
+      elementId: string,
+      localX: number,
+      localY: number,
+      origin?: { originX: number; originY: number; originParentId: string | null },
+    ) => {
+      const element = layout.elements.find((el) => el.id === elementId);
+      if (!element || !isFreeformSeat(element)) {
+        return tryMoveFreeformElement(elementId, localX, localY);
+      }
+
+      const originX = origin?.originX ?? getFreeformRect(element).x;
+      const originY = origin?.originY ?? getFreeformRect(element).y;
+      const originParentId =
+        origin?.originParentId !== undefined ? origin.originParentId : element.parentId;
+      const originContainer =
+        originParentId ??
+        resolveSeatContainerParent(layout.elements, element, originX, originY);
+
+      const drop = resolveFreeformSeatDrop(layout.elements, element, localX, localY);
+      const rect = getFreeformRect(element);
+      const dropRect = { x: drop.localX, y: drop.localY, width: rect.width, height: rect.height };
+      const targetContainer = drop.parentId;
+
+      if (targetContainer !== originContainer) {
+        const confirmOptions = buildSeatReparentConfirmOptions(
+          layout.elements,
+          element,
+          targetContainer,
+          activeBlockName,
+          originContainer,
+        );
+        if (!(await requestConfirm(confirmOptions))) {
+          return false;
+        }
+      }
+
+      const overlapping = findOverlappingFreeformSeat(
+        layout.elements,
+        dropRect,
+        targetContainer,
+        elementId,
+      );
+      if (overlapping) {
+        const confirmOptions = buildSeatMergeConfirmOptions(layout.elements, [
+          elementId,
+          overlapping.id,
+        ]);
+        if (!confirmOptions || !(await requestConfirm(confirmOptions))) {
+          return false;
+        }
+        const result = mergeFreeformSeats(layout, [elementId, overlapping.id], {
+          originLocalById: { [elementId]: { x: originX, y: originY } },
+          anchorSeatId: overlapping.id,
+        });
+        if (result.error) {
+          setError(result.error);
+          return false;
+        }
+        commitLayout(result.layout);
+        if (result.groupId) setSelection([result.groupId]);
+        setError(null);
+        return true;
+      }
+
+      if (targetContainer) {
+        const cap = validateContainerCapacity(layout, targetContainer, 1, [elementId]);
+        if (!cap.ok) {
+          setError(cap.reason);
+          return false;
+        }
+      }
+
+      const result = moveFreeformElement(
+        layout,
+        elementId,
+        drop.localX,
+        drop.localY,
+        targetContainer,
+      );
+      if (result.error) {
+        setError(result.error);
+        return false;
+      }
+      commitLayout(result.layout);
+      setError(null);
+      return true;
+    },
+    [activeBlockName, commitLayout, layout, requestConfirm, tryMoveFreeformElement],
   );
 
   const tryResizeFreeformElement = React.useCallback(
@@ -683,15 +993,21 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     [commitLayout, layout],
   );
 
-  const mergeSelectedSeats = React.useCallback(() => {
+  const mergeSelectedSeats = React.useCallback(async () => {
     const seatIds = selection.filter((id) => {
       const el = layout.elements.find((e) => e.id === id);
       return el?.type === "seat";
     });
     if (seatIds.length < 2) return;
-    if (!confirmSeatMerge(layout.elements, seatIds)) return;
+    const confirmOptions = buildSeatMergeConfirmOptions(layout.elements, seatIds);
+    if (!confirmOptions || !(await requestConfirm(confirmOptions))) return;
 
-    const result = mergeSeats(layout, selection);
+    const seats = layout.elements.filter((el) => seatIds.includes(el.id) && el.type === "seat");
+    const allFreeform = seats.every((s) => isFreeformSeat(s));
+    const result = allFreeform
+      ? mergeFreeformSeats(layout, seatIds)
+      : mergeSeats(layout, selection);
+
     if (result.error) {
       setError(result.error);
       return;
@@ -699,14 +1015,33 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     commitLayout(result.layout);
     if (result.groupId) setSelection([result.groupId]);
     setError(null);
-  }, [commitLayout, layout, selection]);
+  }, [commitLayout, layout, requestConfirm, selection]);
 
   const mergeSeatsByDrag = React.useCallback(
-    (draggedId: string, targetId: string) => {
-      if (!confirmSeatMerge(layout.elements, [draggedId, targetId])) {
+    async (
+      draggedId: string,
+      targetId: string,
+      originLocalById?: Record<string, { x: number; y: number }>,
+    ) => {
+      const dragged = layout.elements.find((el) => el.id === draggedId);
+      const target = layout.elements.find((el) => el.id === targetId);
+      if (!dragged || !target || dragged.type !== "seat" || target.type !== "seat") {
         return false;
       }
-      const result = mergeSeats(layout, [draggedId, targetId]);
+
+      const confirmOptions = buildSeatMergeConfirmOptions(layout.elements, [draggedId, targetId]);
+      if (!confirmOptions || !(await requestConfirm(confirmOptions))) {
+        return false;
+      }
+
+      const result =
+        isFreeformSeat(dragged) && isFreeformSeat(target)
+          ? mergeFreeformSeats(layout, [draggedId, targetId], {
+              originLocalById,
+              anchorSeatId: targetId,
+            })
+          : mergeSeats(layout, [draggedId, targetId]);
+
       if (result.error) {
         setError(result.error);
         return false;
@@ -716,7 +1051,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
       setError(null);
       return true;
     },
-    [commitLayout, layout],
+    [commitLayout, layout, requestConfirm],
   );
 
   const unmergeGroup = React.useCallback(
@@ -977,6 +1312,7 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     error,
     canUndo: canUndo(historyRef.current),
     canRedo: canRedo(historyRef.current),
+    notifyBlockedPlacement,
     setActiveTool,
     startPlacementDrag: setPlacementDrag,
     cancelPlacementDrag: () => setPlacementDrag(null),
@@ -996,7 +1332,9 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     commitBulkPlacement,
     commitLayoutCloneAt,
     tryMoveElement,
+    tryMoveElementAtWorld,
     tryMoveFreeformElement,
+    tryMoveFreeformSeatAt,
     tryResizeElement,
     tryResizeFreeformElement,
     tryRotateElement,
@@ -1028,5 +1366,10 @@ export function FloorPlanBuilderProvider({ initialLayout, children }: ProviderPr
     fitToView,
   };
 
-  return <BuilderContext.Provider value={value}>{children}</BuilderContext.Provider>;
+  return (
+    <BuilderContext.Provider value={value}>
+      {children}
+      {confirmDialog}
+    </BuilderContext.Provider>
+  );
 }

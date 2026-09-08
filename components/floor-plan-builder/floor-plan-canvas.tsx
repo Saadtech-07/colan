@@ -13,7 +13,9 @@ import {
   snapFootprintStrict,
   snapRotationDegrees,
   validateContainerCapacity,
+  validateFreeformPosition,
   validateLayoutCloneAt,
+  validateNewFreeformElementAt,
 } from "@/lib/floor-plan-builder/layout-engine";
 import { elementPixelSize } from "@/lib/floor-plan-builder/metrics";
 import {
@@ -37,6 +39,7 @@ import {
   isFreeformCanvasElement,
   isFreeformSeat,
   localPointToBlockPixel,
+  resolveFreeformSeatDrop,
   MIN_FREEFORM_ELEMENT_SIZE,
   MIN_SEAT_HEIGHT,
   MIN_SEAT_WIDTH,
@@ -78,6 +81,7 @@ type DragState = {
   freeform?: boolean;
   originX?: number;
   originY?: number;
+  originParentId?: string | null;
 };
 
 type ResizeState = {
@@ -434,12 +438,15 @@ export function FloorPlanCanvas() {
     commitBulkPlacement,
     commitLayoutCloneAt,
     tryMoveElement,
+    tryMoveElementAtWorld,
     tryMoveFreeformElement,
+    tryMoveFreeformSeatAt,
     tryResizeElement,
     tryResizeFreeformElement,
     tryRotateElement,
     mergeSeatsByDrag,
     cancelPlacementDrag,
+    notifyBlockedPlacement,
     setZoom,
     setPan,
     resizeGrid,
@@ -469,7 +476,12 @@ export function FloorPlanCanvas() {
     rowOffset: number;
     columnOffset: number;
   } | null>(null);
-  const [dragPreview, setDragPreview] = React.useState<{ row: number; column: number; valid: boolean } | null>(null);
+  const [dragPreview, setDragPreview] = React.useState<{
+    row: number;
+    column: number;
+    valid: boolean;
+    parentId?: string | null;
+  } | null>(null);
   const [resizePreview, setResizePreview] = React.useState<Partial<FloorPlanElement> | null>(null);
   const [freeformResizePreview, setFreeformResizePreview] = React.useState<FreeformRect | null>(null);
   const [placementPreview, setPlacementPreview] = React.useState<{
@@ -674,12 +686,16 @@ export function FloorPlanCanvas() {
           : { ok: true as const };
 
         if (quantity <= 1) {
-          const fitsBounds =
-            startX >= 0 &&
-            startY >= 0 &&
-            startX + DEFAULT_SEAT_WIDTH <= bounds.width &&
-            startY + DEFAULT_SEAT_HEIGHT <= bounds.height;
-          const valid = fitsBounds && capacityCheck.ok;
+          const placementCheck = validateNewFreeformElementAt(
+            layout,
+            "seat",
+            startX,
+            startY,
+            DEFAULT_SEAT_WIDTH,
+            DEFAULT_SEAT_HEIGHT,
+            parentId,
+          );
+          const valid = placementCheck.ok && capacityCheck.ok;
           const blockPos = localPointToBlockPixel(layout.elements, parentId, startX, startY);
           pendingPlacementRef.current = {
             mode: "freeform-seat",
@@ -749,11 +765,16 @@ export function FloorPlanCanvas() {
           ? Math.max(0, hit.localY - size.height / 2)
           : dropY;
         const bounds = getContainerPixelBounds(layout.elements, parentId, layout.grid);
-        const valid =
-          startX >= 0 &&
-          startY >= 0 &&
-          startX + size.width <= bounds.width &&
-          startY + size.height <= bounds.height;
+        const placementCheck = validateNewFreeformElementAt(
+          layout,
+          placementDrag.type,
+          startX,
+          startY,
+          size.width,
+          size.height,
+          parentId,
+        );
+        const valid = placementCheck.ok;
         const blockPos = localPointToBlockPixel(layout.elements, parentId, startX, startY);
         pendingPlacementRef.current = {
           mode: "freeform-canvas",
@@ -888,64 +909,67 @@ export function FloorPlanCanvas() {
     placementCommitLock.current = true;
 
     const pending = pendingPlacementRef.current;
-    try {
-      if (!pending || !pending.valid) {
-        cancelPlacementDrag();
-        return;
-      }
-      if (pending.mode === "freeform-canvas") {
-        commitFreeformElementAt(
-          pending.elementType,
-          pending.localX,
-          pending.localY,
-          pending.parentId ?? null,
-        );
-        return;
-      }
-      if (pending.mode === "freeform-seat") {
-        if (pending.quantity && pending.quantity > 1) {
-          commitBulkFreeformSeatsAt(
-            pending.localX,
-            pending.localY,
-            pending.quantity,
-            pending.parentId ?? null,
-          );
-        } else {
-          commitFreeformSeatAt(
-            pending.localX,
-            pending.localY,
-            pending.parentId ?? null,
-          );
+
+    void (async () => {
+      try {
+        if (!pending || !pending.valid) {
+          cancelPlacementDrag();
+          return;
         }
-        return;
+        if (pending.mode === "freeform-canvas") {
+          commitFreeformElementAt(
+            pending.elementType,
+            pending.localX,
+            pending.localY,
+            pending.parentId ?? null,
+          );
+          return;
+        }
+        if (pending.mode === "freeform-seat") {
+          if (pending.quantity && pending.quantity > 1) {
+            await commitBulkFreeformSeatsAt(
+              pending.localX,
+              pending.localY,
+              pending.quantity,
+              pending.parentId ?? null,
+            );
+          } else {
+            await commitFreeformSeatAt(
+              pending.localX,
+              pending.localY,
+              pending.parentId ?? null,
+            );
+          }
+          return;
+        }
+        if (pending.mode === "layout-clone") {
+          commitLayoutCloneAt(pending.worldRow, pending.worldColumn);
+          return;
+        }
+        if (pending.quantity > 1) {
+          commitBulkPlacement(pending.type, {
+            parentId: pending.parentId,
+            row: pending.row,
+            column: pending.column,
+            width: pending.previewWidth,
+            height: pending.previewHeight,
+          }, pending.quantity);
+        } else {
+          commitPlacementFootprint(pending.type, {
+            parentId: pending.parentId,
+            row: pending.row,
+            column: pending.column,
+            width: pending.width,
+            height: pending.height,
+          });
+        }
+      } finally {
+        pendingPlacementRef.current = null;
+        setPlacementPreview(null);
+        placementCommitLock.current = false;
       }
-      if (pending.mode === "layout-clone") {
-        commitLayoutCloneAt(pending.worldRow, pending.worldColumn);
-        return;
-      }
-      if (pending.quantity > 1) {
-        commitBulkPlacement(pending.type, {
-          parentId: pending.parentId,
-          row: pending.row,
-          column: pending.column,
-          width: pending.previewWidth,
-          height: pending.previewHeight,
-        }, pending.quantity);
-      } else {
-        commitPlacementFootprint(pending.type, {
-          parentId: pending.parentId,
-          row: pending.row,
-          column: pending.column,
-          width: pending.width,
-          height: pending.height,
-        });
-      }
-    } finally {
-      pendingPlacementRef.current = null;
-      setPlacementPreview(null);
-      placementCommitLock.current = false;
-    }
-  }, [cancelPlacementDrag, commitBulkFreeformSeatsAt, commitBulkPlacement, commitFreeformSeatAt, commitLayoutCloneAt, commitPlacementFootprint]);
+    })();
+  }, [cancelPlacementDrag, commitBulkFreeformSeatsAt, commitBulkPlacement, commitFreeformElementAt, commitFreeformSeatAt, commitLayoutCloneAt, commitPlacementFootprint]);
 
   React.useEffect(() => {
     if (!placementDrag) {
@@ -1075,15 +1099,92 @@ export function FloorPlanCanvas() {
         const deltaY = (event.clientY - drag.startClientY) / zoom;
         const nextX = Math.max(0, (drag.originX ?? 0) + deltaX);
         const nextY = Math.max(0, (drag.originY ?? 0) + deltaY);
+
+        if (element.type === "seat" && isFreeformSeat(element)) {
+          const drop = resolveFreeformSeatDrop(layout.elements, element, nextX, nextY);
+          const validation = validateFreeformPosition(
+            layout,
+            element.id,
+            drop.localX,
+            drop.localY,
+            drop.parentId,
+          );
+          setAlignmentGuides(
+            computeFreeformAlignmentGuides(
+              layout.elements,
+              { ...element, parentId: drop.parentId },
+              drop.localX,
+              drop.localY,
+            ),
+          );
+          setDragPreview({
+            row: drop.localY,
+            column: drop.localX,
+            parentId: drop.parentId,
+            valid: validation.ok,
+          });
+          return;
+        }
+
+        const validation = validateFreeformPosition(layout, element.id, nextX, nextY);
         setAlignmentGuides(
           computeFreeformAlignmentGuides(layout.elements, element, nextX, nextY),
         );
-        setDragPreview({ row: nextY, column: nextX, valid: true });
+        setDragPreview({ row: nextY, column: nextX, valid: validation.ok });
         return;
       }
 
       const deltaCol = Math.round((event.clientX - drag.startClientX) / (BUILDER_CELL_STRIDE * zoom));
       const deltaRow = Math.round((event.clientY - drag.startClientY) / (BUILDER_CELL_STRIDE * zoom));
+
+      if (element.type === "seat" && !isFreeformSeat(element)) {
+        const originWorld = getWorldFootprint(layout.elements, element);
+        let targetWorldRow = originWorld.worldRow + deltaRow;
+        let targetWorldColumn = originWorld.worldColumn + deltaCol;
+
+        const target = resolvePlacementTarget(
+          layout,
+          element.type,
+          targetWorldRow,
+          targetWorldColumn,
+        );
+        let localRow = target.row;
+        let localColumn = target.column;
+
+        if (snapEnabled) {
+          const aligned = applyAlignmentSnap(
+            layout.elements,
+            { ...element, parentId: target.parentId, row: target.row, column: target.column },
+            target.row,
+            target.column,
+          );
+          localRow = aligned.row;
+          localColumn = aligned.column;
+          setAlignmentGuides(aligned.guides);
+        } else {
+          setAlignmentGuides([]);
+        }
+
+        const snapped = snapFootprintStrict(
+          layout,
+          {
+            parentId: target.parentId,
+            row: localRow,
+            column: localColumn,
+            width: element.width,
+            height: element.height,
+          },
+          { ignoreElementId: element.id, elementType: element.type },
+        );
+
+        setDragPreview({
+          row: snapped?.row ?? localRow,
+          column: snapped?.column ?? localColumn,
+          parentId: target.parentId,
+          valid: snapped !== null,
+        });
+        return;
+      }
 
       let targetRow = drag.originRow + deltaRow;
       let targetColumn = drag.originColumn + deltaCol;
@@ -1118,37 +1219,52 @@ export function FloorPlanCanvas() {
     };
 
     const onUp = (event: PointerEvent) => {
-      setAlignmentGuides([]);
-      const preview = dragPreviewRef.current;
-      const dragged = layout.elements.find((el) => el.id === drag.elementId);
+      void (async () => {
+        setAlignmentGuides([]);
+        const preview = dragPreviewRef.current;
+        const dragged = layout.elements.find((el) => el.id === drag.elementId);
 
-      if (drag.freeform) {
-        if (preview?.valid) {
-          tryMoveFreeformElement(drag.elementId, preview.column, preview.row);
+        if (drag.freeform) {
+          if (preview?.valid) {
+            if (dragged?.type === "seat" && isFreeformSeat(dragged)) {
+              await tryMoveFreeformSeatAt(drag.elementId, preview.column, preview.row, {
+                originX: drag.originX ?? getFreeformRect(dragged).x,
+                originY: drag.originY ?? getFreeformRect(dragged).y,
+                originParentId: drag.originParentId ?? dragged.parentId,
+              });
+            } else {
+              tryMoveFreeformElement(drag.elementId, preview.column, preview.row);
+            }
+          } else if (preview) {
+            notifyBlockedPlacement();
+          }
+          setDrag(null);
+          setDragPreview(null);
+          return;
         }
-        setDrag(null);
-        setDragPreview(null);
-        return;
-      }
 
-      if (dragged?.type === "seat" && dragged.width === 1 && dragged.height === 1 && !isFreeformSeat(dragged)) {
-        const { row: worldRow, column: worldColumn } = clientToWorldGrid(event.clientX, event.clientY);
-        const targetSeat = findSeatAtWorldCell(layout.elements, worldRow, worldColumn, dragged.id);
-        if (targetSeat && targetSeat.parentId === dragged.parentId) {
-          const merged = mergeSeatsByDrag(dragged.id, targetSeat.id);
-          if (merged) {
+        if (dragged?.type === "seat" && dragged.width === 1 && dragged.height === 1 && !isFreeformSeat(dragged)) {
+          const { row: worldRow, column: worldColumn } = clientToWorldGrid(event.clientX, event.clientY);
+          const targetSeat = findSeatAtWorldCell(layout.elements, worldRow, worldColumn, dragged.id);
+          if (targetSeat && targetSeat.parentId === dragged.parentId) {
+            await mergeSeatsByDrag(dragged.id, targetSeat.id);
             setDrag(null);
             setDragPreview(null);
             return;
           }
         }
-      }
 
-      if (preview?.valid) {
-        tryMoveElement(drag.elementId, preview.row, preview.column);
-      }
-      setDrag(null);
-      setDragPreview(null);
+        if (preview?.valid) {
+          if (dragged?.type === "seat" && !isFreeformSeat(dragged)) {
+            const { row: worldRow, column: worldColumn } = clientToWorldGrid(event.clientX, event.clientY);
+            await tryMoveElementAtWorld(drag.elementId, worldRow, worldColumn);
+          } else {
+            tryMoveElement(drag.elementId, preview.row, preview.column);
+          }
+        }
+        setDrag(null);
+        setDragPreview(null);
+      })();
     };
 
     document.addEventListener("pointermove", onMove);
@@ -1159,7 +1275,7 @@ export function FloorPlanCanvas() {
       document.removeEventListener("pointerup", onUp, { capture: true });
       document.removeEventListener("pointercancel", onUp, { capture: true });
     };
-  }, [clientToWorldGrid, drag, layout, mergeSeatsByDrag, snapEnabled, tryMoveElement, tryMoveFreeformElement, zoom]);
+  }, [clientToWorldGrid, drag, layout, mergeSeatsByDrag, notifyBlockedPlacement, snapEnabled, tryMoveElement, tryMoveElementAtWorld, tryMoveFreeformElement, tryMoveFreeformSeatAt, zoom]);
 
   React.useEffect(() => {
     if (!marquee) return;
@@ -1369,6 +1485,7 @@ export function FloorPlanCanvas() {
         freeform: true,
         originX: rect.x,
         originY: rect.y,
+        originParentId: element.parentId,
       });
       return;
     }
@@ -1383,10 +1500,19 @@ export function FloorPlanCanvas() {
 
   const displayElements = layout.elements.map((element) => {
     if (drag?.freeform && drag.elementId === element.id && dragPreview) {
-      return withFreeformRect(element, { x: dragPreview.column, y: dragPreview.row });
+      const base =
+        dragPreview.parentId !== undefined
+          ? { ...element, parentId: dragPreview.parentId }
+          : element;
+      return withFreeformRect(base, { x: dragPreview.column, y: dragPreview.row });
     }
     if (drag?.elementId === element.id && dragPreview && !drag.freeform) {
-      return { ...element, row: dragPreview.row, column: dragPreview.column };
+      return {
+        ...element,
+        row: dragPreview.row,
+        column: dragPreview.column,
+        ...(dragPreview.parentId !== undefined ? { parentId: dragPreview.parentId } : {}),
+      };
     }
     if (resize?.elementId === element.id && freeformResizePreview && isFreeformCanvasElement(element)) {
       return withFreeformRect(element, freeformResizePreview);
@@ -1406,7 +1532,12 @@ export function FloorPlanCanvas() {
   const draggedElement = drag ? layout.elements.find((e) => e.id === drag.elementId) : null;
   const dragWorld =
     draggedElement && dragPreview
-      ? getWorldFootprint(layout.elements, { ...draggedElement, row: dragPreview.row, column: dragPreview.column })
+      ? getWorldFootprint(layout.elements, {
+          ...draggedElement,
+          row: dragPreview.row,
+          column: dragPreview.column,
+          parentId: dragPreview.parentId ?? draggedElement.parentId,
+        })
       : null;
 
   return (

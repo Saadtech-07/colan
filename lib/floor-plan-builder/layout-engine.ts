@@ -26,7 +26,6 @@ import {
 } from "./placement-utils";
 import { DEFAULT_FLOOR_GRID, DEFAULT_ROOM_SIZE, BUILDER_CELL_STRIDE } from "./types";
 import {
-  clampRectToBounds,
   computeFreeformResizePatch,
   CANVAS_BOUNDS_PX,
   computeBulkFreeformSeatPositions,
@@ -52,6 +51,13 @@ import {
   SEAT_BULK_ROW_GAP,
   withFreeformRect,
   type FreeformRect,
+  unionRects,
+  isSingleFreeformSeat,
+  findOverlappingFreeformSeat,
+  findOverlappingFreeformSibling,
+  getFreeformSeatBlockRect,
+  blockRectToParentLocal,
+  computeMergedFreeformSeatRect,
 } from "./freeform-geometry";
 
 export type BulkFreeformSeatOptions = {
@@ -214,6 +220,19 @@ export function validatePlacement(
             : "Element is outside the workspace boundary.",
       };
     }
+
+    const allowSeatMerge = element.type === "seat" && isFreeformSeat(element);
+    const overlapping = findOverlappingFreeformSibling(
+      layout.elements,
+      rect,
+      element.parentId,
+      element,
+      { allowSeatMerge, excludeId: ignoreElementId ?? element.id },
+    );
+    if (overlapping) {
+      return { ok: false, reason: "This area is already occupied." };
+    }
+
     return { ok: true, footprint: { parentId: element.parentId, row: 0, column: 0, width: 1, height: 1 } };
   }
 
@@ -257,15 +276,16 @@ export function moveFreeformElement(
   elementId: string,
   x: number,
   y: number,
+  parentId?: string | null,
 ): { layout: FloorPlanLayoutState; error?: string } {
   const current = layout.elements.find((el) => el.id === elementId);
   if (!current || !isFreeformCanvasElement(current)) {
     return { layout, error: "Element not found." };
   }
 
-  const bounds = getContainerPixelBounds(layout.elements, current.parentId, layout.grid);
-  const rect = clampRectToBounds({ ...getFreeformRect(current), x, y }, bounds);
-  const next = withFreeformRect(current, rect);
+  const nextParentId = parentId !== undefined ? parentId : current.parentId;
+  const rect = { ...getFreeformRect(current), x, y };
+  const next = withFreeformRect({ ...current, parentId: nextParentId }, rect);
   const without = layout.elements.filter((el) => el.id !== elementId);
   const validation = validatePlacement({ ...layout, elements: without }, next, elementId);
   if (!validation.ok) {
@@ -278,6 +298,50 @@ export function moveFreeformElement(
       elements: layout.elements.map((el) => (el.id === elementId ? next : el)),
     },
   };
+}
+
+/** Check whether a freeform element can be placed at the given local position. */
+export function validateFreeformPosition(
+  layout: FloorPlanLayoutState,
+  elementId: string,
+  x: number,
+  y: number,
+  parentId?: string | null,
+): PlacementResult {
+  const current = layout.elements.find((el) => el.id === elementId);
+  if (!current || !isFreeformCanvasElement(current)) {
+    return { ok: false, reason: "Element not found." };
+  }
+
+  const nextParentId = parentId !== undefined ? parentId : current.parentId;
+  const rect = { ...getFreeformRect(current), x, y };
+  const next = withFreeformRect({ ...current, parentId: nextParentId }, rect);
+  const without = layout.elements.filter((el) => el.id !== elementId);
+  return validatePlacement({ ...layout, elements: without }, next, elementId);
+}
+
+/** Check whether a new freeform element can be placed at the given local position. */
+export function validateNewFreeformElementAt(
+  layout: FloorPlanLayoutState,
+  type: FloorPlanElementType,
+  localX: number,
+  localY: number,
+  width: number,
+  height: number,
+  parentId: string | null,
+): PlacementResult {
+  const element =
+    type === "seat"
+      ? createElement("seat", {
+          parentId,
+          seatId: "preview",
+          properties: createFreeformSeatProperties(localX, localY, width, height),
+        })
+      : createElement(type, {
+          parentId,
+          properties: createFreeformElementProperties(localX, localY, width, height),
+        });
+  return validatePlacement(layout, element);
 }
 
 export function resizeFreeformElement(
@@ -960,6 +1024,109 @@ export function mergeSeats(
         .map((el) => (el.id === primary.id ? merged : el)),
     },
     groupId: primary.id,
+  };
+}
+
+export function mergeFreeformSeats(
+  layout: FloorPlanLayoutState,
+  seatElementIds: string[],
+  opts?: {
+    originLocalById?: Record<string, { x: number; y: number }>;
+    /** Seat whose position anchors the merged footprint (defaults to primary). */
+    anchorSeatId?: string;
+  },
+): { layout: FloorPlanLayoutState; error?: string; groupId?: string } {
+  if (seatElementIds.length < 2) {
+    return { layout, error: "Select at least two seats to merge." };
+  }
+
+  const seats = layout.elements.filter(
+    (el) => seatElementIds.includes(el.id) && el.type === "seat" && isFreeformSeat(el),
+  );
+  if (seats.length !== seatElementIds.length) {
+    return { layout, error: "Only freeform seat elements can be merged." };
+  }
+
+  const parentIds = new Set(seats.map((s) => s.parentId));
+  if (parentIds.size > 1) {
+    return { layout, error: "Merged seats must share the same parent." };
+  }
+
+  if (seats.some((s) => !isSingleFreeformSeat(s))) {
+    return { layout, error: "Split merged seats before merging again." };
+  }
+
+  const parentId = seats[0]!.parentId;
+  const blockRects = seats.map((seat) =>
+    getFreeformSeatBlockRect(layout.elements, seat, opts?.originLocalById?.[seat.id]),
+  );
+
+  const primary = [...seats].sort((a, b) =>
+    (a.seatId ?? a.name).localeCompare(b.seatId ?? b.name, undefined, { numeric: true }),
+  )[0]!;
+
+  const primaryIndex = seats.findIndex((seat) => seat.id === primary.id);
+  const anchorIndex = opts?.anchorSeatId
+    ? seats.findIndex((seat) => seat.id === opts.anchorSeatId)
+    : primaryIndex;
+  const mergedBlock =
+    computeMergedFreeformSeatRect(blockRects, anchorIndex >= 0 ? anchorIndex : primaryIndex) ??
+    blockRects.slice(1).reduce(unionRects, blockRects[0]!);
+  const mergedLocal = blockRectToParentLocal(layout.elements, parentId, mergedBlock);
+
+  const merged: FloorPlanElement = withFreeformRect(primary, mergedLocal);
+  const removeIds = new Set(seats.filter((s) => s.id !== primary.id).map((s) => s.id));
+  const withoutOthers = layout.elements.filter((el) => !removeIds.has(el.id));
+  const validation = validatePlacement(
+    { ...layout, elements: withoutOthers.map((el) => (el.id === primary.id ? merged : el)) },
+    merged,
+    primary.id,
+  );
+  if (!validation.ok) {
+    return { layout, error: validation.reason };
+  }
+
+  return {
+    layout: {
+      ...layout,
+      elements: withoutOthers
+        .filter((el) => !removeIds.has(el.id))
+        .map((el) => (el.id === primary.id ? merged : el)),
+    },
+    groupId: primary.id,
+  };
+}
+
+export function mergeFreeformSeatWithRect(
+  layout: FloorPlanLayoutState,
+  primaryId: string,
+  extraRect: FreeformRect,
+): { layout: FloorPlanLayoutState; error?: string; groupId?: string } {
+  const primary = layout.elements.find((el) => el.id === primaryId && el.type === "seat");
+  if (!primary || !isFreeformSeat(primary)) {
+    return { layout, error: "Seat not found." };
+  }
+  if (!isSingleFreeformSeat(primary)) {
+    return { layout, error: "Split merged seats before merging again." };
+  }
+
+  const primaryLocal = getFreeformRect(primary);
+  const mergedLocal =
+    computeMergedFreeformSeatRect([primaryLocal, extraRect], 0) ??
+    unionRects(primaryLocal, extraRect);
+  const merged = withFreeformRect(primary, mergedLocal);
+  const without = layout.elements.filter((el) => el.id !== primaryId);
+  const validation = validatePlacement({ ...layout, elements: [...without, merged] }, merged, primaryId);
+  if (!validation.ok) {
+    return { layout, error: validation.reason };
+  }
+
+  return {
+    layout: {
+      ...layout,
+      elements: layout.elements.map((el) => (el.id === primaryId ? merged : el)),
+    },
+    groupId: primaryId,
   };
 }
 
