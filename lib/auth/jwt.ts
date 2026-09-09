@@ -13,7 +13,10 @@ export async function signAuthToken(payload: JwtPayload): Promise<string> {
     picture: payload.picture,
     appRole: payload.appRole,
     team: payload.team,
+    companyId: payload.companyId,
+    appUserId: payload.appUserId,
     isProfileCompleted: payload.isProfileCompleted,
+    accessLevel: payload.accessLevel === "platform" ? "platform" : "tenant",
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)
@@ -40,7 +43,16 @@ export async function verifyAuthToken(token: string): Promise<JwtPayload | null>
       picture: typeof payload.picture === "string" ? payload.picture : undefined,
       appRole: (payload.appRole as JwtPayload["appRole"]) ?? "employee",
       team: payload.team as JwtPayload["team"],
+      companyId:
+        typeof payload.companyId === "string" && payload.companyId.trim()
+          ? payload.companyId.trim()
+          : "",
+      appUserId:
+        typeof payload.appUserId === "string" && payload.appUserId.trim()
+          ? payload.appUserId.trim()
+          : undefined,
       isProfileCompleted: payload.isProfileCompleted !== false,
+      accessLevel: payload.accessLevel === "platform" ? "platform" : "tenant",
     };
   } catch {
     return null;

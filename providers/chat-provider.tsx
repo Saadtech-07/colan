@@ -162,7 +162,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         if (chatBootstrappedRef.current) return;
         chatBootstrappedRef.current = true;
         void refreshUnreadRef.current();
-      }, 2_500);
+      }, 800);
     }
 
     // Full inbox only on the chat page (immediate — user is already there).

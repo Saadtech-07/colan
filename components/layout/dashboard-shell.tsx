@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AppHeader } from "@/components/layout/app-header";
 import { SidebarProvider, useSidebar } from "@/components/layout/sidebar-context";
@@ -8,8 +9,17 @@ import { AuthGate } from "@/providers/app-state";
 import { PageTransition } from "@/components/layout/page-transition";
 import { cn } from "@/lib/utils";
 
+function isFloorPlanBuilderRoute(pathname: string): boolean {
+  return /\/seating\/floors\/(?:builder|[^/]+\/builder)\/?$/.test(pathname);
+}
+
 function DashboardShellInner({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const { collapsed } = useSidebar();
+
+  if (isFloorPlanBuilderRoute(pathname)) {
+    return <div className="h-dvh w-full overflow-hidden bg-background">{children}</div>;
+  }
 
   return (
     <div

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Armchair, DoorOpen, Eye, LayoutGrid, MapPin, Users } from "lucide-react";
+import { BranchActionsMenu } from "@/components/seating/branch-actions-menu";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -132,14 +133,18 @@ type Props = {
   plans: FloorPlanSummary[];
   employees: Employee[];
   loading?: boolean;
+  canManage?: boolean;
   onViewBranch: (officeSlug: string) => void;
+  onBranchDeleted?: () => void | Promise<void>;
 };
 
 export function SeatingBranchList({
   plans,
   employees,
   loading = false,
+  canManage = false,
   onViewBranch,
+  onBranchDeleted,
 }: Props) {
   const rows = React.useMemo(
     () => buildBranchSeatingRows(plans, employees),
@@ -277,6 +282,9 @@ export function SeatingBranchList({
                   <Eye className="h-3.5 w-3.5" />
                   View
                 </Button>
+                {canManage ? (
+                  <BranchActionsMenu row={row} onDeleted={onBranchDeleted} />
+                ) : null}
               </div>
             </li>
           ))}
@@ -374,7 +382,7 @@ export function SeatingBranchList({
 
 /** Shared desktop columns so headers and row values stay aligned. */
 const BRANCH_ROW_GRID =
-  "md:grid-cols-[minmax(0,1.6fr)_5.5rem_5.5rem_5.5rem_minmax(12.5rem,auto)]";
+  "md:grid-cols-[minmax(0,1.6fr)_5.5rem_5.5rem_5.5rem_minmax(14rem,auto)]";
 
 function StatCell({
   icon: Icon,

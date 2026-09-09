@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireChatContext } from "@/lib/chat-api";
+import { requireChatUnreadContext } from "@/lib/chat-api";
 import { getUnreadMessageCount } from "@/lib/chat-data";
 
 export async function GET() {
-  const ctx = await requireChatContext();
+  const ctx = await requireChatUnreadContext();
   if (ctx instanceof NextResponse) return ctx;
 
-  const count = await getUnreadMessageCount(ctx.actor.id);
+  const count = await getUnreadMessageCount(ctx.actorId);
   return NextResponse.json({ count });
 }

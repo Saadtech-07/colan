@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import { listEmployees, listProjects, setEmployeeProjects } from "@/lib/data-service";
 import {
   assignableProjectsForEmployee,
@@ -18,9 +18,10 @@ import type { Project } from "@/types";
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, { params }: RouteParams) {
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
   const { id: employeeId } = await params;
-  const session = await auth();
-  const access = await sessionAccessAsync(session);
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -28,7 +29,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const employees = await listEmployees();
+  const employees = await listEmployees({ companyId: ctx.companyId });
   const employee = employees.find((e) => e.id === employeeId);
   if (!employee) {
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
@@ -47,9 +48,10 @@ export async function GET(_req: Request, { params }: RouteParams) {
 }
 
 export async function PATCH(req: Request, { params }: RouteParams) {
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
   const { id: employeeId } = await params;
-  const session = await auth();
-  const access = await sessionAccessAsync(session);
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -57,7 +59,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const employees = await listEmployees();
+  const employees = await listEmployees({ companyId: ctx.companyId });
   const employee = employees.find((e) => e.id === employeeId);
   if (!employee) {
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
@@ -82,7 +84,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     canManageProject(access.role, project.teams, access.team);
 
   try {
-    const actor = await resolveAssignmentActorFromEmail(session?.user?.email);
+    const actor = await resolveAssignmentActorFromEmail(ctx.session.user.email);
     const projects = await setEmployeeProjects(
       employeeId,
       parsed.data.projectIds,

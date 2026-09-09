@@ -1,4 +1,5 @@
 import { ObjectId } from "mongodb";
+import { resolveDefaultCompanyId } from "@/lib/companies";
 import { getDb } from "@/lib/mongodb";
 import { listEmployees, listProjects } from "@/lib/data-service";
 import { syncProjectTaskStats } from "@/lib/project-stats";
@@ -69,7 +70,11 @@ function projectNameMap(projects: Awaited<ReturnType<typeof listProjects>>) {
 }
 
 async function enrichTask(doc: TaskDocument): Promise<Task> {
-  const [employees, projects] = await Promise.all([listEmployees(), listProjects()]);
+  const companyId = await resolveDefaultCompanyId();
+  const [employees, projects] = await Promise.all([
+    listEmployees({ companyId }),
+    listProjects(),
+  ]);
   const employeeNames = employeeNameMap(employees);
   const projectNames = projectNameMap(projects);
   return taskDocToDTO(doc, {

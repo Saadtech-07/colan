@@ -72,8 +72,11 @@ function matchesPersonFilters(person: Person, filters: PersonListFilters): boole
   return true;
 }
 
-export async function listPeople(filters: PersonListFilters = {}): Promise<Person[]> {
-  const employees = await listEmployees();
+export async function listPeople(
+  companyId: string,
+  filters: PersonListFilters = {},
+): Promise<Person[]> {
+  const employees = await listEmployees({ companyId });
   const byId = new Map(employees.map((employee) => [employee.id, employee]));
   const people = employees.map((employee) => {
     const managerId = employee.directory?.reportsToEmployeeId;
@@ -85,11 +88,17 @@ export async function listPeople(filters: PersonListFilters = {}): Promise<Perso
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function getPersonById(idOrSlug: string): Promise<PersonDetail | null> {
-  const detail = await getEmployeeDetailBySlugOrId(idOrSlug);
+export async function getPersonById(
+  companyId: string,
+  idOrSlug: string,
+): Promise<PersonDetail | null> {
+  const detail = await getEmployeeDetailBySlugOrId(companyId, idOrSlug);
   if (!detail) return null;
 
-  const [employees, tasks] = await Promise.all([listEmployees(), listTasks()]);
+  const [employees, tasks] = await Promise.all([
+    listEmployees({ companyId }),
+    listTasks(),
+  ]);
   const byId = new Map(employees.map((employee) => [employee.id, employee]));
   const managerId = detail.directory?.reportsToEmployeeId;
   const manager = managerId ? byId.get(managerId) : undefined;
@@ -124,11 +133,14 @@ export async function getPersonById(idOrSlug: string): Promise<PersonDetail | nu
   };
 }
 
-export async function createPerson(input: PersonCreateInput): Promise<Person> {
+export async function createPerson(
+  companyId: string,
+  input: PersonCreateInput,
+): Promise<Person> {
   const { department, designation, status, reportingManagerId, directory, ...employeeInput } = input;
-  const created = await createEmployee(employeeInput);
+  const created = await createEmployee(companyId, employeeInput);
   if (department || designation || status || reportingManagerId || directory) {
-    return updatePerson(created.id, {
+    return updatePerson(companyId, created.id, {
       department,
       designation,
       status,
@@ -139,10 +151,14 @@ export async function createPerson(input: PersonCreateInput): Promise<Person> {
   return employeeToPerson(created);
 }
 
-export async function updatePerson(id: string, input: PersonUpdateInput): Promise<Person> {
+export async function updatePerson(
+  companyId: string,
+  id: string,
+  input: PersonUpdateInput,
+): Promise<Person> {
   const { department, designation, status, reportingManagerId, directory, ...employeePatch } =
     input;
-  const updated = await updateEmployee(id, {
+  const updated = await updateEmployee(companyId, id, {
     ...employeePatch,
     directory: {
       ...directory,
@@ -155,7 +171,7 @@ export async function updatePerson(id: string, input: PersonUpdateInput): Promis
   return employeeToPerson(updated);
 }
 
-export async function deletePerson(id: string): Promise<boolean> {
+export async function deletePerson(companyId: string, id: string): Promise<boolean> {
   try {
     await deleteEmployee(id);
     return true;
@@ -164,12 +180,12 @@ export async function deletePerson(id: string): Promise<boolean> {
   }
 }
 
-export async function listProjectMembers(projectId: string) {
+export async function listProjectMembers(companyId: string, projectId: string) {
   const projects = await listProjects();
   const project = projects.find((row) => row.id === projectId);
   if (!project) return null;
 
-  const employees = await listEmployees();
+  const employees = await listEmployees({ companyId });
   const tasks = await listTasks({ projectId });
   const members = employees.filter((employee) => project.memberIds.includes(employee.id));
 

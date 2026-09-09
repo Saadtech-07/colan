@@ -1,6 +1,6 @@
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import {
   assignEmployeeToBay,
   assignEmployeeToCabin,
@@ -20,13 +20,11 @@ import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { bayAssignSchema, employeeCreateSchema } from "@/lib/validations";
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
   try {
-    const employees = await listEmployees();
-    return NextResponse.json(employees);  
+    const employees = await listEmployees({ companyId: ctx.companyId });
+    return NextResponse.json(employees);
   } catch (e) {
     if (e instanceof DataBackendError) {
       return NextResponse.json({ error: e.message }, { status: 503 });
@@ -36,12 +34,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (
     !canManageModule(roleKey, "teamMembers") &&
     !canAccessModuleAction(roleKey, "teamMembers", "create")
@@ -61,17 +57,15 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-  const created = await createEmployee(parsed.data);
+  const created = await createEmployee(ctx.companyId, parsed.data);
   return NextResponse.json(created, { status: 201 });
 }
 
 export async function PATCH(req: Request) {
-  const session = await auth();
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (!canAssignSeating(roleKey)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
@@ -103,18 +97,18 @@ export async function PATCH(req: Request) {
   }
   try {
     if (swapBayIds) {
-      await swapEmployeesBetweenBays(swapBayIds[0], swapBayIds[1], officeSlug);
+      await swapEmployeesBetweenBays(ctx.companyId, swapBayIds[0], swapBayIds[1], officeSlug);
     } else if (cabinId && employeeIds !== undefined) {
-      await setCabinEmployees(cabinId, employeeIds, officeSlug);
+      await setCabinEmployees(ctx.companyId, cabinId, employeeIds, officeSlug);
     } else if (cabinId) {
-      await assignEmployeeToCabin(cabinId, employeeId ?? null, officeSlug);
+      await assignEmployeeToCabin(ctx.companyId, cabinId, employeeId ?? null, officeSlug);
     } else if (bayId) {
-      await assignEmployeeToBay(bayId, employeeId ?? null, officeSlug);
+      await assignEmployeeToBay(ctx.companyId, bayId, employeeId ?? null, officeSlug);
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Assign failed";
     return NextResponse.json({ error: msg }, { status: 400 });
   }
-  const employees = await listEmployees();
+  const employees = await listEmployees({ companyId: ctx.companyId });
   return NextResponse.json(employees);
 }

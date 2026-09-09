@@ -7,7 +7,12 @@ export type AuthUser = {
   image?: string | null;
   appRole: AppRole;
   team?: TeamName;
+  companyId: string;
+  /** MongoDB appUsers _id — avoids a DB lookup on chat/notification routes. */
+  appUserId?: string;
   isProfileCompleted: boolean;
+  /** Platform super admin vs tenant workspace user. */
+  accessLevel?: "platform" | "tenant";
 };
 
 export type Session = {
@@ -21,5 +26,8 @@ export type JwtPayload = {
   picture?: string;
   appRole: AppRole;
   team?: TeamName;
+  companyId: string;
+  appUserId?: string;
   isProfileCompleted: boolean;
+  accessLevel?: "platform" | "tenant";
 };

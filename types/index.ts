@@ -33,8 +33,9 @@ export type EmployeeDirectoryInfo = {
   workEmail?: string;
   personalEmail?: string;
   phone?: string;
-  /** Legacy office label; kept in sync with fullAddress when possible. */
+  /** @deprecated Legacy office label; read-only fallback for older records. */
   location?: string;
+  /** @deprecated Legacy field; read-only fallback for older records. */
   fullAddress?: string;
   currentAddress?: string;
   permanentAddress?: string;
@@ -247,4 +248,6 @@ export interface AuthUser {
   team?: TeamName;
   avatarUrl?: string;
   isProfileCompleted: boolean;
+  /** Platform super admin vs tenant workspace user. */
+  accessLevel?: "platform" | "tenant";
 }

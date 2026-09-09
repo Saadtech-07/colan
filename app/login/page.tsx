@@ -34,11 +34,16 @@ function LoginPageContent() {
 
   React.useEffect(() => {
     if (status === "authenticated") {
+      const isPlatform = session?.user?.accessLevel === "platform";
       router.replace(
-        session?.user?.isProfileCompleted === false ? "/profile-settings" : "/dashboard",
+        session?.user?.isProfileCompleted === false
+          ? "/profile-settings"
+          : isPlatform
+            ? "/super-admin/dashboard"
+            : "/dashboard",
       );
     }
-  }, [router, session?.user?.isProfileCompleted, status]);
+  }, [router, session?.user?.accessLevel, session?.user?.isProfileCompleted, status]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,8 +69,13 @@ function LoginPageContent() {
 
       await refresh();
 
+      const isPlatform = json.user && "accessLevel" in json.user && json.user.accessLevel === "platform";
       const nextPath =
-        json.user?.isProfileCompleted === false ? "/profile-settings" : "/dashboard";
+        json.user?.isProfileCompleted === false
+          ? "/profile-settings"
+          : isPlatform
+            ? "/super-admin/dashboard"
+            : "/dashboard";
       router.refresh();
       router.push(nextPath);
     } finally {

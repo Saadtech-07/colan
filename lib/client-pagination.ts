@@ -19,13 +19,26 @@ export function useClientPagination<T>(
   items: T[],
   pageSize: number,
   resetDeps: React.DependencyList = [],
+  options?: { initialPage?: number },
 ) {
-  const [page, setPage] = React.useState(1);
+  const [page, setPage] = React.useState(options?.initialPage ?? 1);
+  const prevResetDepsRef = React.useRef<React.DependencyList | null>(null);
 
   const totalItems = items.length;
   const { start, end, totalPages } = getPaginationRange(page, pageSize, totalItems);
 
   React.useEffect(() => {
+    if (prevResetDepsRef.current === null) {
+      prevResetDepsRef.current = resetDeps;
+      return;
+    }
+
+    const changed = resetDeps.some(
+      (dep, index) => dep !== prevResetDepsRef.current?.[index],
+    );
+    if (!changed) return;
+
+    prevResetDepsRef.current = resetDeps;
     setPage(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, resetDeps);

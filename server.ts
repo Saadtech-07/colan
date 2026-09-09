@@ -21,31 +21,41 @@ function sleep(ms: number) {
 function isMissingManifestError(err: unknown) {
   if (!(err instanceof Error)) return false;
   const errno = err as NodeJS.ErrnoException;
-  return errno.code === "ENOENT" && errno.path?.includes("required-server-files.json");
+  const message = err.message.replace(/\\/g, "/");
+  const normalizedPath = errno.path?.replace(/\\/g, "/") ?? "";
+
+  if (
+    message.includes("required-server-files.json") ||
+    message.includes("[turbopack]_runtime.js") ||
+    message.includes("-manifest.json")
+  ) {
+    return true;
+  }
+
+  if (errno.code !== "ENOENT" || !normalizedPath) return false;
+
+  return (
+    normalizedPath.includes("/.next/") &&
+    (normalizedPath.includes("-manifest.json") ||
+      normalizedPath.endsWith("required-server-files.json"))
+  );
 }
 
-/** Dev cache under `.next/dev` must not be reused when incomplete or from another bundler. */
+/** Dev output under `.next/dev` must not be reused when incomplete or stale. */
 function resetDevOutput() {
   if (!dev) return;
 
-  const distDir = path.join(process.cwd(), ".next");
-  const devDir = path.join(distDir, "dev");
-
+  const devDir = path.join(process.cwd(), ".next", "dev");
   if (!fs.existsSync(devDir)) return;
 
-  const hasDevManifest =
-    fs.existsSync(path.join(devDir, "routes-manifest.json")) ||
-    fs.existsSync(path.join(devDir, "required-server-files.json"));
+  const hasRoutesManifest = fs.existsSync(path.join(devDir, "routes-manifest.json"));
+  const hasBuildManifest = fs.existsSync(path.join(devDir, "build-manifest.json"));
+  const hasAppPathsManifest = fs.existsSync(
+    path.join(devDir, "server", "app-paths-manifest.json"),
+  );
 
-  if (hasDevManifest) {
-    for (const folder of ["cache"]) {
-      const target = path.join(devDir, folder);
-      if (fs.existsSync(target)) {
-        fs.rmSync(target, { recursive: true, force: true });
-      }
-    }
-    return;
-  }
+  const healthy = hasRoutesManifest && hasBuildManifest && hasAppPathsManifest;
+  if (healthy) return;
 
   console.warn("[dev] Removing incomplete .next/dev output before startup…");
   fs.rmSync(devDir, { recursive: true, force: true });
@@ -64,7 +74,11 @@ async function warmUpDevServer(baseUrl: string) {
           signal: AbortSignal.timeout(120_000),
         });
 
-        if (response.status < 500) {
+        if (response.status < 500 || response.status === 503) {
+          if (response.status === 503) {
+            await sleep(500);
+            continue;
+          }
           warmed = true;
           break;
         }
@@ -83,7 +97,8 @@ async function warmUpDevServer(baseUrl: string) {
 
 resetDevOutput();
 
-const app = next({ dev, hostname, port });
+// Match `next build --webpack` / `dev:next` — Turbopack output is unstable with a custom server.
+const app = next({ dev, hostname, port, webpack: true });
 const handle = app.getRequestHandler();
 
 app

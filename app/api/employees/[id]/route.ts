@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import {
   deleteEmployee,
   getEmployeeDetailBySlugOrId,
@@ -20,14 +20,15 @@ import { employeeUpdateSchema } from "@/lib/validations";
 type RouteParams = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, { params }: RouteParams) {
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
   const { id: slugOrId } = await params;
-  const session = await auth();
-  const access = await sessionAccessAsync(session);
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const detail = await getEmployeeDetailBySlugOrId(slugOrId);
+  const detail = await getEmployeeDetailBySlugOrId(ctx.companyId, slugOrId);
   if (!detail) {
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
@@ -41,15 +42,15 @@ export async function GET(_req: Request, { params }: RouteParams) {
 }
 
 export async function PATCH(req: Request, { params }: RouteParams) {
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
   const { id: slugOrId } = await params;
-  const id = await resolveEmployeeMongoId(slugOrId);
+  const id = await resolveEmployeeMongoId(ctx.companyId, slugOrId);
   if (!id) {
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (
     !canManageModule(roleKey, "teamMembers") &&
     !canAccessModuleAction(roleKey, "teamMembers", "edit")
@@ -68,28 +69,28 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   if (!parsed.success) return NextResponse.json({ error: "Validation failed", issues: parsed.error.flatten() }, { status: 400 });
 
   try {
-    const updated = await updateEmployee(id, parsed.data);
+    const updated = await updateEmployee(ctx.companyId, id, parsed.data);
     return NextResponse.json(updated);
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Update failed" }, { status: 400 });
   }
 }
 
-async function resolveEmployeeMongoId(slugOrId: string): Promise<string | null> {
-  const employees = await listEmployees();
+async function resolveEmployeeMongoId(companyId: string, slugOrId: string): Promise<string | null> {
+  const employees = await listEmployees({ companyId });
   return findEmployeeBySlugOrId(employees, slugOrId)?.id ?? null;
 }
 
 export async function DELETE(_: Request, { params }: RouteParams) {
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
   const { id: slugOrId } = await params;
-  const id = await resolveEmployeeMongoId(slugOrId);
+  const id = await resolveEmployeeMongoId(ctx.companyId, slugOrId);
   if (!id) {
     return NextResponse.json({ error: "Employee not found" }, { status: 404 });
   }
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  await ensureRoleRegistry();
-  const roleKey = normalizeAppRole(session.user.appRole);
+  await ensureRoleRegistry(ctx.companyId);
+  const roleKey = normalizeAppRole(ctx.session.user.appRole);
   if (
     !canManageModule(roleKey, "teamMembers") &&
     !canAccessModuleAction(roleKey, "teamMembers", "delete")

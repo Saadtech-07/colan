@@ -2,10 +2,13 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ZoomIn, ZoomOut } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Pencil, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BuilderFloorPlanView } from "@/components/floor-plan-builder/builder-floor-plan-view";
 import { SeatingFloorPlan } from "@/components/seating/seating-floor-plan";
 import { SeatingScrollViewport } from "@/components/seating/seating-scroll-viewport";
+import type { FloorPlanLayoutState } from "@/lib/floor-plan-builder/types";
 import type { SeatingRowConfig } from "@/lib/seating-layout";
 import type { SeatingCabin } from "@/lib/seating-cabins";
 import type { SideCabinsConfig } from "@/lib/seating-layout-editor-types";
@@ -26,6 +29,8 @@ export type SeatingFullscreenBlock = {
   cabinsAfterG?: SeatingCabin[];
   sideCabins?: SideCabinsConfig;
   outsideEntrance?: { text: string } | null;
+  builderLayout?: FloorPlanLayoutState | null;
+  builderLayoutPending?: boolean;
 };
 
 type SharedFloorProps = {
@@ -56,6 +61,9 @@ type Props = SharedFloorProps & {
   subtitle: string;
   /** One or more floor blocks (Chennai View shows Block A + Block B). */
   blocks: SeatingFullscreenBlock[];
+  /** Shortcut to open the floor builder / editor canvas. */
+  editHref?: string | null;
+  editLabel?: string;
 };
 
 const MIN_ZOOM = 0.55;
@@ -68,6 +76,8 @@ export function SeatingFloorPlanFullscreen({
   title,
   subtitle,
   blocks,
+  editHref = null,
+  editLabel = "Edit floor design",
   selectedSeat,
   selectedCabinId = null,
   highlightSeats,
@@ -138,30 +148,47 @@ export function SeatingFloorPlanFullscreen({
           </div>
         </div>
 
-        <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border/70 bg-muted/30 px-2 py-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-8 w-8 rounded-full border-border/70"
-            onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
-            aria-label="Zoom out"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </Button>
-          <span className="w-12 text-center text-xs font-medium tabular-nums text-muted-foreground">
-            {Math.round(zoom * 100)}%
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-8 w-8 rounded-full border-border/70"
-            onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
-            aria-label="Zoom in"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {editHref && canAssign ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 rounded-xl px-3 text-xs font-semibold shadow-sm"
+              asChild
+            >
+              <Link href={editHref} prefetch={false}>
+                <Pencil className="h-3.5 w-3.5" />
+                {editLabel}
+              </Link>
+            </Button>
+          ) : null}
+
+          <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/30 px-2 py-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 rounded-full border-border/70"
+              onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
+              aria-label="Zoom out"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <span className="w-12 text-center text-xs font-medium tabular-nums text-muted-foreground">
+              {Math.round(zoom * 100)}%
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 rounded-full border-border/70"
+              onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
+              aria-label="Zoom in"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -184,6 +211,39 @@ export function SeatingFloorPlanFullscreen({
                   </span>
                 </div>
               )}
+              {block.builderLayoutPending ? (
+                <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-12 text-sm text-muted-foreground">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+                  <p>Loading floor layout…</p>
+                </div>
+              ) : block.builderLayout ? (
+                <BuilderFloorPlanView
+                  layout={block.builderLayout}
+                  zoom={zoom}
+                  occupancy={block.occupancy}
+                  selectedSeat={selectedSeat}
+                  highlightSeats={highlightSeats}
+                  teamFilter={teamFilter}
+                  search={search}
+                  viewMode={viewMode}
+                  canAssign={canAssign}
+                  onSeatClick={(seatId) => onSeatClick(seatId, block.officeSlug)}
+                  onViewSeatHistory={
+                    onViewSeatHistory
+                      ? (seatId) => onViewSeatHistory(seatId, block.officeSlug)
+                      : undefined
+                  }
+                  onAssignSeat={(seatId, employeeId) =>
+                    onAssignSeat(seatId, employeeId, block.officeSlug)
+                  }
+                  onSwapSeats={
+                    onSwapSeats
+                      ? (fromSeatId, toSeatId) =>
+                          onSwapSeats(fromSeatId, toSeatId, block.officeSlug)
+                      : undefined
+                  }
+                />
+              ) : (
               <SeatingFloorPlan
                 zoom={zoom}
                 occupancy={block.occupancy}
@@ -234,6 +294,7 @@ export function SeatingFloorPlanFullscreen({
                     : undefined
                 }
               />
+              )}
             </section>
           ))}
         </div>

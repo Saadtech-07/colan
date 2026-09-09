@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import { listEmployees, listProjects } from "@/lib/data-service";
 import { getDailyUpdateAttendance } from "@/lib/daily-updates-attendance";
 import { canManageAnyTask, resolveTaskActor } from "@/lib/task-access";
 import { filterEmployeesForUser, filterProjectsForUser, sessionAccessAsync } from "@/lib/session-access";
 
 export async function GET(req: Request) {
-  const session = await auth();
-  const access = await sessionAccessAsync(session);
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
 
   const search = url.searchParams.get("search") ?? undefined;
   const employees = filterEmployeesForUser(
-    await listEmployees(),
+    await listEmployees({ companyId: ctx.companyId }),
     access.role,
     access.team,
   );

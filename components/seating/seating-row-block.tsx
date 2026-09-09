@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 const SEAT_WIDTH = 108;
 const SEAT_HEIGHT = 140;
-const CELL_GAP = 10;
+const CELL_GAP = 14;
 const LABEL_WIDTH = 128;
 const PILLAR_WIDTH = SEAT_WIDTH * 2 + CELL_GAP;
 const DEFAULT_ENTRANCE_SPAN = 3;
@@ -173,10 +173,10 @@ export function SeatingRowBlock({
   const cellCtx = { ...ctx, layoutSeats, zoneBySeat, layoutMode };
   return (
     <div className={cn("w-max", showAisle && "mb-6")}>
-      <div className="flex w-max items-end gap-2.5 overflow-visible">
+      <div className="flex w-max items-end gap-3.5 overflow-visible">
         {top.map((c, i) => renderCell(c, cellCtx, `t-${i}`))}
       </div>
-      <div className="mt-2 flex w-max items-end gap-2.5 overflow-visible">
+      <div className="mt-2 flex w-max items-end gap-3.5 overflow-visible">
         {bottom.map((c, i) => renderCell(c, cellCtx, `b-${i}`))}
       </div>
     </div>

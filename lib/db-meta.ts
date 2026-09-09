@@ -4,17 +4,19 @@ import { COLLECTIONS, ensureColanModelIndexes, type CollectionName } from "@/mod
 import type { DataLayerSummary } from "@/types/data-layer";
 
 const COLLECTION_LABELS = {
+  [COLLECTIONS.companies]: "Companies",
   [COLLECTIONS.appUsers]: "App users (login)",
   [COLLECTIONS.appUserSeedSuppressions]: "App user seed suppressions",
+  [COLLECTIONS.floorPlanSeedSuppressions]: "Floor plan seed suppressions",
   [COLLECTIONS.employees]: "Employees",
   [COLLECTIONS.employeeDetails]: "Employee details",
   [COLLECTIONS.teams]: "Teams",
   [COLLECTIONS.companyRoles]: "Company roles",
-  [COLLECTIONS.seatingBays]: "Seating bays",
-  [COLLECTIONS.seatingAssignments]: "Seating assignments",
   [COLLECTIONS.seatingVersions]: "Seating versions",
   [COLLECTIONS.seatingSeatHistory]: "Seating seat history",
   [COLLECTIONS.floorPlans]: "Floor plans",
+  [COLLECTIONS.floorPlanDesigns]: "Floor plan designs",
+  [COLLECTIONS.floorPlanLayouts]: "Floor plan layouts",
   [COLLECTIONS.teamMembers]: "Team members",
   [COLLECTIONS.projects]: "Projects",
   [COLLECTIONS.gallery]: "Gallery",
@@ -26,6 +28,8 @@ const COLLECTION_LABELS = {
   [COLLECTIONS.taskComments]: "Task comments",
   [COLLECTIONS.taskActivity]: "Task activity",
   [COLLECTIONS.dailyUpdates]: "Daily updates",
+  [COLLECTIONS.platformUsers]: "Platform users",
+  [COLLECTIONS.platformAuditLogs]: "Platform audit logs",
 } satisfies Record<CollectionName, string>;
 
 /**

@@ -1,6 +1,6 @@
 import { ObjectId } from "mongodb";
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
+import { requireTenantContext } from "@/lib/api/tenant-context";
 import { getProjectById, getProjectBySlug } from "@/lib/data-service";
 import { filterProjectsForUser, sessionAccessAsync } from "@/lib/session-access";
 import { listProjectMembers, removeProjectMember } from "@/lib/people-data";
@@ -16,7 +16,9 @@ async function resolveProject(idOrSlug: string) {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
-  const access = await sessionAccessAsync(await auth());
+  const ctx = await requireTenantContext();
+  if (ctx instanceof Response) return ctx;
+  const access = await sessionAccessAsync(ctx.session);
   if (!access) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { slug, memberId } = await params;
@@ -29,6 +31,6 @@ export async function DELETE(_req: Request, { params }: Params) {
   const updated = await removeProjectMember(project.id, memberId);
   if (!updated) return NextResponse.json({ error: "Failed to remove member" }, { status: 500 });
 
-  const members = await listProjectMembers(project.id);
+  const members = await listProjectMembers(ctx.companyId, project.id);
   return NextResponse.json(members ?? []);
 }
