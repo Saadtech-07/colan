@@ -1,10 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { FloorPlanBuilderApp } from "@/components/floor-plan-builder/floor-plan-builder-app";
+import { BuilderPageLoading } from "@/components/floor-plan-builder/builder-page-loading";
 import { createEmptyLayout } from "@/lib/floor-plan-builder/layout-engine";
 import type { FloorPlanLayoutState } from "@/lib/floor-plan-builder/types";
+import {
+  fetchFloorPlanEditLayout,
+  floorPlanLayoutDtoToState,
+} from "@/lib/floor-plan-layouts-client";
 import { fetchFloorPlanDetail } from "@/lib/floor-plans-client";
 import { useAppState } from "@/providers/app-state";
 
@@ -12,6 +17,10 @@ export default function EditFloorBuilderPage() {
   const params = useParams<{ slug: string }>();
   const slug = params.slug;
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnHref =
+    searchParams.get("returnTo") ??
+    (slug ? `/seating?office=${encodeURIComponent(slug)}` : "/seating/floors/new");
   const { access } = useAppState();
   const canAssign = access?.canAssignSeating ?? false;
   const [layout, setLayout] = React.useState<FloorPlanLayoutState | null>(null);
@@ -28,9 +37,9 @@ export default function EditFloorBuilderPage() {
     setLoading(true);
     void (async () => {
       try {
-        const [plan, layoutRes] = await Promise.all([
-          fetchFloorPlanDetail(slug),
-          fetch(`/api/floor-plans/${slug}/layout`, { credentials: "include" }),
+        const [plan, saved] = await Promise.all([
+          fetchFloorPlanDetail(slug, { force: true }),
+          fetchFloorPlanEditLayout(slug, { force: true }),
         ]);
         if (cancelled) return;
         if (!plan) {
@@ -39,16 +48,8 @@ export default function EditFloorBuilderPage() {
         }
         setName(plan.name);
 
-        if (layoutRes.ok) {
-          const saved = (await layoutRes.json()) as FloorPlanLayoutState & { elements: FloorPlanLayoutState["elements"] };
-          setLayout({
-            name: saved.name ?? plan.name,
-            status: "draft",
-            version: saved.version ?? 0,
-            grid: saved.grid ?? createEmptyLayout(plan.name).grid,
-            elements: saved.elements ?? [],
-            floorPlanSlug: slug,
-          });
+        if (saved) {
+          setLayout(floorPlanLayoutDtoToState(saved, slug));
         } else {
           setLayout(createEmptyLayout(plan.name));
         }
@@ -64,11 +65,18 @@ export default function EditFloorBuilderPage() {
   }, [slug]);
 
   if (!access || loading || !layout) {
-    return <div className="flex h-dvh w-full items-center justify-center bg-muted/30 animate-pulse" />;
+    return <BuilderPageLoading message="Loading floor design…" />;
   }
   if (!canAssign) return null;
 
   return (
-    <FloorPlanBuilderApp slug={slug} mode="edit" initialName={name} initialLayout={layout} />
+    <FloorPlanBuilderApp
+      key={`${slug}-${layout.version}-${layout.elements.length}`}
+      slug={slug}
+      mode="edit"
+      initialName={name}
+      initialLayout={layout}
+      returnHref={returnHref}
+    />
   );
 }

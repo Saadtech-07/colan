@@ -3,9 +3,11 @@ import {
   hasModulePermissionAction,
   moduleHasAnyAccess,
   normalizeModulePermissions,
+  resolveLegacyAccess,
   type ModulePermissionsMap,
   type RbacModule,
 } from "@/lib/rbac-modules";
+import { SYSTEM_ROLE_SEEDS } from "@/lib/rbac-seed";
 import { teamMatchKey } from "@/lib/team-utils";
 import { getRoleFromRegistry } from "@/lib/role-registry";
 import type { Employee, Project, TeamName } from "@/types";
@@ -142,10 +144,50 @@ export function workspaceRoleToDefinition(role: WorkspaceRole): RoleDefinition {
   };
 }
 
+function systemSeedForRole(roleKey: AppRole) {
+  return SYSTEM_ROLE_SEEDS.find((seed) => seed.key === normalizeAppRole(roleKey));
+}
+
+function roleModulePermissions(roleKey: AppRole): ModulePermissionsMap {
+  const role = getRoleFromRegistry(roleKey);
+  if (role) return role.permissions;
+  const seed = systemSeedForRole(roleKey);
+  if (seed) return seed.permissions;
+  return fallbackRoleDefinition().modules;
+}
+
+function roleResolvedPermissions(roleKey: AppRole): Permission[] {
+  const role = getRoleFromRegistry(roleKey);
+  if (role) return role.resolvedPermissions as Permission[];
+  const seed = systemSeedForRole(roleKey);
+  if (seed) {
+    return resolveLegacyAccess(seed.permissions, {
+      teamScopedProjects: seed.teamScopedProjects,
+      teamScopedSeating: seed.teamScopedSeating,
+    }).permissions as Permission[];
+  }
+  return fallbackRoleDefinition().permissions;
+}
+
+function seedToRoleDefinition(roleKey: AppRole): RoleDefinition | null {
+  const seed = systemSeedForRole(roleKey);
+  if (!seed) return null;
+  return {
+    role: seed.key,
+    label: seed.name,
+    description: seed.description,
+    responsibilities: seed.responsibilities,
+    scopes: seed.scopes,
+    permissions: roleResolvedPermissions(roleKey),
+    color: seed.color,
+    modules: seed.permissions,
+  };
+}
+
 export function getRoleDefinition(roleKey: AppRole): RoleDefinition {
   const role = getRoleFromRegistry(roleKey);
-  if (!role) return fallbackRoleDefinition();
-  return workspaceRoleToDefinition(role);
+  if (role) return workspaceRoleToDefinition(role);
+  return seedToRoleDefinition(roleKey) ?? fallbackRoleDefinition();
 }
 
 const SQUAD_CONTRIBUTOR_ROLE_KEYS = new Set([
@@ -186,9 +228,7 @@ export function roleNeedsTeam(roleKey: AppRole): boolean {
 }
 
 export function hasPermission(roleKey: AppRole, permission: Permission): boolean {
-  const role = getRoleFromRegistry(roleKey);
-  if (!role) return fallbackRoleDefinition().permissions.includes(permission);
-  return role.resolvedPermissions.includes(permission);
+  return roleResolvedPermissions(roleKey).includes(permission);
 }
 
 export function canAccessModuleAction(
@@ -196,21 +236,15 @@ export function canAccessModuleAction(
   module: RbacModule,
   actionKey: string,
 ): boolean {
-  const role = getRoleFromRegistry(roleKey);
-  if (!role) return false;
-  return hasModulePermissionAction(module, role.permissions[module], actionKey);
+  return hasModulePermissionAction(module, roleModulePermissions(roleKey)[module], actionKey);
 }
 
 export function canViewModule(roleKey: AppRole, module: RbacModule): boolean {
-  const role = getRoleFromRegistry(roleKey);
-  if (!role) return module === "dashboard";
-  return moduleHasAnyAccess(role.permissions[module]);
+  return moduleHasAnyAccess(roleModulePermissions(roleKey)[module]);
 }
 
 export function canManageModule(roleKey: AppRole, module: RbacModule): boolean {
-  const role = getRoleFromRegistry(roleKey);
-  if (!role) return false;
-  return role.permissions[module]?.manage ?? false;
+  return roleModulePermissions(roleKey)[module]?.manage ?? false;
 }
 
 export function canAccessNav(roleKey: AppRole, href: string): boolean {

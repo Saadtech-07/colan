@@ -8,10 +8,18 @@ export type TenantContext = {
   companyId: string;
 };
 
+import { isPlatformSessionUser } from "@/lib/platform/platform-users";
+
 export async function requireTenantContext(): Promise<TenantContext | NextResponse> {
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (isPlatformSessionUser(session.user)) {
+    return NextResponse.json(
+      { error: "Platform accounts cannot access tenant workspace APIs." },
+      { status: 403 },
+    );
   }
   try {
     const companyId = await requireSessionCompanyIdAsync(session);

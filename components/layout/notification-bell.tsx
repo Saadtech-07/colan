@@ -22,6 +22,7 @@ import type { NotificationDTO } from "@/models";
 
 const PREVIEW_LIMIT = 2;
 const PREVIEW_TTL_MS = 30_000;
+const UNREAD_CACHE_KEY = "notifications:unread-count";
 const PREVIEW_CACHE_KEY = `notifications:preview:limit=${PREVIEW_LIMIT}&unreadOnly=true`;
 
 type NotificationsResponse = {
@@ -30,9 +31,41 @@ type NotificationsResponse = {
   totalCount: number;
 };
 
+let unreadCountCache: { at: number; count: number } | null = null;
 let previewCache: { at: number; data: NotificationsResponse } | null = null;
 /** Single shared bootstrap across Strict Mode remounts. */
-let previewBootstrapPromise: Promise<NotificationsResponse> | null = null;
+let unreadBootstrapPromise: Promise<number> | null = null;
+
+async function fetchUnreadCount(opts?: { force?: boolean }): Promise<number> {
+  if (
+    !opts?.force &&
+    unreadCountCache &&
+    Date.now() - unreadCountCache.at < PREVIEW_TTL_MS
+  ) {
+    return unreadCountCache.count;
+  }
+
+  return dedupeAsync(
+    UNREAD_CACHE_KEY,
+    async () => {
+      const res = await fetch("/api/notifications/unread", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403 || res.status === 404) {
+          unreadCountCache = { at: Date.now(), count: 0 };
+          return 0;
+        }
+        throw new Error(await parseApiError(res));
+      }
+      const data = (await res.json()) as { count: number };
+      unreadCountCache = { at: Date.now(), count: data.count };
+      return data.count;
+    },
+    { ttlMs: PREVIEW_TTL_MS, force: opts?.force },
+  );
+}
 
 async function fetchNotificationPreview(opts?: {
   force?: boolean;
@@ -65,27 +98,29 @@ async function fetchNotificationPreview(opts?: {
       }
       const data = (await res.json()) as NotificationsResponse;
       previewCache = { at: Date.now(), data };
+      unreadCountCache = { at: Date.now(), count: data.unreadCount };
       return data;
     },
     { ttlMs: PREVIEW_TTL_MS, force: opts?.force },
   );
 }
 
-function bootstrapNotificationPreview(): Promise<NotificationsResponse> {
-  if (previewCache && Date.now() - previewCache.at < PREVIEW_TTL_MS) {
-    return Promise.resolve(previewCache.data);
+function bootstrapUnreadCount(): Promise<number> {
+  if (unreadCountCache && Date.now() - unreadCountCache.at < PREVIEW_TTL_MS) {
+    return Promise.resolve(unreadCountCache.count);
   }
-  if (!previewBootstrapPromise) {
-    previewBootstrapPromise = fetchNotificationPreview().finally(() => {
-      previewBootstrapPromise = null;
+  if (!unreadBootstrapPromise) {
+    unreadBootstrapPromise = fetchUnreadCount().finally(() => {
+      unreadBootstrapPromise = null;
     });
   }
-  return previewBootstrapPromise;
+  return unreadBootstrapPromise;
 }
 
 function invalidatePreviewCache() {
   previewCache = null;
-  previewBootstrapPromise = null;
+  unreadCountCache = null;
+  unreadBootstrapPromise = null;
 }
 
 export function NotificationBell() {
@@ -120,25 +155,28 @@ export function NotificationBell() {
     // Seating loads occupancy first; badge waits until the bell is opened.
     if (isSeatingRoute(pathname)) return;
 
-    // Defer badge fetch until after critical workspace APIs start.
+    // Lightweight unread count only — full list loads when the dropdown opens.
     let cancelled = false;
     const cancelIdle = scheduleIdle(() => {
       void (async () => {
         try {
-          const data = await bootstrapNotificationPreview();
-          if (!cancelled) applyPreview(data);
+          const count = await bootstrapUnreadCount();
+          if (!cancelled) {
+            setUnreadCount(count);
+            setError(null);
+          }
         } catch (e) {
           if (!cancelled) {
             setError(e instanceof Error ? e.message : "Failed to load notifications");
           }
         }
       })();
-    }, 2_000);
+    }, 500);
     return () => {
       cancelled = true;
       cancelIdle();
     };
-  }, [applyPreview, pathname]);
+  }, [pathname]);
 
   const removeFromPopup = React.useCallback((notificationId: string) => {
     setNotifications((prev) => prev.filter((item) => item.id !== notificationId));

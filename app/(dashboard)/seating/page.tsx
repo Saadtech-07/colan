@@ -19,7 +19,7 @@ import {
   SeatingFloorPlan,
   type SeatingFloorPlanHandle,
 } from "@/components/seating/seating-floor-plan";
-import { BuilderFloorPlanView } from "@/components/floor-plan-builder/builder-floor-plan-view";
+import { BuilderWorkspaceFloorPlanView } from "@/components/floor-plan-builder/builder-workspace-floor-plan-view";
 import {
   SeatingFloorPlanFullscreen,
   type SeatingFullscreenBlock,
@@ -53,13 +53,14 @@ import {
 import {
   branchKeyForPlan,
   blockLabelForPlan,
+  shouldPairFloorPlansAsBlocks,
 } from "@/lib/floor-plan-branch";
 import {
   fetchFloorPlanDetail,
   fetchFloorPlanSummaries,
   invalidateFloorPlanClientCache,
 } from "@/lib/floor-plans-client";
-import { fetchFloorPlanPublishedLayout } from "@/lib/floor-plan-layouts-client";
+import { fetchFloorPlanViewLayout } from "@/lib/floor-plan-layouts-client";
 import type { FloorPlanLayoutState } from "@/lib/floor-plan-builder/types";
 import type { FloorPlanDTO, FloorPlanSummary } from "@/models/floor-plan.model";
 import { applyOccupancySwaps } from "@/lib/seating-layout-prompt";
@@ -103,10 +104,9 @@ function siblingSlugForPlan(
   officePlans: FloorPlanSummary[],
 ): string | null {
   if (officePlans.length > 0) {
-    const branchKey = branchKeyForPlan(plan);
     return (
       officePlans.find(
-        (item) => item.slug !== plan.slug && branchKeyForPlan(item) === branchKey,
+        (item) => item.slug !== plan.slug && shouldPairFloorPlansAsBlocks(plan, item),
       )?.slug ?? null
     );
   }
@@ -120,7 +120,7 @@ function siblingSlugForPlan(
 
 function keepSiblingPlan(plan: FloorPlanDTO, candidate: FloorPlanDTO | null) {
   if (!candidate || candidate.slug === plan.slug) return null;
-  return branchKeyForPlan(candidate) === branchKeyForPlan(plan) ? candidate : null;
+  return shouldPairFloorPlansAsBlocks(plan, candidate) ? candidate : null;
 }
 
 export default function SeatingPage() {
@@ -185,7 +185,11 @@ export default function SeatingPage() {
   const [officePlans, setOfficePlans] = React.useState<FloorPlanSummary[]>([]);
   const [plansLoading, setPlansLoading] = React.useState(true);
   const [builderLayout, setBuilderLayout] = React.useState<FloorPlanLayoutState | null>(null);
+  const [companionBuilderLayout, setCompanionBuilderLayout] =
+    React.useState<FloorPlanLayoutState | null>(null);
   const [builderLayoutLoading, setBuilderLayoutLoading] = React.useState(false);
+  const [companionBuilderLayoutLoading, setCompanionBuilderLayoutLoading] =
+    React.useState(false);
 
   React.useEffect(() => {
     try {
@@ -260,6 +264,8 @@ export default function SeatingPage() {
     ? (planOverrides[fetchedActivePlan.slug] ?? fetchedActivePlan)
     : null;
   const isBuilderFloor = activePlan?.migrationStatus === "builder";
+  const awaitingBuilderLayout =
+    isBuilderFloor && (builderLayoutLoading || !builderLayout);
   const companionPlan = fetchedCompanionPlan
     ? (planOverrides[fetchedCompanionPlan.slug] ?? fetchedCompanionPlan)
     : null;
@@ -309,6 +315,13 @@ export default function SeatingPage() {
 
   const colanFrozen = !layoutMode && colanOccupancySnapshot !== null;
   const promptLayoutActive = !layoutMode && promptRows !== null;
+  const floorEditHref =
+    activePlan && !planLoading && !layoutMode && !promptLayoutActive
+      ? isBuilderFloor
+        ? `/seating/floors/${encodeURIComponent(officeSlug)}/builder?returnTo=${encodeURIComponent(`/seating?office=${officeSlug}`)}`
+        : `/seating/floors/${encodeURIComponent(officeSlug)}/edit`
+      : null;
+  const floorEditLabel = isBuilderFloor ? "Edit in Builder" : "Edit floor design";
   const activeRows = promptRows ?? activePlan?.rows ?? SEATING_ROWS;
   const activeCabinsBeforeA =
     promptCabinsBeforeA ??
@@ -355,12 +368,28 @@ export default function SeatingPage() {
     };
   }, []);
 
+  const refreshOfficePlans = React.useCallback(async () => {
+    setPlansLoading(true);
+    try {
+      const plans = await fetchFloorPlanSummaries({ force: true });
+      setOfficePlans(plans);
+    } catch {
+      /* keep current list */
+    } finally {
+      setPlansLoading(false);
+    }
+  }, []);
+
   React.useEffect(() => {
     if (listMode) {
       setPlanLoading(false);
       return;
     }
     let cancelled = false;
+    setActivePlan(null);
+    setCompanionPlan(null);
+    setBuilderLayout(null);
+    setCompanionBuilderLayout(null);
     (async () => {
       setPlanLoading(true);
       try {
@@ -405,16 +434,23 @@ export default function SeatingPage() {
     };
   }, [listMode, officeSlug]);
 
+  const pairedCompanionPlan =
+    activePlan && companionPlan && shouldPairFloorPlansAsBlocks(activePlan, companionPlan)
+      ? companionPlan
+      : null;
+
   React.useEffect(() => {
     if (listMode || !isBuilderFloor) {
       setBuilderLayout(null);
+      setBuilderLayoutLoading(false);
       return;
     }
     let cancelled = false;
+    setBuilderLayout(null);
+    setBuilderLayoutLoading(true);
     (async () => {
-      setBuilderLayoutLoading(true);
       try {
-        const layout = await fetchFloorPlanPublishedLayout(officeSlug);
+        const layout = await fetchFloorPlanViewLayout(officeSlug);
         if (cancelled) return;
         if (layout) {
           setBuilderLayout({
@@ -423,6 +459,7 @@ export default function SeatingPage() {
             version: layout.version,
             grid: layout.grid,
             elements: layout.elements,
+            blocks: layout.blocks,
             floorPlanSlug: layout.floorPlanSlug,
           });
         } else {
@@ -440,6 +477,42 @@ export default function SeatingPage() {
   }, [isBuilderFloor, listMode, officeSlug]);
 
   React.useEffect(() => {
+    if (listMode || !pairedCompanionPlan || pairedCompanionPlan.migrationStatus !== "builder") {
+      setCompanionBuilderLayout(null);
+      setCompanionBuilderLayoutLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setCompanionBuilderLayout(null);
+    setCompanionBuilderLayoutLoading(true);
+    (async () => {
+      try {
+        const layout = await fetchFloorPlanViewLayout(pairedCompanionPlan.slug);
+        if (cancelled) return;
+        if (layout) {
+          setCompanionBuilderLayout({
+            name: layout.name,
+            status: layout.status,
+            version: layout.version,
+            grid: layout.grid,
+            elements: layout.elements,
+            floorPlanSlug: layout.floorPlanSlug,
+          });
+        } else {
+          setCompanionBuilderLayout(null);
+        }
+      } catch {
+        if (!cancelled) setCompanionBuilderLayout(null);
+      } finally {
+        if (!cancelled) setCompanionBuilderLayoutLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listMode, pairedCompanionPlan]);
+
+  React.useEffect(() => {
     if (listMode || !fullscreenOpen || !activePlan) return;
     if (keepSiblingPlan(activePlan, companionPlan)) return;
     const siblingSlug = siblingSlugForPlan(activePlan, officePlans);
@@ -447,7 +520,9 @@ export default function SeatingPage() {
 
     let cancelled = false;
     void fetchFloorPlanDetail(siblingSlug).then((sibling) => {
-      if (!cancelled && sibling) setCompanionPlan(sibling);
+      if (!cancelled && sibling && shouldPairFloorPlansAsBlocks(activePlan, sibling)) {
+        setCompanionPlan(sibling);
+      }
     });
     return () => {
       cancelled = true;
@@ -1025,7 +1100,12 @@ export default function SeatingPage() {
       ];
     }
 
-    const toBlock = (plan: FloorPlanDTO, slug: string): SeatingFullscreenBlock => {
+    const toBlock = (
+      plan: FloorPlanDTO,
+      slug: string,
+      builderLayoutForPlan?: FloorPlanLayoutState | null,
+      builderLayoutPending = false,
+    ): SeatingFullscreenBlock => {
       const slots = listCabinSlotsOnPlan(plan);
       return {
         key: slug,
@@ -1044,7 +1124,7 @@ export default function SeatingPage() {
           cabinIds: slots.map((s) => s.id),
         }),
         rows: plan.rows,
-        showCabins: true,
+        showCabins: plan.migrationStatus !== "builder",
         cabinsBeforeA: plan.cabins?.beforeA ?? [],
         cabinsAfterG: plan.cabins?.afterG ?? [],
         sideCabins: plan.cabins?.sideCabins?.hrManager?.trim() ||
@@ -1052,12 +1132,25 @@ export default function SeatingPage() {
           ? plan.cabins.sideCabins!
           : EMPTY_SIDE_CABINS,
         outsideEntrance: plan.cabins?.outsideEntrance ?? null,
+        builderLayout: builderLayoutForPlan ?? null,
+        builderLayoutPending,
       };
     };
 
-    if (activePlan && companionPlan && !viewingHistory) {
-      const primary = toBlock(activePlan, activePlan.slug);
-      const secondary = toBlock(companionPlan, companionPlan.slug);
+    if (activePlan && pairedCompanionPlan && !viewingHistory) {
+      const primary = toBlock(
+        activePlan,
+        activePlan.slug,
+        activePlan.migrationStatus === "builder" ? builderLayout : null,
+        activePlan.migrationStatus === "builder" && (builderLayoutLoading || !builderLayout),
+      );
+      const secondary = toBlock(
+        pairedCompanionPlan,
+        pairedCompanionPlan.slug,
+        pairedCompanionPlan.migrationStatus === "builder" ? companionBuilderLayout : null,
+        pairedCompanionPlan.migrationStatus === "builder" &&
+          (companionBuilderLayoutLoading || !companionBuilderLayout),
+      );
       const ordered =
         activePlan.building === "Block B" || activePlan.slug.endsWith("-block-b")
           ? [secondary, primary]
@@ -1067,7 +1160,7 @@ export default function SeatingPage() {
         label:
           block.officeSlug === activePlan.slug
             ? activePlan.name
-            : companionPlan.name || blockLabelForPlan(companionPlan),
+            : pairedCompanionPlan.name || blockLabelForPlan(pairedCompanionPlan),
       }));
     }
 
@@ -1076,6 +1169,8 @@ export default function SeatingPage() {
         toBlock(
           activePlan,
           officeSlug,
+          activePlan.migrationStatus === "builder" ? builderLayout : null,
+          activePlan.migrationStatus === "builder" && (builderLayoutLoading || !builderLayout),
         ),
       ];
     }
@@ -1104,7 +1199,11 @@ export default function SeatingPage() {
     cabinOccupants,
     activeRows,
     activePlan,
-    companionPlan,
+    pairedCompanionPlan,
+    companionBuilderLayout,
+    companionBuilderLayoutLoading,
+    builderLayout,
+    builderLayoutLoading,
     employees,
     activeCabinsBeforeA,
     activeCabinsAfterG,
@@ -1323,23 +1422,48 @@ export default function SeatingPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex min-w-0 flex-col gap-2">
-          {listMode ? (
-            <>
+      {listMode ? (
+        <>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 flex-col gap-2">
               <h2 className="text-base font-semibold text-foreground sm:text-lg">
                 Seating arrangement
               </h2>
               <p className="text-xs text-muted-foreground sm:text-sm">
                 Review occupancy by branch, then open a floor plan to assign seats.
               </p>
-            </>
-          ) : (
-            <>
-              {floorSectionTitle ? (
-                <p className="text-sm font-semibold text-muted-foreground">{floorSectionTitle}</p>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-2">
+            </div>
+            {canAssign ? (
+              <div className="flex flex-wrap items-center justify-end gap-2 lg:pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+                  disabled={plansLoading}
+                  asChild
+                >
+                  <Link href="/seating/floors/new" prefetch={false}>
+                    <Plus className="h-3.5 w-3.5" />
+                    Create floor
+                  </Link>
+                </Button>
+              </div>
+            ) : null}
+          </div>
+          <SeatingAnalyticsOverview
+            stats={headerStats}
+            variant="dashboard"
+            hideUtilization
+          />
+        </>
+      ) : (
+        <>
+          <SeatingAnalyticsOverview stats={headerStats} variant="dashboard" />
+
+          <section className="overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-muted/15 shadow-sm">
+            <div className="flex flex-col gap-4 border-b border-border/60 bg-muted/25 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="secondary"
@@ -1350,114 +1474,107 @@ export default function SeatingPage() {
                   <ArrowLeft className="h-3.5 w-3.5" />
                   All branches
                 </Button>
+                {floorSectionTitle ? (
+                  <span className="rounded-full border border-border/70 bg-background px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                    {floorSectionTitle}
+                  </span>
+                ) : null}
               </div>
+
+              {canAssign ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {promptLayoutActive ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
+                      onClick={resetPromptLayout}
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      Back to office
+                    </Button>
+                  ) : null}
+                  {layoutMode ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
+                      onClick={clearAiLayout}
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      Back to office
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+                    disabled={planLoading || layoutMode || promptLayoutActive || plansLoading}
+                    asChild
+                  >
+                    <Link href="/seating/floors/new" prefetch={false}>
+                      <Plus className="h-3.5 w-3.5" />
+                      Create floor
+                    </Link>
+                  </Button>
+                  {floorEditHref ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+                      asChild
+                    >
+                      <Link href={floorEditHref} prefetch={false}>
+                        <Pencil className="h-3.5 w-3.5" />
+                        {floorEditLabel}
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+                      disabled
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit floor
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    className={cn(
+                      "h-9 shrink-0 gap-1.5 rounded-lg border-0 px-3.5 text-xs font-semibold shadow-sm transition-colors",
+                      "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md",
+                      "focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2",
+                      "dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500",
+                      aiPanelOpen && "bg-blue-700 hover:bg-blue-800 dark:bg-blue-700 dark:hover:bg-blue-600",
+                    )}
+                    onClick={() => setAiPanelOpen((open) => !open)}
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-white" />
+                    {aiPanelOpen ? "Close AI" : "AI generator"}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="px-4 py-4 sm:px-5 sm:py-5">
               <SeatingOfficeSelect
                 plans={officePlans}
                 value={officeSlug}
                 onChange={selectOfficeSlug}
                 disabled={planLoading || layoutMode || promptLayoutActive || viewingHistory}
               />
-            </>
-          )}
-        </div>
-
-        {canAssign && (
-          <div className="flex flex-wrap items-center justify-end gap-2 lg:pt-1">
-            {!listMode && promptLayoutActive && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
-                onClick={resetPromptLayout}
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back to office
-              </Button>
-            )}
-            {!listMode && layoutMode && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
-                onClick={clearAiLayout}
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back to office
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
-              disabled={(!listMode && (planLoading || layoutMode || promptLayoutActive)) || plansLoading}
-              asChild
-            >
-              <Link href="/seating/floors/new" prefetch={false}>
-                <Plus className="h-3.5 w-3.5" />
-                Create floor
-              </Link>
-            </Button>
-            {!listMode && activePlan && !planLoading && !layoutMode && !promptLayoutActive ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
-                asChild
-              >
-                <Link
-                  href={
-                    isBuilderFloor
-                      ? `/seating/floors/${encodeURIComponent(officeSlug)}/builder`
-                      : `/seating/floors/${encodeURIComponent(officeSlug)}/edit`
-                  }
-                  prefetch={false}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  {isBuilderFloor ? "Edit in Builder" : "Edit floor"}
-                </Link>
-              </Button>
-            ) : !listMode ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
-                disabled
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Edit floor
-              </Button>
-            ) : null}
-            {!listMode ? (
-              <Button
-                type="button"
-                size="sm"
-                className={cn(
-                  "h-9 shrink-0 gap-1.5 rounded-lg border-0 px-3.5 text-xs font-semibold shadow-sm transition-colors",
-                  "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md",
-                  "focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2",
-                  "dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500",
-                  aiPanelOpen && "bg-blue-700 hover:bg-blue-800 dark:bg-blue-700 dark:hover:bg-blue-600",
-                )}
-                onClick={() => setAiPanelOpen((open) => !open)}
-              >
-                <Sparkles className="h-3.5 w-3.5 text-white" />
-                {aiPanelOpen ? "Close AI" : "AI generator"}
-              </Button>
-            ) : null}
-          </div>
-        )}
-      </div>
-
-      <SeatingAnalyticsOverview
-        stats={headerStats}
-        variant="dashboard"
-        hideUtilization={listMode}
-      />
+            </div>
+          </section>
+        </>
+      )}
 
       {!listMode && canAssign ? (
         <SeatingPendingBar
@@ -1508,7 +1625,9 @@ export default function SeatingPage() {
           plans={officePlans}
           employees={savedEmployees}
           loading={plansLoading}
+          canManage={canAssign}
           onViewBranch={openBranchFloor}
+          onBranchDeleted={refreshOfficePlans}
         />
       ) : (
         <>
@@ -1619,13 +1738,14 @@ export default function SeatingPage() {
           paddingClassName="p-3 sm:p-5"
           className="bg-[linear-gradient(180deg,hsl(var(--background))_0%,hsl(var(--muted)/0.25)_100%)]"
         >
-          {isBuilderFloor && builderLayoutLoading ? (
-            <div className="flex min-h-[320px] items-center justify-center p-12 text-sm text-muted-foreground">
-              Loading floor layout…
+          {planLoading || awaitingBuilderLayout ? (
+            <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-12 text-sm text-muted-foreground">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+              <p>Loading floor layout…</p>
             </div>
           ) : isBuilderFloor && !builderLayout ? (
             <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-12 text-sm text-muted-foreground">
-              <p>No published layout yet. Open the builder to design and publish this floor.</p>
+              <p>No saved layout yet. Open the builder to design this floor.</p>
               {canAssign ? (
                 <Button type="button" size="sm" className="rounded-xl" asChild>
                   <Link href={`/seating/floors/${encodeURIComponent(officeSlug)}/builder`}>
@@ -1635,7 +1755,7 @@ export default function SeatingPage() {
               ) : null}
             </div>
           ) : isBuilderFloor && builderLayout ? (
-            <BuilderFloorPlanView
+            <BuilderWorkspaceFloorPlanView
               layout={builderLayout}
               occupancy={displayOccupancy}
               selectedSeat={selectedSeat}
@@ -1703,10 +1823,12 @@ export default function SeatingPage() {
       <SeatingFloorPlanFullscreen
         open={!listMode && fullscreenOpen}
         onClose={() => setFullscreenOpen(false)}
+        editHref={canAssign ? floorEditHref : null}
+        editLabel={floorEditLabel}
         title={
           layoutMode
             ? "New layout canvas"
-            : activePlan && companionPlan
+            : activePlan && pairedCompanionPlan
               ? `${branchKeyForPlan(activePlan)} · Block A & Block B`
               : activePlan?.building
                 ? `${activePlan.city ?? "Office"} · ${activePlan.building}`
@@ -1717,7 +1839,7 @@ export default function SeatingPage() {
             ? "Desks from your AI prompt — assignments save immediately."
             : colanFrozen
               ? "Frozen Colan view from before the layout planner."
-              : activePlan && companionPlan
+              : activePlan && pairedCompanionPlan
                 ? "Both office blocks · fitted to your screen · scroll down"
                 : "Full layout fitted to your screen · scroll down for more rows"
         }

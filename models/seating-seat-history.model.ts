@@ -17,12 +17,9 @@ export type SeatHistoryAction = (typeof SEAT_HISTORY_ACTIONS)[number];
 
 export type SeatHistoryDocument = {
   _id: ObjectId;
-<<<<<<< HEAD
-=======
   companyId: ObjectId;
->>>>>>> origin/dev-2
   officeSlug: string;
-  seatId: string;
+  seatId: string; 
   action: SeatHistoryAction;
   employeeName: string;
   employeeId?: string;

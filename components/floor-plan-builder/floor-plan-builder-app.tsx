@@ -7,43 +7,66 @@ import { BuilderToolbar } from "./builder-toolbar";
 import { ElementToolbox, getToolHint } from "./element-toolbox";
 import { FloorPlanCanvas } from "./floor-plan-canvas";
 import { PropertiesPanel } from "./properties-panel";
+import { WorkspaceBlockTabs } from "./workspace-block-tabs";
 import { deleteFloorPlanClient, invalidateFloorPlanClientCache } from "@/lib/floor-plans-client";
 import { parseApiError } from "@/providers/app-state";
+import { cn } from "@/lib/utils";
 import { invalidateFloorPlanLayoutCache } from "@/lib/floor-plan-layouts-client";
 import type { FloorPlanLayoutState } from "@/lib/floor-plan-builder/types";
+import { ensureWorkspaceBlocks, serializeWorkspaceLayout } from "@/lib/floor-plan-builder/workspace-blocks";
+import { BUILDER_CHROME } from "./builder-ui";
 
 type Props = {
   slug?: string;
   initialName: string;
   initialLayout?: FloorPlanLayoutState;
   mode: "create" | "edit";
+  returnHref?: string;
 };
 
 function BuilderStatusBar() {
-  const { layout, selection } = useFloorPlanBuilder();
+  const { layout, selection, activeBlockName, workspaceBlocks, zoom, canvasMode, snapEnabled } =
+    useFloorPlanBuilder();
   const seatCount = layout.elements.filter((el) => el.type === "seat").length;
   const pct = layout.grid.rows * layout.grid.columns > 0
     ? Math.round((seatCount / (layout.grid.rows * layout.grid.columns)) * 100)
     : 0;
 
   return (
-    <div className="flex shrink-0 items-center justify-between border-t border-border/60 bg-card/95 px-3 py-1.5 text-[11px] text-muted-foreground">
-      <span>
-        Grid: {layout.grid.rows} × {layout.grid.columns}
+    <div className="flex shrink-0 items-center justify-between border-t border-border/50 bg-[#fafbfc]/95 px-4 py-1.5 text-[11px] text-muted-foreground backdrop-blur-sm">
+      <span className="font-medium">
+        <span className="text-foreground/80">{activeBlockName}</span>
+        {workspaceBlocks.length > 1 ? ` · ${workspaceBlocks.length} layouts` : ""}
+        <span className="mx-1.5 text-border">|</span>
+        Grid {layout.grid.rows} × {layout.grid.columns}
       </span>
       <span>
-        Seats: {seatCount}
-        {selection.length > 0 ? ` · ${selection.length} selected` : ""}
-        {" · "}
-        {pct}% of floor cells
+        <span className="font-medium text-foreground/70">{seatCount}</span> seats
+        {selection.length > 0 ? (
+          <>
+            <span className="mx-1.5 text-border">|</span>
+            <span className="font-medium text-primary">{selection.length} selected</span>
+          </>
+        ) : null}
+        <span className="mx-1.5 text-border">|</span>
+        {pct}% utilization
+        <span className="mx-1.5 text-border">|</span>
+        Zoom {Math.round(zoom * 100)}%
+        <span className="mx-1.5 text-border">|</span>
+        {canvasMode === "pan" ? "Pan" : "Select"}
+        {snapEnabled ? " · Snap on" : " · Snap off"}
       </span>
     </div>
   );
 }
 
-function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">) {
+function BuilderShell({
+  slug,
+  initialName,
+  returnHref = "/seating/floors/new",
+}: Omit<Props, "initialLayout" | "mode">) {
   const router = useRouter();
-  const { layout, error, placementDrag, loadLayout, layoutRevision } = useFloorPlanBuilder();
+  const { layout, error, placementDrag, loadLayout, resetToEmptyLayout, layoutRevision, activeBlockId, fitToView } = useFloorPlanBuilder();
   const [floorName, setFloorName] = React.useState(initialName);
   const [currentSlug, setCurrentSlug] = React.useState(slug ?? "");
   const [saving, setSaving] = React.useState(false);
@@ -51,26 +74,46 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
   const [publishing, setPublishing] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [statusMessage, setStatusMessage] = React.useState<string | null>(null);
+  const [statusIsError, setStatusIsError] = React.useState(false);
   const skipAutoSaveRef = React.useRef(true);
   const saveInFlightRef = React.useRef(false);
+
+  React.useEffect(() => {
+    setFloorName(initialName);
+  }, [initialName]);
+
+  const trimmedFloorName = floorName.trim();
+
+  const buildSavePayload = React.useCallback(() => {
+    const base = { ...layout, name: trimmedFloorName };
+    return serializeWorkspaceLayout(base, ensureWorkspaceBlocks(base), activeBlockId);
+  }, [activeBlockId, layout, trimmedFloorName]);
 
   const persistDraft = React.useCallback(
     async (opts?: { silent?: boolean }): Promise<string | null> => {
       if (saveInFlightRef.current) return currentSlug || null;
+      if (!trimmedFloorName) {
+        if (!opts?.silent) {
+          setStatusIsError(true);
+          setStatusMessage("Enter a floor name before saving.");
+        }
+        return null;
+      }
       saveInFlightRef.current = true;
       if (opts?.silent) setAutoSaving(true);
       else setSaving(true);
       setStatusMessage(null);
+      setStatusIsError(false);
       try {
         let targetSlug = currentSlug;
-        const payload = { ...layout, name: floorName };
+        const payload = buildSavePayload();
 
         if (!targetSlug) {
           const res = await fetch("/api/floor-plans/builder", {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: floorName, layout: payload }),
+            body: JSON.stringify({ name: trimmedFloorName, layout: payload }),
           });
           if (!res.ok) throw new Error(await parseApiError(res));
           const created = (await res.json()) as { slug: string };
@@ -88,10 +131,14 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
           if (!res.ok) throw new Error(await parseApiError(res));
         }
         invalidateFloorPlanClientCache(targetSlug);
-        if (!opts?.silent) setStatusMessage("Draft saved.");
+        if (!opts?.silent) {
+          setStatusIsError(false);
+          setStatusMessage("Draft saved.");
+        }
         return targetSlug;
       } catch (e) {
         if (!opts?.silent) {
+          setStatusIsError(true);
           setStatusMessage(e instanceof Error ? e.message : "Save failed.");
         }
         return null;
@@ -101,7 +148,7 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
         else setSaving(false);
       }
     },
-    [currentSlug, floorName, layout, loadLayout, router],
+    [buildSavePayload, currentSlug, loadLayout, router],
   );
 
   React.useEffect(() => {
@@ -109,20 +156,22 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       skipAutoSaveRef.current = false;
       return;
     }
+    if (!trimmedFloorName) return;
     const timer = window.setTimeout(() => {
       void persistDraft({ silent: true });
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [layoutRevision, floorName, persistDraft]);
+  }, [layoutRevision, persistDraft, trimmedFloorName]);
 
   const publish = React.useCallback(async () => {
     setPublishing(true);
     setStatusMessage(null);
+    setStatusIsError(false);
     try {
       const targetSlug = (await persistDraft()) ?? currentSlug;
       if (!targetSlug) throw new Error("Save the floor before publishing.");
 
-      const payload = { ...layout, name: floorName };
+      const payload = buildSavePayload();
       const res = await fetch(`/api/floor-plans/${targetSlug}/layout?action=publish`, {
         method: "POST",
         credentials: "include",
@@ -132,11 +181,14 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       if (!res.ok) throw new Error(await parseApiError(res));
       invalidateFloorPlanLayoutCache(targetSlug);
       invalidateFloorPlanClientCache(targetSlug);
-      setStatusMessage("Floor published.");
-    } finally {
+      router.push(returnHref);
+      return;
+    } catch (e) {
+      setStatusIsError(true);
+      setStatusMessage(e instanceof Error ? e.message : "Publish failed.");
       setPublishing(false);
     }
-  }, [currentSlug, floorName, layout, persistDraft]);
+  }, [buildSavePayload, currentSlug, persistDraft, returnHref, router]);
 
   const deleteWorkspace = React.useCallback(async () => {
     if (!currentSlug) {
@@ -150,40 +202,51 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
 
     setDeleting(true);
     setStatusMessage(null);
+    setStatusIsError(false);
     try {
       await deleteFloorPlanClient(currentSlug);
       invalidateFloorPlanLayoutCache(currentSlug);
       invalidateFloorPlanClientCache();
       router.push("/seating/floors/new");
     } catch (e) {
+      setStatusIsError(true);
       setStatusMessage(e instanceof Error ? e.message : "Delete failed.");
     } finally {
       setDeleting(false);
     }
   }, [currentSlug, floorName, router]);
 
-  return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
-      <BuilderToolbar
-        floorName={floorName}
-        onBack={() => router.push("/seating/floors/new")}
-        onSaveDraft={() => void persistDraft()}
-        onPublish={() => void publish()}
-        onDelete={() => void deleteWorkspace()}
-        onPreview={() => {
-          if (currentSlug) router.push(`/seating?office=${encodeURIComponent(currentSlug)}`);
-        }}
-        saving={saving}
-        autoSaving={autoSaving}
-        publishing={publishing}
-        deleting={deleting}
-        canDelete
-      />
+  const clearCanvas = React.useCallback(() => {
+    const confirmed = window.confirm(
+      "Clear the active layout? Seats, rooms, and structures on this layout will be removed.",
+    );
+    if (!confirmed) return;
+    resetToEmptyLayout();
+    setStatusIsError(false);
+    setStatusMessage("Active layout cleared. Drag elements from the toolbox to start fresh.");
+  }, [resetToEmptyLayout]);
 
+  React.useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      fitToView();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeBlockId, fitToView]);
+
+  return (
+    <div className={cn("flex h-full min-h-0 w-full flex-col overflow-hidden", BUILDER_CHROME.shellBg)}>
+      {publishing ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-border/60 bg-card px-10 py-8 shadow-xl">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+            <p className="text-sm font-semibold text-foreground">Publishing…</p>
+          </div>
+        </div>
+      ) : null}
       {(error || statusMessage) && (
         <div
           className={
-            error
+            error || statusIsError
               ? "shrink-0 border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
               : "shrink-0 border-b border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-800"
           }
@@ -193,25 +256,67 @@ function BuilderShell({ slug, initialName, mode }: Omit<Props, "initialLayout">)
       )}
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <ElementToolbox />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <p className="shrink-0 border-b border-border/40 bg-muted/20 px-3 py-1.5 text-[11px] text-muted-foreground">
-            {getToolHint(placementDrag?.type ?? null, placementDrag?.quantity ?? 1)}
-            {autoSaving ? " · Auto-saving…" : currentSlug ? " · Design saved to database" : " · Unsaved — edits auto-save shortly"}
+        <ElementToolbox onBack={() => router.push(returnHref)} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#fafbfc]">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/50 bg-[#fafbfc] px-3 py-2">
+            <WorkspaceBlockTabs />
+            <BuilderToolbar
+              onSaveDraft={() => void persistDraft()}
+              onPublish={() => void publish()}
+              onDelete={() => void deleteWorkspace()}
+              onClearCanvas={clearCanvas}
+              onPreview={() => {
+                void (async () => {
+                  let slug = currentSlug;
+                  if (!slug) {
+                    slug = (await persistDraft()) ?? "";
+                  }
+                  if (slug) {
+                    router.push(`/seating?office=${encodeURIComponent(slug)}`);
+                    return;
+                  }
+                  setStatusIsError(true);
+                  setStatusMessage("Save the floor before previewing.");
+                })();
+              }}
+              saving={saving}
+              autoSaving={autoSaving}
+              publishing={publishing}
+              deleting={deleting}
+              canDelete
+            />
+          </div>
+          <p className="shrink-0 border-b border-border/40 bg-muted/20 px-4 py-1.5 text-[11px] text-muted-foreground">
+            {getToolHint(placementDrag)}
+            {autoSaving ? (
+              <span className="text-primary/80"> · Auto-saving…</span>
+            ) : currentSlug ? (
+              <span className="text-emerald-700/80"> · Design saved to database</span>
+            ) : trimmedFloorName ? (
+              <span> · Unsaved — edits auto-save shortly</span>
+            ) : (
+              <span> · Enter a workspace name to start saving</span>
+            )}
           </p>
-          <FloorPlanCanvas />
+          <div className={cn("relative min-h-0 flex-1", BUILDER_CHROME.canvasBg)}>
+            <FloorPlanCanvas />
+          </div>
           <BuilderStatusBar />
         </div>
-        <PropertiesPanel floorName={floorName} onFloorNameChange={setFloorName} showFloorName={mode === "create" && !currentSlug} />
+        <aside className="flex h-full min-h-0 w-[272px] shrink-0 flex-col overflow-hidden border-l border-border/50 bg-[#fafbfc]">
+          <PropertiesPanel floorName={floorName} onFloorNameChange={setFloorName} />
+        </aside>
       </div>
     </div>
   );
 }
 
-export function FloorPlanBuilderApp({ slug, initialName, initialLayout, mode }: Props) {
+export function FloorPlanBuilderApp({ slug, initialName, initialLayout, mode, returnHref }: Props) {
   return (
-    <FloorPlanBuilderProvider initialLayout={initialLayout}>
-      <BuilderShell slug={slug} initialName={initialName} mode={mode} />
-    </FloorPlanBuilderProvider>
+    <div className="h-full min-h-0 w-full">
+      <FloorPlanBuilderProvider initialLayout={initialLayout}>
+        <BuilderShell slug={slug} initialName={initialName} returnHref={returnHref} />
+      </FloorPlanBuilderProvider>
+    </div>
   );
 }

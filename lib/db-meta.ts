@@ -2,34 +2,6 @@ import { getDb, isMongoConfigured } from "@/lib/mongodb";
 import { COLLECTIONS } from "@/models";
 import type { DataLayerSummary } from "@/types/data-layer";
 
-<<<<<<< HEAD
-const COLLECTION_LABELS = {
-  [COLLECTIONS.appUsers]: "App users (login)",
-  [COLLECTIONS.appUserSeedSuppressions]: "App user seed suppressions",
-  [COLLECTIONS.employees]: "Employees",
-  [COLLECTIONS.employeeDetails]: "Employee details",
-  [COLLECTIONS.teams]: "Teams",
-  [COLLECTIONS.companyRoles]: "Company roles",
-  [COLLECTIONS.seatingBays]: "Seating bays",
-  [COLLECTIONS.seatingAssignments]: "Seating assignments",
-  [COLLECTIONS.seatingVersions]: "Seating versions",
-  [COLLECTIONS.seatingSeatHistory]: "Seating seat history",
-  [COLLECTIONS.floorPlans]: "Floor plans",
-  [COLLECTIONS.teamMembers]: "Team members",
-  [COLLECTIONS.projects]: "Projects",
-  [COLLECTIONS.gallery]: "Gallery",
-  [COLLECTIONS.passwordResetTokens]: "Password reset tokens",
-  [COLLECTIONS.conversations]: "Chat conversations",
-  [COLLECTIONS.messages]: "Chat messages",
-  [COLLECTIONS.notifications]: "Notifications",
-  [COLLECTIONS.tasks]: "Tasks",
-  [COLLECTIONS.taskComments]: "Task comments",
-  [COLLECTIONS.taskActivity]: "Task activity",
-  [COLLECTIONS.dailyUpdates]: "Daily updates",
-} satisfies Record<CollectionName, string>;
-
-=======
->>>>>>> origin/dev-2
 /**
  * Fast connectivity + document counts for the dashboard.
  * Does not run index setup, seeding, or full collection scans.

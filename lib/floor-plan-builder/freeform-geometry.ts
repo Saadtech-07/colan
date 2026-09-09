@@ -1,0 +1,675 @@
+import { canPlaceInParent, getElementDefinition } from "./element-registry";
+import { getWorldFootprint } from "./hierarchy";
+import { elementPixelSize } from "./metrics";
+import type { FloorPlanElement, FloorPlanGrid, FloorPlanElementType } from "./types";
+import { BUILDER_CELL_STRIDE } from "./types";
+import type { ResizeEdge } from "./placement-utils";
+
+/** Visual dot spacing on the canvas — alignment aid only, not placement slots. */
+export const CANVAS_DOT_SPACING = 20;
+
+/** Default free-form seat footprint (logical px). */
+export const DEFAULT_SEAT_WIDTH = 100;
+export const DEFAULT_SEAT_HEIGHT = 96;
+
+export const MIN_SEAT_WIDTH = 48;
+export const MIN_SEAT_HEIGHT = 40;
+
+/** Minimum footprint for non-seat freeform elements (walls, pillars, etc.). */
+export const MIN_FREEFORM_ELEMENT_SIZE = 12;
+
+/** Floor workspace bounds scale (px per grid row/column unit). Matches BUILDER_CELL_STRIDE so edge resize shifts content correctly. */
+export const CANVAS_BOUNDS_PX = BUILDER_CELL_STRIDE;
+
+export type FreeformRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export function isFreeformSeat(element: FloorPlanElement): boolean {
+  return element.type === "seat" && element.properties?.freeform === true;
+}
+
+/** Element types placed and manipulated as free-form canvas pixels (excluding seat-specific rules). */
+export const FREEFORM_CANVAS_TYPES = [
+  "room",
+  "cabin",
+  "block",
+  "common_area",
+  "reception",
+  "pillar",
+  "wall",
+  "entrance",
+  "stairs",
+] as const;
+
+export function usesFreeformCanvas(type: FloorPlanElementType): boolean {
+  return type === "seat" || (FREEFORM_CANVAS_TYPES as readonly string[]).includes(type);
+}
+
+export function isFreeformCanvasElement(element: FloorPlanElement): boolean {
+  return element.properties?.freeform === true;
+}
+
+export function getDefaultElementPixelSize(type: FloorPlanElementType): {
+  width: number;
+  height: number;
+} {
+  if (type === "seat") {
+    return { width: DEFAULT_SEAT_WIDTH, height: DEFAULT_SEAT_HEIGHT };
+  }
+  const def = getElementDefinition(type);
+  return elementPixelSize(def.defaultWidth, def.defaultHeight);
+}
+
+export function getElementLocalPixelRect(
+  elements: FloorPlanElement[],
+  element: FloorPlanElement,
+): FreeformRect {
+  if (isFreeformCanvasElement(element)) {
+    return getFreeformRect(element);
+  }
+  const size = elementPixelSize(element.width, element.height);
+  return {
+    x: element.column * BUILDER_CELL_STRIDE,
+    y: element.row * BUILDER_CELL_STRIDE,
+    width: size.width,
+    height: size.height,
+  };
+}
+
+export function inferRowStartX(
+  elements: FloorPlanElement[],
+  parentId: string | null,
+  sourceY: number,
+  sourceX: number,
+  tolerance = 2,
+): number {
+  let minX = sourceX;
+  for (const el of elements) {
+    if (el.parentId !== parentId) continue;
+    const rect = getElementLocalPixelRect(elements, el);
+    if (Math.abs(rect.y - sourceY) <= tolerance) {
+      minX = Math.min(minX, rect.x);
+    }
+  }
+  return minX;
+}
+
+export function getFreeformRect(element: FloorPlanElement): FreeformRect {
+  const props = element.properties ?? {};
+  if (props.freeform === true) {
+    return {
+      x: Number(props.x ?? 0),
+      y: Number(props.y ?? 0),
+      width: Number(props.canvasWidth ?? DEFAULT_SEAT_WIDTH),
+      height: Number(props.canvasHeight ?? DEFAULT_SEAT_HEIGHT),
+    };
+  }
+
+  const size = elementPixelSize(element.width, element.height);
+  return {
+    x: element.column * BUILDER_CELL_STRIDE,
+    y: element.row * BUILDER_CELL_STRIDE,
+    width: size.width,
+    height: size.height,
+  };
+}
+
+export function withFreeformRect(
+  element: FloorPlanElement,
+  rect: Partial<FreeformRect>,
+): FloorPlanElement {
+  const current = getFreeformRect(element);
+  const next: FreeformRect = {
+    x: rect.x ?? current.x,
+    y: rect.y ?? current.y,
+    width: rect.width ?? current.width,
+    height: rect.height ?? current.height,
+  };
+
+  return {
+    ...element,
+    row: 0,
+    column: 0,
+    width: 1,
+    height: 1,
+    properties: {
+      ...element.properties,
+      freeform: true,
+      x: Math.round(next.x),
+      y: Math.round(next.y),
+      canvasWidth: Math.round(next.width),
+      canvasHeight: Math.round(next.height),
+    },
+  };
+}
+
+/** Convert a legacy grid-based seat into free-form geometry (local to parent). */
+export function migrateSeatToFreeform(element: FloorPlanElement): FloorPlanElement {
+  if (element.type !== "seat" || isFreeformSeat(element)) return element;
+  const size = elementPixelSize(element.width, element.height);
+  return withFreeformRect(element, {
+    x: element.column * BUILDER_CELL_STRIDE,
+    y: element.row * BUILDER_CELL_STRIDE,
+    width: size.width,
+    height: size.height,
+  });
+}
+
+export function getGridElementWorldPixelRect(
+  elements: FloorPlanElement[],
+  element: FloorPlanElement,
+): FreeformRect {
+  const world = getWorldFootprint(elements, element);
+  const size = elementPixelSize(element.width, element.height);
+  return {
+    x: world.worldColumn * BUILDER_CELL_STRIDE,
+    y: world.worldRow * BUILDER_CELL_STRIDE,
+    width: size.width,
+    height: size.height,
+  };
+}
+
+export function getWorldPixelRect(
+  elements: FloorPlanElement[],
+  element: FloorPlanElement,
+): FreeformRect {
+  if (isFreeformCanvasElement(element)) {
+    const local = getFreeformRect(element);
+    let x = local.x;
+    let y = local.y;
+    let parentId = element.parentId;
+
+    while (parentId) {
+      const parent = elements.find((el) => el.id === parentId);
+      if (!parent) break;
+      if (isFreeformCanvasElement(parent)) {
+        const parentLocal = getFreeformRect(parent);
+        x += parentLocal.x;
+        y += parentLocal.y;
+      } else {
+        const parentWorld = getWorldFootprint(elements, parent);
+        x += parentWorld.worldColumn * BUILDER_CELL_STRIDE;
+        y += parentWorld.worldRow * BUILDER_CELL_STRIDE;
+      }
+      parentId = parent.parentId;
+    }
+
+    return { x, y, width: local.width, height: local.height };
+  }
+
+  return getGridElementWorldPixelRect(elements, element);
+}
+
+/** Convert container-local pixel coordinates to block-sheet coordinates. */
+export function localPointToBlockPixel(
+  elements: FloorPlanElement[],
+  parentId: string | null,
+  localX: number,
+  localY: number,
+): { x: number; y: number } {
+  if (!parentId) return { x: localX, y: localY };
+  const parent = elements.find((el) => el.id === parentId);
+  if (!parent) return { x: localX, y: localY };
+  const parentWorld = getWorldPixelRect(elements, parent);
+  return { x: parentWorld.x + localX, y: parentWorld.y + localY };
+}
+
+export function getContainerPixelBounds(
+  elements: FloorPlanElement[],
+  parentId: string | null,
+  grid: FloorPlanGrid,
+): FreeformRect {
+  if (!parentId) {
+    return {
+      x: 0,
+      y: 0,
+      width: grid.columns * CANVAS_BOUNDS_PX,
+      height: grid.rows * CANVAS_BOUNDS_PX,
+    };
+  }
+  const parent = elements.find((el) => el.id === parentId);
+  if (!parent) {
+    return {
+      x: 0,
+      y: 0,
+      width: grid.columns * CANVAS_BOUNDS_PX,
+      height: grid.rows * CANVAS_BOUNDS_PX,
+    };
+  }
+  if (isFreeformCanvasElement(parent)) {
+    const rect = getFreeformRect(parent);
+    return { x: 0, y: 0, width: rect.width, height: rect.height };
+  }
+  const size = elementPixelSize(parent.width, parent.height);
+  return { x: 0, y: 0, width: size.width, height: size.height };
+}
+
+export function findContainerAtPixel(
+  elements: FloorPlanElement[],
+  worldX: number,
+  worldY: number,
+  childType: FloorPlanElement["type"],
+): { container: FloorPlanElement; localX: number; localY: number } | null {
+  const candidates = elements.filter((el) => {
+    const def = getElementDefinition(el.type);
+    if (!def.supportsChildren || !canPlaceInParent(childType, el.type)) return false;
+    const rect = getWorldPixelRect(elements, el);
+    return (
+      worldX >= rect.x &&
+      worldX < rect.x + rect.width &&
+      worldY >= rect.y &&
+      worldY < rect.y + rect.height
+    );
+  });
+
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => {
+    const rectA = getWorldPixelRect(elements, a);
+    const rectB = getWorldPixelRect(elements, b);
+    return rectA.width * rectA.height - rectB.width * rectB.height;
+  });
+  const container = candidates[0]!;
+  const rect = getWorldPixelRect(elements, container);
+  return {
+    container,
+    localX: worldX - rect.x,
+    localY: worldY - rect.y,
+  };
+}
+
+export function isRectFullyInsideBounds(rect: FreeformRect, bounds: FreeformRect): boolean {
+  return (
+    rect.x >= 0 &&
+    rect.y >= 0 &&
+    rect.x + rect.width <= bounds.width &&
+    rect.y + rect.height <= bounds.height
+  );
+}
+
+export function clampRectToBounds(rect: FreeformRect, bounds: FreeformRect): FreeformRect {
+  const width = Math.max(MIN_SEAT_WIDTH, Math.min(rect.width, bounds.width));
+  const height = Math.max(MIN_SEAT_HEIGHT, Math.min(rect.height, bounds.height));
+  const maxX = Math.max(0, bounds.width - width);
+  const maxY = Math.max(0, bounds.height - height);
+  return {
+    x: Math.min(Math.max(0, rect.x), maxX),
+    y: Math.min(Math.max(0, rect.y), maxY),
+    width,
+    height,
+  };
+}
+
+export function computeFreeformResizePatch(
+  rect: FreeformRect,
+  edge: ResizeEdge,
+  deltaX: number,
+  deltaY: number,
+  mins: { minWidth?: number; minHeight?: number } = {},
+): FreeformRect | null {
+  const minWidth = mins.minWidth ?? MIN_SEAT_WIDTH;
+  const minHeight = mins.minHeight ?? MIN_SEAT_HEIGHT;
+  let { x, y, width, height } = rect;
+
+  if (edge.includes("e")) {
+    width = Math.max(minWidth, width + deltaX);
+  }
+  if (edge.includes("w")) {
+    const nextWidth = Math.max(minWidth, width - deltaX);
+    const dw = width - nextWidth;
+    if (dw !== 0) {
+      x += dw;
+      width = nextWidth;
+    }
+  }
+  if (edge.includes("s")) {
+    height = Math.max(minHeight, height + deltaY);
+  }
+  if (edge.includes("n")) {
+    const nextHeight = Math.max(minHeight, height - deltaY);
+    const dh = height - nextHeight;
+    if (dh !== 0) {
+      y += dh;
+      height = nextHeight;
+    }
+  }
+
+  if (x < 0 || y < 0) return null;
+  return { x, y, width, height };
+}
+
+export function getCanvasPixelSize(grid: FloorPlanGrid): { width: number; height: number } {
+  return {
+    width: grid.columns * CANVAS_BOUNDS_PX,
+    height: grid.rows * CANVAS_BOUNDS_PX,
+  };
+}
+
+/** Convert a legacy grid-based canvas element into free-form geometry. */
+export function migrateElementToFreeform(element: FloorPlanElement): FloorPlanElement {
+  if (element.type === "seat") return migrateSeatToFreeform(element);
+  if (!usesFreeformCanvas(element.type) || isFreeformCanvasElement(element)) return element;
+  const size = elementPixelSize(element.width, element.height);
+  return withFreeformRect(element, {
+    x: element.column * BUILDER_CELL_STRIDE,
+    y: element.row * BUILDER_CELL_STRIDE,
+    width: size.width,
+    height: size.height,
+  });
+}
+
+export function createFreeformElementProperties(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): Record<string, unknown> {
+  return {
+    freeform: true,
+    x: Math.round(x),
+    y: Math.round(y),
+    canvasWidth: Math.round(width),
+    canvasHeight: Math.round(height),
+  };
+}
+
+export function createFreeformSeatProperties(
+  x: number,
+  y: number,
+  width = DEFAULT_SEAT_WIDTH,
+  height = DEFAULT_SEAT_HEIGHT,
+): Record<string, unknown> {
+  return {
+    freeform: true,
+    x: Math.round(x),
+    y: Math.round(y),
+    canvasWidth: Math.round(width),
+    canvasHeight: Math.round(height),
+  };
+}
+
+/** Horizontal gap between bulk-placed seats (canvas px). */
+export const SEAT_BULK_GAP = 8;
+
+/** Vertical gap between wrapped bulk seat rows (canvas px). */
+export const SEAT_BULK_ROW_GAP = 8;
+
+export type BulkFreeformSeatPosition = { x: number; y: number };
+
+export function computeBulkFreeformSeatPositions(
+  startX: number,
+  startY: number,
+  count: number,
+  bounds: FreeformRect,
+  seatWidth = DEFAULT_SEAT_WIDTH,
+  seatHeight = DEFAULT_SEAT_HEIGHT,
+  gap = SEAT_BULK_GAP,
+  rowGap = SEAT_BULK_ROW_GAP,
+): { positions: BulkFreeformSeatPosition[]; valid: boolean } {
+  if (count <= 0) {
+    return { positions: [], valid: false };
+  }
+
+  const stepX = seatWidth + gap;
+  const stepY = seatHeight + rowGap;
+  const availableWidth = bounds.width - startX;
+  const availableHeight = bounds.height - startY;
+
+  if (availableWidth < seatWidth || availableHeight < seatHeight) {
+    return { positions: [], valid: false };
+  }
+
+  const itemsPerRow = Math.max(1, Math.floor((availableWidth + gap) / stepX));
+  const positions: BulkFreeformSeatPosition[] = [];
+  let x = startX;
+  let y = startY;
+  let col = 0;
+
+  for (let index = 0; index < count; index += 1) {
+    if (x + seatWidth > bounds.width || y + seatHeight > bounds.height) {
+      return { positions, valid: false };
+    }
+
+    positions.push({ x, y });
+    col += 1;
+
+    if (col >= itemsPerRow) {
+      col = 0;
+      x = startX;
+      y += stepY;
+    } else {
+      x += stepX;
+    }
+  }
+
+  return { positions, valid: positions.length === count };
+}
+
+export function getFreeformSeatBlockRect(
+  elements: FloorPlanElement[],
+  element: FloorPlanElement,
+  localOverride?: { x: number; y: number },
+): FreeformRect {
+  const rect = getFreeformRect(element);
+  const localX = localOverride?.x ?? rect.x;
+  const localY = localOverride?.y ?? rect.y;
+  const blockPos = localPointToBlockPixel(elements, element.parentId, localX, localY);
+  return {
+    x: blockPos.x,
+    y: blockPos.y,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+export function blockRectToParentLocal(
+  elements: FloorPlanElement[],
+  parentId: string | null,
+  blockRect: FreeformRect,
+): FreeformRect {
+  const origin = blockPixelToParentLocal(elements, parentId, blockRect.x, blockRect.y);
+  return {
+    x: origin.x,
+    y: origin.y,
+    width: blockRect.width,
+    height: blockRect.height,
+  };
+}
+
+export function computeMergedFreeformSeatRect(
+  rects: FreeformRect[],
+  anchorIndex: number,
+): FreeformRect | null {
+  if (rects.length !== 2) return null;
+
+  const anchor = rects[anchorIndex];
+  const other = rects[anchorIndex === 0 ? 1 : 0];
+  if (!anchor || !other) return null;
+
+  const dx = Math.abs(anchor.x + anchor.width / 2 - (other.x + other.width / 2));
+  const dy = Math.abs(anchor.y + anchor.height / 2 - (other.y + other.height / 2));
+  const horizontal = dx >= dy;
+
+  if (horizontal) {
+    return {
+      x: anchor.x,
+      y: anchor.y,
+      width: anchor.width + other.width,
+      height: Math.max(anchor.height, other.height),
+    };
+  }
+
+  return {
+    x: anchor.x,
+    y: anchor.y,
+    width: Math.max(anchor.width, other.width),
+    height: anchor.height + other.height,
+  };
+}
+
+export function rectsOverlap(a: FreeformRect, b: FreeformRect): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+export function unionRects(a: FreeformRect, b: FreeformRect): FreeformRect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  const right = Math.max(a.x + a.width, b.x + b.width);
+  const bottom = Math.max(a.y + a.height, b.y + b.height);
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+export function isSingleFreeformSeat(element: FloorPlanElement): boolean {
+  if (!isFreeformSeat(element)) return false;
+  const rect = getFreeformRect(element);
+  return rect.width <= DEFAULT_SEAT_WIDTH + 1 && rect.height <= DEFAULT_SEAT_HEIGHT + 1;
+}
+
+/** Whether a seat spans multiple slots (grid merge or freeform merged footprint). */
+export function isMergedSeat(element: FloorPlanElement): boolean {
+  if (element.type !== "seat") return false;
+  if (isFreeformSeat(element)) return !isSingleFreeformSeat(element);
+  return element.width > 1 || element.height > 1;
+}
+
+export function findOverlappingFreeformSeat(
+  elements: FloorPlanElement[],
+  localRect: FreeformRect,
+  parentId: string | null,
+  excludeId?: string,
+): FloorPlanElement | null {
+  let found: FloorPlanElement | null = null;
+  for (const el of elements) {
+    if (el.id === excludeId || el.type !== "seat" || !isFreeformSeat(el)) continue;
+    if (el.parentId !== parentId) continue;
+    if (!isSingleFreeformSeat(el)) continue;
+    if (rectsOverlap(localRect, getFreeformRect(el))) {
+      found = el;
+    }
+  }
+  return found;
+}
+
+/**
+ * Find a sibling freeform element that blocks placement at `localRect`.
+ * Single-seat overlap is ignored when `allowSeatMerge` is true (merge flow handles it).
+ */
+export function findOverlappingFreeformSibling(
+  elements: FloorPlanElement[],
+  localRect: FreeformRect,
+  parentId: string | null,
+  movingElement: Pick<FloorPlanElement, "id" | "type">,
+  options?: { allowSeatMerge?: boolean; excludeId?: string },
+): FloorPlanElement | null {
+  const excludeId = options?.excludeId ?? movingElement.id;
+  const allowSeatMerge = options?.allowSeatMerge ?? false;
+
+  for (const el of elements) {
+    if (el.id === excludeId || !isFreeformCanvasElement(el)) continue;
+    if (el.parentId !== parentId) continue;
+
+    if (
+      allowSeatMerge &&
+      movingElement.type === "seat" &&
+      el.type === "seat" &&
+      isFreeformSeat(el) &&
+      isSingleFreeformSeat(el)
+    ) {
+      continue;
+    }
+
+    if (rectsOverlap(localRect, getFreeformRect(el))) {
+      return el;
+    }
+  }
+  return null;
+}
+
+/** Convert block-sheet pixel coordinates to coordinates local to a parent container. */
+export function blockPixelToParentLocal(
+  elements: FloorPlanElement[],
+  parentId: string | null,
+  blockX: number,
+  blockY: number,
+): { x: number; y: number } {
+  if (!parentId) return { x: blockX, y: blockY };
+  const parent = elements.find((el) => el.id === parentId);
+  if (!parent) return { x: blockX, y: blockY };
+  const parentWorld = getWorldPixelRect(elements, parent);
+  return { x: blockX - parentWorld.x, y: blockY - parentWorld.y };
+}
+
+export function resolveSeatContainerParent(
+  elements: FloorPlanElement[],
+  element: FloorPlanElement,
+  localX: number,
+  localY: number,
+): string | null {
+  const rect = getFreeformRect(element);
+  const blockPos = localPointToBlockPixel(elements, element.parentId, localX, localY);
+  const centerX = blockPos.x + rect.width / 2;
+  const centerY = blockPos.y + rect.height / 2;
+  const hit = findContainerAtPixel(elements, centerX, centerY, "seat");
+  return hit?.container.id ?? null;
+}
+
+/** Container a seat belongs to — uses parentId when set, otherwise pixel hit-test. */
+export function getEffectiveSeatContainer(
+  elements: FloorPlanElement[],
+  element: FloorPlanElement,
+): string | null {
+  if (element.parentId) return element.parentId;
+  const rect = getFreeformRect(element);
+  return resolveSeatContainerParent(elements, element, rect.x, rect.y);
+}
+
+export function getContainerDisplayLabel(type: FloorPlanElementType): string {
+  switch (type) {
+    case "cabin":
+      return "cabin";
+    case "room":
+      return "room";
+    case "meeting_room":
+      return "meeting room";
+    case "conference_room":
+      return "conference room";
+    case "common_area":
+      return "common area";
+    case "block":
+      return "block";
+    default:
+      return "container";
+  }
+}
+
+export function resolveFreeformSeatDrop(
+  elements: FloorPlanElement[],
+  element: FloorPlanElement,
+  localX: number,
+  localY: number,
+): { parentId: string | null; localX: number; localY: number } {
+  const rect = getFreeformRect(element);
+  const blockPos = localPointToBlockPixel(elements, element.parentId, localX, localY);
+  const centerX = blockPos.x + rect.width / 2;
+  const centerY = blockPos.y + rect.height / 2;
+  const hit = findContainerAtPixel(elements, centerX, centerY, "seat");
+  const targetParentId = hit?.container.id ?? null;
+
+  if (targetParentId === element.parentId) {
+    return { parentId: targetParentId, localX, localY };
+  }
+
+  if (hit) {
+    return {
+      parentId: targetParentId,
+      localX: Math.max(0, hit.localX - rect.width / 2),
+      localY: Math.max(0, hit.localY - rect.height / 2),
+    };
+  }
+
+  const floorLocal = blockPixelToParentLocal(elements, null, blockPos.x, blockPos.y);
+  return { parentId: null, localX: floorLocal.x, localY: floorLocal.y };
+}

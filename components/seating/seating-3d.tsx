@@ -13,6 +13,7 @@ type BlockDepthProps = {
   sideClassName?: string;
   shadowClassName?: string;
   emphasized?: boolean;
+  staticVisual?: boolean;
 };
 
 function BlockDepthFaces({
@@ -21,6 +22,7 @@ function BlockDepthFaces({
   sideClassName,
   shadowClassName,
   emphasized = false,
+  staticVisual = false,
 }: BlockDepthProps) {
   return (
     <>
@@ -28,7 +30,7 @@ function BlockDepthFaces({
         aria-hidden
         className={cn(
           "pointer-events-none absolute bottom-0 left-3 right-5 h-2.5 rounded-[50%] bg-slate-900/10 blur-sm transition-all duration-300 ease-out",
-          emphasized ? "scale-110 opacity-100" : "opacity-80 group-hover/seat:scale-110 group-hover/seat:opacity-100",
+          emphasized ? "scale-110 opacity-100" : staticVisual ? "opacity-80" : "opacity-80 group-hover/seat:scale-110 group-hover/seat:opacity-100",
           shadowClassName,
         )}
       />
@@ -56,6 +58,10 @@ type SeatBlockProps = {
   className?: string;
   occupied?: boolean;
   emphasized?: boolean;
+  /** Size to parent grid cell instead of fixed legacy 108×152px. */
+  fillContainer?: boolean;
+  /** Builder canvas: no hover lift/z-index effects. */
+  staticVisual?: boolean;
 };
 
 export function SeatingSeatBlock({
@@ -63,6 +69,8 @@ export function SeatingSeatBlock({
   className,
   occupied = false,
   emphasized = false,
+  fillContainer = false,
+  staticVisual = false,
 }: SeatBlockProps) {
   const depthFront = occupied
     ? "bg-gradient-to-b from-violet-300/95 to-violet-400"
@@ -70,30 +78,37 @@ export function SeatingSeatBlock({
   const depthSide = occupied
     ? "bg-gradient-to-r from-violet-300/85 to-violet-500/90"
     : "bg-gradient-to-r from-slate-200/90 to-slate-400/85";
+  const depth = fillContainer ? 8 : SEAT_DEPTH;
 
   return (
     <div
       className={cn(
-        "group/seat relative shrink-0 pb-3 transition-[transform,z-index] duration-300 ease-out",
-        emphasized ? "z-30" : "z-0 hover:z-30",
+        "group/seat relative",
+        fillContainer ? "h-full w-full pb-1" : "shrink-0 pb-3",
+        staticVisual ? "z-0" : emphasized ? "z-30" : "z-0 hover:z-30",
+        !staticVisual && "transition-[transform,z-index] duration-300 ease-out",
         className,
       )}
-      style={{ width: SEAT_WIDTH, height: SEAT_HEIGHT + SEAT_DEPTH }}
+      style={fillContainer ? undefined : { width: SEAT_WIDTH, height: SEAT_HEIGHT + SEAT_DEPTH }}
     >
       <BlockDepthFaces
         emphasized={emphasized}
-        depth={SEAT_DEPTH}
+        staticVisual={staticVisual}
+        depth={depth}
         frontClassName={depthFront}
         sideClassName={depthSide}
       />
       <div
         className={cn(
-          "absolute left-0 top-0 z-10 transition-all duration-300 ease-out",
-          emphasized
-            ? "-translate-y-1.5 scale-[1.02]"
-            : "translate-y-0 group-hover/seat:-translate-y-1.5 group-hover/seat:scale-[1.02]",
+          "absolute left-0 top-0 z-10",
+          fillContainer ? "right-0 bottom-1" : "",
+          staticVisual
+            ? ""
+            : emphasized
+              ? "-translate-y-1 scale-[1.02] transition-all duration-300 ease-out"
+              : "translate-y-0 transition-all duration-300 ease-out group-hover/seat:-translate-y-1 group-hover/seat:scale-[1.02]",
         )}
-        style={{ width: SEAT_WIDTH, height: SEAT_HEIGHT }}
+        style={fillContainer ? undefined : { width: SEAT_WIDTH, height: SEAT_HEIGHT }}
       >
         {children}
       </div>

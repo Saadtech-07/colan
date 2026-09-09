@@ -11,7 +11,10 @@ import {
 } from "@/models/floor-plan-layout.model";
 import type { FloorPlanDocument } from "@/models/floor-plan.model";
 
-function mergeGroupsFromElements(elements: FloorPlanLayoutState["elements"]) {
+function mergeGroupsFromLayout(layout: FloorPlanLayoutState) {
+  const elements = layout.blocks?.length
+    ? layout.blocks.flatMap((block) => block.elements)
+    : layout.elements;
   const groups = new Map<string, string[]>();
   for (const el of elements) {
     if (el.type !== "seat" || !el.mergeGroupId || !el.seatId) continue;
@@ -50,7 +53,7 @@ export async function saveFloorPlanLayoutDraft(
   if (!db) throw new Error("MongoDB is not configured.");
 
   const seatIds = extractSeatIds(layout);
-  const mergeGroups = mergeGroupsFromElements(layout.elements);
+  const mergeGroups = mergeGroupsFromLayout(layout);
   const now = new Date();
 
   const col = db.collection<FloorPlanLayoutDocument>(COLLECTIONS.floorPlanLayouts);
@@ -68,6 +71,7 @@ export async function saveFloorPlanLayoutDraft(
     version: existing?.version ?? 0,
     grid: layout.grid,
     elements: layout.elements,
+    blocks: layout.blocks,
     seatIds,
     mergeGroups,
     updatedAt: now,
@@ -138,7 +142,7 @@ export async function publishFloorPlanLayout(
     throw new Error("Add at least one seat before publishing.");
   }
 
-  const mergeGroups = mergeGroupsFromElements(layout.elements);
+  const mergeGroups = mergeGroupsFromLayout(layout);
   const now = new Date();
   const col = db.collection<FloorPlanLayoutDocument>(COLLECTIONS.floorPlanLayouts);
 
@@ -167,6 +171,7 @@ export async function publishFloorPlanLayout(
     version: nextVersion,
     grid: layout.grid,
     elements: layout.elements,
+    blocks: layout.blocks,
     seatIds,
     mergeGroups,
     publishedAt: now,

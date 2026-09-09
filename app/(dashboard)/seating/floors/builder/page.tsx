@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { FloorPlanBuilderApp } from "@/components/floor-plan-builder/floor-plan-builder-app";
+import { BuilderPageLoading } from "@/components/floor-plan-builder/builder-page-loading";
 import { createEmptyLayout } from "@/lib/floor-plan-builder/layout-engine";
 import { useAppState } from "@/providers/app-state";
 
@@ -16,15 +17,17 @@ export default function NewFloorBuilderPage() {
   }, [access, canAssign, router]);
 
   if (!access) {
-    return <div className="flex h-dvh w-full items-center justify-center bg-muted/30 animate-pulse" />;
+    return <BuilderPageLoading message="Loading floor builder…" />;
   }
+
   if (!canAssign) return null;
 
   return (
     <FloorPlanBuilderApp
       mode="create"
-      initialName="New Floor"
-      initialLayout={createEmptyLayout("New Floor")}
+      initialName=""
+      initialLayout={createEmptyLayout()}
+      returnHref="/seating/floors/new"
     />
   );
 }

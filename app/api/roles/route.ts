@@ -3,11 +3,10 @@ import { requireTenantContext } from "@/lib/api/tenant-context";
 import {
   canAccessModuleAction,
   canManageModule,
-  canViewModule,
   normalizeAppRole,
 } from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
-import { createWorkspaceRole } from "@/lib/roles-data";
+import { createWorkspaceRole, loadTenantRoles } from "@/lib/roles-data";
 import {
   parseRolePermissionsInput,
   workspaceRoleCreateSchema,
@@ -18,13 +17,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const ctx = await requireTenantContext();
   if (ctx instanceof Response) return ctx;
-  await ensureRoleRegistry(ctx.companyId);
-  const roleKey = normalizeAppRole(ctx.session.user.appRole);
-  if (!canViewModule(roleKey, "roles")) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
-  const roles = [...(await ensureRoleRegistry(ctx.companyId)).values()];
+  const roles = await loadTenantRoles(ctx.companyId);
+  await ensureRoleRegistry(ctx.companyId);
 
   const sorted = [...roles].sort(
     (a, b) => a.displayOrder - b.displayOrder || a.name.localeCompare(b.name),

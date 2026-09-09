@@ -5,6 +5,7 @@ export const COLLECTIONS = {
   companies: "companies",
   appUsers: "app_users",
   appUserSeedSuppressions: "app_user_seed_suppressions",
+  floorPlanSeedSuppressions: "floor_plan_seed_suppressions",
   employees: "employees",
   employeeDetails: "employee_details",
   teams: "teams",
@@ -26,6 +27,8 @@ export const COLLECTIONS = {
   taskComments: "task_comments",
   taskActivity: "task_activity",
   dailyUpdates: "daily_updates",
+  platformUsers: "platform_users",
+  platformAuditLogs: "platform_audit_logs",
 } as const;
 
 export type CollectionName = (typeof COLLECTIONS)[keyof typeof COLLECTIONS];

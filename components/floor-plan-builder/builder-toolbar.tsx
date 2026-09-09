@@ -1,31 +1,35 @@
 "use client";
 
 import {
+  Eye,
   Grid3x3,
   Hand,
   Magnet,
+  Maximize2,
   MousePointer2,
   Redo2,
+  RotateCcw,
   Save,
+  SplitSquareHorizontal,
   Trash2,
   Undo2,
   Upload,
+  Users,
   ZoomIn,
   ZoomOut,
-  Eye,
-  Maximize2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isMergedSeat } from "@/lib/floor-plan-builder/freeform-geometry";
+import { ToolbarGroup, ToolIconButton } from "./builder-ui";
 import { useFloorPlanBuilder } from "./builder-store";
 
 type Props = {
-  floorName: string;
-  onBack?: () => void;
   onSaveDraft: () => void;
   onPublish: () => void;
   onDelete?: () => void;
   onPreview?: () => void;
+  onClearCanvas?: () => void;
   saving?: boolean;
   autoSaving?: boolean;
   publishing?: boolean;
@@ -34,12 +38,11 @@ type Props = {
 };
 
 export function BuilderToolbar({
-  floorName,
-  onBack,
   onSaveDraft,
   onPublish,
   onDelete,
   onPreview,
+  onClearCanvas,
   saving,
   autoSaving,
   publishing,
@@ -60,112 +63,180 @@ export function BuilderToolbar({
     undoChange,
     redoChange,
     fitToView,
+    layout,
+    selection,
+    mergeSelectedSeats,
+    unmergeGroup,
   } = useFloorPlanBuilder();
 
-  return (
-    <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 bg-card px-3 py-2">
-      {onBack ? (
-        <Button type="button" variant="ghost" size="sm" className="rounded-xl" onClick={onBack}>
-          Back
-        </Button>
-      ) : null}
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-foreground">{floorName}</p>
-        <p className="text-xs text-muted-foreground">Floor Plan Builder</p>
-      </div>
+  const selectedSeats = selection
+    .map((id) => layout.elements.find((el) => el.id === id))
+    .filter((el): el is NonNullable<typeof el> => el?.type === "seat");
+  const canMergeSeats = selectedSeats.length >= 2;
+  const mergedSeatSelected =
+    selection.length === 1 &&
+    selectedSeats.length === 1 &&
+    isMergedSeat(selectedSeats[0]!);
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-xl" disabled={!canUndo} onClick={undoChange}>
-          <Undo2 className="h-4 w-4" />
-        </Button>
-        <Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-xl" disabled={!canRedo} onClick={redoChange}>
-          <Redo2 className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant={gridVisible ? "secondary" : "outline"}
-          size="icon"
-          className="h-9 w-9 rounded-xl"
+  return (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+      <ToolbarGroup label="History">
+        <ToolIconButton icon={Undo2} title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={undoChange} />
+        <ToolIconButton icon={Redo2} title="Redo (Ctrl+Y)" disabled={!canRedo} onClick={redoChange} />
+      </ToolbarGroup>
+
+      <ToolbarGroup label="Canvas">
+        <ToolIconButton
+          icon={Grid3x3}
+          title="Toggle grid"
+          active={gridVisible}
           onClick={() => setGridVisible(!gridVisible)}
-        >
-          <Grid3x3 className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant={snapEnabled ? "secondary" : "outline"}
-          size="icon"
-          className="h-9 w-9 rounded-xl"
+        />
+        <ToolIconButton
+          icon={Magnet}
+          title="Snap to grid"
+          active={snapEnabled}
           onClick={() => setSnapEnabled(!snapEnabled)}
-        >
-          <Magnet className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant={canvasMode === "select" ? "secondary" : "outline"}
-          size="icon"
-          className="h-9 w-9 rounded-xl"
+        />
+        <ToolIconButton
+          icon={MousePointer2}
+          title="Select (V)"
+          active={canvasMode === "select"}
           onClick={() => setCanvasMode("select")}
-          title="Select"
+        />
+        <ToolIconButton
+          icon={Hand}
+          title="Pan (H)"
+          active={canvasMode === "pan"}
+          onClick={() => setCanvasMode("pan")}
+        />
+      </ToolbarGroup>
+
+      <ToolbarGroup label="Seats">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 rounded-md px-2 text-xs font-medium"
+          disabled={!canMergeSeats}
+          onClick={() => void mergeSelectedSeats()}
+          title="Merge selected seats (Ctrl+click to multi-select)"
         >
-          <MousePointer2 className="h-4 w-4" />
+          <Users className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Merge</span>
         </Button>
         <Button
           type="button"
-          variant={canvasMode === "pan" ? "secondary" : "outline"}
-          size="icon"
-          className="h-9 w-9 rounded-xl"
-          onClick={() => setCanvasMode("pan")}
-          title="Pan"
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 rounded-md px-2 text-xs font-medium"
+          disabled={!mergedSeatSelected}
+          onClick={() => {
+            const seat = selectedSeats[0];
+            if (seat) unmergeGroup(seat.id);
+          }}
+          title="Split merged seat back into individual seats"
         >
-          <Hand className="h-4 w-4" />
+          <SplitSquareHorizontal className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Unmerge</span>
         </Button>
-        <Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => setZoom(Math.max(0.35, zoom - 0.1))}>
-          <ZoomOut className="h-4 w-4" />
-        </Button>
-        <span className="min-w-[3rem] text-center text-xs font-medium text-muted-foreground">
+      </ToolbarGroup>
+
+      <ToolbarGroup label="View">
+        <ToolIconButton
+          icon={ZoomOut}
+          title="Zoom out"
+          onClick={() => setZoom(Math.max(0.35, zoom - 0.1))}
+          size="sm"
+        />
+        <span className="min-w-[2.85rem] px-0.5 text-center text-[11px] font-semibold tabular-nums text-foreground/70">
           {Math.round(zoom * 100)}%
         </span>
-        <Button type="button" variant="outline" size="icon" className="h-9 w-9 rounded-xl" onClick={() => setZoom(Math.min(2, zoom + 0.1))}>
-          <ZoomIn className="h-4 w-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          className="h-9 w-9 rounded-xl"
-          title="Fit floor to view"
-          onClick={fitToView}
-        >
-          <Maximize2 className="h-4 w-4" />
-        </Button>
+        <ToolIconButton
+          icon={ZoomIn}
+          title="Zoom in"
+          onClick={() => setZoom(Math.min(2, zoom + 0.1))}
+          size="sm"
+        />
+        <ToolIconButton icon={Maximize2} title="Fit to view" onClick={fitToView} size="sm" />
+        <ToolIconButton
+          icon={RotateCcw}
+          title="Reset zoom (100%)"
+          onClick={() => {
+            setZoom(1);
+            fitToView();
+          }}
+          size="sm"
+        />
         {onPreview ? (
-          <Button type="button" variant="outline" size="sm" className="rounded-xl gap-1.5" onClick={onPreview}>
-            <Eye className="h-4 w-4" />
-            Preview
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1.5 rounded-md px-2 text-xs font-medium"
+            onClick={onPreview}
+            title="Preview floor plan"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Preview</span>
           </Button>
         ) : null}
-        <Button type="button" variant="outline" size="sm" className="rounded-xl gap-1.5" disabled={saving || autoSaving} onClick={onSaveDraft}>
-          <Save className="h-4 w-4" />
-          {saving ? "Saving…" : autoSaving ? "Auto-saving…" : "Save Draft"}
+      </ToolbarGroup>
+
+      <ToolbarGroup label="Document">
+        {onClearCanvas && layout.elements.length > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 rounded-md px-2 text-xs font-medium text-muted-foreground"
+            onClick={onClearCanvas}
+            title="Clear active layout"
+          >
+            Clear
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "h-7 gap-1.5 rounded-md px-2.5 text-xs font-medium",
+            (saving || autoSaving) && "text-muted-foreground",
+          )}
+          disabled={saving || autoSaving}
+          onClick={onSaveDraft}
+          title="Save draft"
+        >
+          <Save className="h-3.5 w-3.5" />
+          {saving ? "Saving…" : autoSaving ? "Auto-saving…" : "Save"}
         </Button>
         {canDelete && onDelete ? (
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="rounded-xl gap-1.5 text-destructive hover:text-destructive"
+            className="h-7 gap-1.5 rounded-md px-2 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive"
             disabled={deleting}
             onClick={onDelete}
+            title="Delete floor plan"
           >
-            <Trash2 className="h-4 w-4" />
-            {deleting ? "Deleting…" : "Delete"}
+            <Trash2 className="h-3.5 w-3.5" />
+            {deleting ? "…" : "Delete"}
           </Button>
         ) : null}
-        <Button type="button" size="sm" className="rounded-xl gap-1.5" disabled={publishing} onClick={onPublish}>
-          <Upload className="h-4 w-4" />
+        <Button
+          type="button"
+          size="sm"
+          className="h-7 gap-1.5 rounded-md px-3 text-xs font-semibold shadow-sm"
+          disabled={publishing}
+          onClick={onPublish}
+          title="Publish floor plan"
+        >
+          <Upload className="h-3.5 w-3.5" />
           {publishing ? "Publishing…" : "Publish"}
         </Button>
-      </div>
-    </header>
+      </ToolbarGroup>
+    </div>
   );
 }

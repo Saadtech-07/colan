@@ -4,7 +4,7 @@ export const SEAT_WIDTH = 108;
 export const SEAT_HEIGHT = 140;
 export const SEAT_DEPTH = 12;
 export const LABEL_WIDTH = 128;
-export const CELL_GAP = 10;
+export const CELL_GAP = 14;
 
 /** AI / OpenCV generated layout canvas — matches Colan seat proportions. */
 export const CANVAS_SEAT_WIDTH = SEAT_WIDTH;

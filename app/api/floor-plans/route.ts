@@ -20,6 +20,7 @@ export async function GET() {
     return NextResponse.json(plans);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Failed to list floor plans";
+    console.error("[api/floor-plans] GET failed:", msg);
     return NextResponse.json({ error: msg }, { status: 503 });
   }
 }

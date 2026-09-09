@@ -19,7 +19,7 @@ import {
 } from "@/lib/workspace-route-data";
 import { scheduleIdle } from "@/lib/schedule-idle";
 import type { WorkspaceSlice } from "@/lib/workspace-slices";
-import { fetchProfileSettings } from "@/lib/profile-settings-client";
+import { fetchProfileAvatar } from "@/lib/profile-settings-client";
 import {
   fetchDbStatusOnce,
   fetchEmployeesOnce,
@@ -225,7 +225,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
     profileRefreshInFlightRef.current = true;
     try {
-      const profile = await fetchProfileSettings(email);
+      const profile = await fetchProfileAvatar(email);
       await applyProfileSnapshot(profile);
     } catch {
       setProfileAvatarUrl(undefined);
@@ -266,6 +266,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       team: u.team,
       avatarUrl: profileAvatarUrl ?? sessionAvatar ?? linkedEmployeeAvatar,
       isProfileCompleted: u.isProfileCompleted !== false,
+      accessLevel: u.accessLevel === "platform" ? "platform" : "tenant",
     };
     lastKnownUserRef.current = next;
     return next;
@@ -371,10 +372,6 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
       if (needed.length === 0) return;
 
-      const ordered: WorkspaceSlice[] = needed.includes("roles")
-        ? ["roles", ...needed.filter((s) => s !== "roles")]
-        : needed;
-
       const silent = opts?.silent === true;
       if (!silent) {
         pendingRouteLoadsRef.current += 1;
@@ -382,11 +379,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         setDataError(null);
       }
       try {
-        for (const slice of ordered.filter((s) => s === "roles")) {
-          await loadSlice(slice, email, opts?.force);
-        }
         await Promise.all(
-          ordered.filter((s) => s !== "roles").map((slice) => loadSlice(slice, email, opts?.force)),
+          needed.map((slice) => loadSlice(slice, email, opts?.force)),
         );
       } catch (e) {
         if (!silent) {
@@ -459,7 +453,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     // Defer avatar fetch so roles/employees/projects can win the first network wave.
     return scheduleIdle(() => {
       void refreshProfileAvatar();
-    }, 2_000);
+    }, 800);
   }, [pathname, profileSessionEmail, refreshProfileAvatar, sessionStatus]);
 
   const logout = React.useCallback(async () => {
@@ -742,8 +736,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     if (sessionStatus === "unauthenticated" && pathname !== "/login") {
       router.replace("/login");
+      return;
     }
-  }, [sessionStatus, pathname, router]);
+    if (sessionStatus === "authenticated" && user?.accessLevel === "platform") {
+      router.replace("/super-admin/dashboard");
+    }
+  }, [sessionStatus, pathname, router, user?.accessLevel]);
 
   if (sessionStatus === "unauthenticated") {
     return null;

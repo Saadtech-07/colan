@@ -24,7 +24,49 @@ import {
   validateFootprint,
   type ResizeEdge,
 } from "./placement-utils";
-import { DEFAULT_FLOOR_GRID, DEFAULT_ROOM_SIZE } from "./types";
+import { DEFAULT_FLOOR_GRID, DEFAULT_ROOM_SIZE, BUILDER_CELL_STRIDE } from "./types";
+import {
+  computeFreeformResizePatch,
+  CANVAS_BOUNDS_PX,
+  computeBulkFreeformSeatPositions,
+  createFreeformElementProperties,
+  createFreeformSeatProperties,
+  DEFAULT_SEAT_HEIGHT,
+  DEFAULT_SEAT_WIDTH,
+  MIN_SEAT_HEIGHT,
+  MIN_SEAT_WIDTH,
+  getContainerPixelBounds,
+  getDefaultElementPixelSize,
+  getElementLocalPixelRect,
+  getFreeformRect,
+  inferRowStartX,
+  isFreeformCanvasElement,
+  isFreeformSeat,
+  isRectFullyInsideBounds,
+  MIN_FREEFORM_ELEMENT_SIZE,
+  migrateElementToFreeform,
+  migrateSeatToFreeform,
+  usesFreeformCanvas,
+  SEAT_BULK_GAP,
+  SEAT_BULK_ROW_GAP,
+  withFreeformRect,
+  type FreeformRect,
+  unionRects,
+  isSingleFreeformSeat,
+  findOverlappingFreeformSeat,
+  findOverlappingFreeformSibling,
+  isMergedSeat,
+  getFreeformSeatBlockRect,
+  blockRectToParentLocal,
+  computeMergedFreeformSeatRect,
+} from "./freeform-geometry";
+
+export type BulkFreeformSeatOptions = {
+  parentId: string | null;
+  startX: number;
+  startY: number;
+  count: number;
+};
 
 export type { ResizeEdge } from "./placement-utils";
 export {
@@ -103,10 +145,50 @@ export function createElement(
     rotation: options.rotation ?? 0,
     seatId: type === "seat" ? options.seatId : undefined,
     properties:
-      def.supportsCapacity && def.defaultCapacity
-        ? { capacity: def.defaultCapacity, ...options.properties }
-        : options.properties,
+      type === "seat"
+        ? (options.properties?.freeform
+            ? options.properties
+            : createFreeformSeatProperties(
+                Number(options.properties?.x ?? 0),
+                Number(options.properties?.y ?? 0),
+                options.properties?.canvasWidth != null
+                  ? Number(options.properties.canvasWidth)
+                  : DEFAULT_SEAT_WIDTH,
+                options.properties?.canvasHeight != null
+                  ? Number(options.properties.canvasHeight)
+                  : DEFAULT_SEAT_HEIGHT,
+              ))
+        : usesFreeformCanvas(type)
+          ? (() => {
+              const defaultSize = getDefaultElementPixelSize(type);
+              const freeformProps = options.properties?.freeform
+                ? options.properties
+                : createFreeformElementProperties(
+                    Number(options.properties?.x ?? 0),
+                    Number(options.properties?.y ?? 0),
+                    options.properties?.canvasWidth != null
+                      ? Number(options.properties.canvasWidth)
+                      : defaultSize.width,
+                    options.properties?.canvasHeight != null
+                      ? Number(options.properties.canvasHeight)
+                      : defaultSize.height,
+                  );
+              return def.supportsCapacity && def.defaultCapacity
+                ? { capacity: def.defaultCapacity, ...freeformProps, ...options.properties }
+                : { ...freeformProps, ...options.properties };
+            })()
+          : def.supportsCapacity && def.defaultCapacity
+            ? { capacity: def.defaultCapacity, ...options.properties }
+            : options.properties,
   };
+}
+
+export function ensureFreeformSeats(elements: FloorPlanElement[]): FloorPlanElement[] {
+  return elements.map((el) => (el.type === "seat" ? migrateSeatToFreeform(el) : el));
+}
+
+export function ensureFreeformCanvasElements(elements: FloorPlanElement[]): FloorPlanElement[] {
+  return elements.map((el) => migrateElementToFreeform(el));
 }
 
 export function validatePlacement(
@@ -124,6 +206,35 @@ export function validatePlacement(
   if (element.type === "seat" && element.parentId) {
     const cap = validateContainerCapacity(layout, element.parentId, 1, ignoreElementId ? [ignoreElementId] : undefined);
     if (!cap.ok) return cap;
+  }
+
+  if (isFreeformCanvasElement(element)) {
+    const bounds = getContainerPixelBounds(layout.elements, element.parentId, layout.grid);
+    const rect = getFreeformRect(element);
+    if (!isRectFullyInsideBounds(rect, bounds)) {
+      return {
+        ok: false,
+        reason: element.parentId
+          ? "Element must remain fully inside the container."
+          : element.type === "seat"
+            ? "Seat is outside the workspace boundary."
+            : "Element is outside the workspace boundary.",
+      };
+    }
+
+    const allowSeatMerge = element.type === "seat" && isFreeformSeat(element);
+    const overlapping = findOverlappingFreeformSibling(
+      layout.elements,
+      rect,
+      element.parentId,
+      element,
+      { allowSeatMerge, excludeId: ignoreElementId ?? element.id },
+    );
+    if (overlapping) {
+      return { ok: false, reason: "This area is already occupied." };
+    }
+
+    return { ok: true, footprint: { parentId: element.parentId, row: 0, column: 0, width: 1, height: 1 } };
   }
 
   return validateFootprint(
@@ -161,6 +272,120 @@ export function snapRotationDegrees(angle: number): 0 | 90 | 180 | 270 {
   return (snapped === 360 ? 0 : snapped) as 0 | 90 | 180 | 270;
 }
 
+export function moveFreeformElement(
+  layout: FloorPlanLayoutState,
+  elementId: string,
+  x: number,
+  y: number,
+  parentId?: string | null,
+): { layout: FloorPlanLayoutState; error?: string } {
+  const current = layout.elements.find((el) => el.id === elementId);
+  if (!current || !isFreeformCanvasElement(current)) {
+    return { layout, error: "Element not found." };
+  }
+
+  const nextParentId = parentId !== undefined ? parentId : current.parentId;
+  const rect = { ...getFreeformRect(current), x, y };
+  const next = withFreeformRect({ ...current, parentId: nextParentId }, rect);
+  const without = layout.elements.filter((el) => el.id !== elementId);
+  const validation = validatePlacement({ ...layout, elements: without }, next, elementId);
+  if (!validation.ok) {
+    return { layout, error: validation.reason };
+  }
+
+  return {
+    layout: {
+      ...layout,
+      elements: layout.elements.map((el) => (el.id === elementId ? next : el)),
+    },
+  };
+}
+
+/** Check whether a freeform element can be placed at the given local position. */
+export function validateFreeformPosition(
+  layout: FloorPlanLayoutState,
+  elementId: string,
+  x: number,
+  y: number,
+  parentId?: string | null,
+): PlacementResult {
+  const current = layout.elements.find((el) => el.id === elementId);
+  if (!current || !isFreeformCanvasElement(current)) {
+    return { ok: false, reason: "Element not found." };
+  }
+
+  const nextParentId = parentId !== undefined ? parentId : current.parentId;
+  const rect = { ...getFreeformRect(current), x, y };
+  const next = withFreeformRect({ ...current, parentId: nextParentId }, rect);
+  const without = layout.elements.filter((el) => el.id !== elementId);
+  return validatePlacement({ ...layout, elements: without }, next, elementId);
+}
+
+/** Check whether a new freeform element can be placed at the given local position. */
+export function validateNewFreeformElementAt(
+  layout: FloorPlanLayoutState,
+  type: FloorPlanElementType,
+  localX: number,
+  localY: number,
+  width: number,
+  height: number,
+  parentId: string | null,
+): PlacementResult {
+  const element =
+    type === "seat"
+      ? createElement("seat", {
+          parentId,
+          seatId: "preview",
+          properties: createFreeformSeatProperties(localX, localY, width, height),
+        })
+      : createElement(type, {
+          parentId,
+          properties: createFreeformElementProperties(localX, localY, width, height),
+        });
+  return validatePlacement(layout, element);
+}
+
+export function resizeFreeformElement(
+  layout: FloorPlanLayoutState,
+  elementId: string,
+  edge: ResizeEdge,
+  deltaX: number,
+  deltaY: number,
+): { layout: FloorPlanLayoutState; error?: string; preview?: FreeformRect } {
+  const current = layout.elements.find((el) => el.id === elementId);
+  if (!current || !isFreeformCanvasElement(current)) {
+    return { layout, error: "Element not found." };
+  }
+
+  const currentRect = getFreeformRect(current);
+  const resizeMins =
+    current.type === "seat"
+      ? { minWidth: MIN_SEAT_WIDTH, minHeight: MIN_SEAT_HEIGHT }
+      : { minWidth: MIN_FREEFORM_ELEMENT_SIZE, minHeight: MIN_FREEFORM_ELEMENT_SIZE };
+  const patch = computeFreeformResizePatch(currentRect, edge, deltaX, deltaY, resizeMins);
+  if (!patch) return { layout, error: "Invalid resize." };
+
+  const bounds = getContainerPixelBounds(layout.elements, current.parentId, layout.grid);
+  if (!isRectFullyInsideBounds(patch, bounds)) {
+    return { layout, error: "Element must remain fully inside the container." };
+  }
+
+  const next = withFreeformRect(current, patch);
+  const without = layout.elements.filter((el) => el.id !== elementId);
+  const validation = validatePlacement({ ...layout, elements: without }, next, elementId);
+  if (!validation.ok) {
+    return { layout, error: validation.reason };
+  }
+
+  return {
+    layout: {
+      ...layout,
+      elements: layout.elements.map((el) => (el.id === elementId ? next : el)),
+    },
+    preview: patch,
+  };
+}
+
 export function resizeElement(
   layout: FloorPlanLayoutState,
   elementId: string,
@@ -170,6 +395,10 @@ export function resizeElement(
 ): { layout: FloorPlanLayoutState; error?: string; preview?: Partial<FloorPlanElement> } {
   const current = layout.elements.find((el) => el.id === elementId);
   if (!current) return { layout, error: "Element not found." };
+
+  if (isFreeformCanvasElement(current)) {
+    return { layout, error: "Use freeform resize for this element." };
+  }
 
   const patch = computeResizePatch(current, edge, deltaRow, deltaCol);
   if (!patch) return { layout, error: "Invalid resize." };
@@ -207,9 +436,21 @@ export function updateElement(
   const current = layout.elements.find((el) => el.id === elementId);
   if (!current) return { layout, error: "Element not found." };
 
-  const next: FloorPlanElement = { ...current, ...patch, id: current.id, type: current.type };
+  let next: FloorPlanElement = { ...current, ...patch, id: current.id, type: current.type };
 
-  if (patch.rotation !== undefined && patch.rotation !== (current.rotation ?? 0)) {
+  if (isFreeformCanvasElement(current)) {
+    const props = patch.properties ?? {};
+    const rectPatch: Partial<FreeformRect> = {};
+    if (props.x !== undefined) rectPatch.x = Number(props.x);
+    if (props.y !== undefined) rectPatch.y = Number(props.y);
+    if (props.canvasWidth !== undefined) rectPatch.width = Number(props.canvasWidth);
+    if (props.canvasHeight !== undefined) rectPatch.height = Number(props.canvasHeight);
+    if (Object.keys(rectPatch).length > 0) {
+      next = withFreeformRect(next, rectPatch);
+    }
+  }
+
+  if (patch.rotation !== undefined && patch.rotation !== (current.rotation ?? 0) && !isFreeformCanvasElement(current)) {
     const oldVertical = (current.rotation ?? 0) === 90 || (current.rotation ?? 0) === 270;
     const newVertical = patch.rotation === 90 || patch.rotation === 270;
     if (oldVertical !== newVertical) {
@@ -245,14 +486,86 @@ export function deleteElement(
   };
 }
 
+function inferRowStartColumn(
+  elements: FloorPlanElement[],
+  parentId: string | null,
+  row: number,
+): number {
+  let minColumn = Infinity;
+  let found = false;
+  for (const el of elements) {
+    if (el.parentId !== parentId || isFreeformCanvasElement(el)) continue;
+    if (el.row !== row) continue;
+    found = true;
+    minColumn = Math.min(minColumn, el.column);
+  }
+  return found ? minColumn : 0;
+}
+
+function getContainerGridBounds(
+  layout: FloorPlanLayoutState,
+  parentId: string | null,
+): { rows: number; columns: number } {
+  const parent = getParentElement(layout.elements, parentId);
+  return parent ? { rows: parent.height, columns: parent.width } : layout.grid;
+}
+
+export function computeDuplicateAdjacentPosition(
+  layout: FloorPlanLayoutState,
+  element: FloorPlanElement,
+): { ok: true; row: number; column: number; x?: number; y?: number } | { ok: false; error: string } {
+  if (isFreeformCanvasElement(element)) {
+    const rect = getFreeformRect(element);
+    const bounds = getContainerPixelBounds(layout.elements, element.parentId, layout.grid);
+    let newX = rect.x + rect.width + SEAT_BULK_GAP;
+    let newY = rect.y;
+
+    if (newX + rect.width > bounds.width) {
+      newY = rect.y + rect.height + SEAT_BULK_ROW_GAP;
+      newX = inferRowStartX(layout.elements, element.parentId, rect.y, rect.x);
+    }
+
+    if (
+      newY + rect.height > bounds.height ||
+      newX + rect.width > bounds.width ||
+      newX < 0 ||
+      newY < 0
+    ) {
+      return { ok: false, error: "Not enough space to duplicate element." };
+    }
+
+    return { ok: true, row: element.row, column: element.column, x: newX, y: newY };
+  }
+
+  const gridBounds = getContainerGridBounds(layout, element.parentId);
+  let newColumn = element.column + element.width;
+  let newRow = element.row;
+
+  if (newColumn + element.width > gridBounds.columns) {
+    newRow = element.row + element.height;
+    newColumn = inferRowStartColumn(layout.elements, element.parentId, element.row);
+    if (newRow + element.height > gridBounds.rows) {
+      return { ok: false, error: "Not enough space to duplicate element." };
+    }
+  }
+
+  return { ok: true, row: newRow, column: newColumn };
+}
+
 export function duplicateSubtree(
   layout: FloorPlanLayoutState,
   rootId: string,
-  offsetRow = 2,
-  offsetColumn = 2,
+  offsetRow?: number,
+  offsetColumn?: number,
 ): { layout: FloorPlanLayoutState; error?: string; newRootId?: string } {
   const root = layout.elements.find((el) => el.id === rootId);
   if (!root) return { layout, error: "Element not found." };
+
+  const useGridOffset = offsetRow != null && offsetColumn != null;
+  const adjacentPosition = useGridOffset ? null : computeDuplicateAdjacentPosition(layout, root);
+  if (!useGridOffset && adjacentPosition && !adjacentPosition.ok) {
+    return { layout, error: adjacentPosition.error };
+  }
 
   const subtree = [root, ...getDescendants(layout.elements, rootId)];
   const idMap = new Map<string, string>();
@@ -262,21 +575,36 @@ export function duplicateSubtree(
 
   const clones: FloorPlanElement[] = subtree.map((el) => {
     const isRoot = el.id === rootId;
-    return {
+    let next: FloorPlanElement = {
       ...el,
       id: idMap.get(el.id)!,
       parentId: isRoot ? el.parentId : idMap.get(el.parentId!) ?? el.parentId,
-      row: isRoot ? el.row + offsetRow : el.row,
-      column: isRoot ? el.column + offsetColumn : el.column,
-      name: isRoot ? `${el.name} Copy` : el.name,
+      row: el.row,
+      column: el.column,
+      name: isRoot && el.type !== "seat" ? `${el.name} Copy` : el.name,
       seatId: el.type === "seat" ? undefined : el.seatId,
       mergeGroupId: undefined,
     };
+
+    if (isRoot) {
+      if (useGridOffset) {
+        next = { ...next, row: el.row + offsetRow!, column: el.column + offsetColumn! };
+      } else if (adjacentPosition?.ok) {
+        if (isFreeformCanvasElement(el) && adjacentPosition.x != null && adjacentPosition.y != null) {
+          next = withFreeformRect(next, { x: adjacentPosition.x, y: adjacentPosition.y });
+        } else {
+          next = { ...next, row: adjacentPosition.row, column: adjacentPosition.column };
+        }
+      }
+    }
+
+    return next;
   });
 
   for (const clone of clones) {
     if (clone.type === "seat") {
       clone.seatId = createSeatId([...layout.elements, ...clones], "S");
+      clone.name = clone.seatId;
     }
   }
 
@@ -288,6 +616,82 @@ export function duplicateSubtree(
   }
 
   return { layout: nextLayout, newRootId: idMap.get(rootId) };
+}
+
+export function getSelectionRoots(elements: FloorPlanElement[], selectedIds: string[]): string[] {
+  const selected = new Set(selectedIds);
+  return selectedIds.filter((id) => {
+    const el = elements.find((e) => e.id === id);
+    if (!el) return false;
+    if (!el.parentId) return true;
+    return !selected.has(el.parentId);
+  });
+}
+
+export function extractSubtrees(elements: FloorPlanElement[], rootIds: string[]): FloorPlanElement[] {
+  const result: FloorPlanElement[] = [];
+  const seen = new Set<string>();
+  for (const rootId of rootIds) {
+    const root = elements.find((el) => el.id === rootId);
+    if (!root) continue;
+    for (const el of [root, ...getDescendants(elements, rootId)]) {
+      if (seen.has(el.id)) continue;
+      seen.add(el.id);
+      result.push({ ...el });
+    }
+  }
+  return result;
+}
+
+export function insertClonedSubtrees(
+  layout: FloorPlanLayoutState,
+  clipboardElements: FloorPlanElement[],
+  rootIds: string[],
+  offsetRow = 2,
+  offsetColumn = 2,
+  seatIdElements?: FloorPlanElement[],
+): { layout: FloorPlanLayoutState; newRootIds: string[]; error?: string } {
+  if (!clipboardElements.length || !rootIds.length) {
+    return { layout, newRootIds: [], error: "Nothing to paste." };
+  }
+
+  const idMap = new Map<string, string>();
+  for (const el of clipboardElements) {
+    idMap.set(el.id, createElementId(el.type.slice(0, 3)));
+  }
+
+  const clones: FloorPlanElement[] = clipboardElements.map((el) => {
+    const isRoot = rootIds.includes(el.id);
+    return {
+      ...el,
+      id: idMap.get(el.id)!,
+      parentId: el.parentId ? (idMap.get(el.parentId) ?? el.parentId) : el.parentId,
+      row: isRoot ? el.row + offsetRow : el.row,
+      column: isRoot ? el.column + offsetColumn : el.column,
+      seatId: el.type === "seat" ? undefined : el.seatId,
+      mergeGroupId: undefined,
+    };
+  });
+
+  const seatPool = seatIdElements ?? layout.elements;
+  for (const clone of clones) {
+    if (clone.type === "seat") {
+      clone.seatId = createSeatId([...seatPool, ...clones], "S");
+      clone.name = clone.seatId;
+    }
+  }
+
+  let nextLayout = layout;
+  for (const clone of clones) {
+    const result = addElement(nextLayout, clone);
+    if (result.error) return { layout, error: result.error, newRootIds: [] };
+    nextLayout = result.layout;
+  }
+
+  return {
+    layout: nextLayout,
+    newRootIds: rootIds.map((id) => idMap.get(id)!).filter(Boolean),
+  };
 }
 
 export function getSeatDisplayName(element: FloorPlanElement): string {
@@ -356,6 +760,58 @@ export function createBulkSeats(
   }
 
   return { layout: nextLayout, seatIds: createdIds };
+}
+
+export function createBulkFreeformSeats(
+  layout: FloorPlanLayoutState,
+  options: BulkFreeformSeatOptions,
+): { layout: FloorPlanLayoutState; error?: string; elementIds?: string[] } {
+  const count = Math.max(1, options.count);
+  const bounds = getContainerPixelBounds(layout.elements, options.parentId, layout.grid);
+  const { positions, valid } = computeBulkFreeformSeatPositions(
+    options.startX,
+    options.startY,
+    count,
+    bounds,
+  );
+
+  if (!valid || positions.length !== count) {
+    return { layout, error: "Not enough space in this area for all seats." };
+  }
+
+  const capCheck = validateContainerCapacity(layout, options.parentId, count);
+  if (!capCheck.ok) {
+    return { layout, error: capCheck.reason };
+  }
+
+  const seats: FloorPlanElement[] = [];
+  for (const pos of positions) {
+    seats.push(
+      createElement("seat", {
+        parentId: options.parentId,
+        seatId: createSeatId([...layout.elements, ...seats]),
+        properties: createFreeformSeatProperties(
+          pos.x,
+          pos.y,
+          DEFAULT_SEAT_WIDTH,
+          DEFAULT_SEAT_HEIGHT,
+        ),
+      }),
+    );
+  }
+
+  let nextLayout = layout;
+  const createdIds: string[] = [];
+  for (const seat of seats) {
+    const result = addElement(nextLayout, seat);
+    if (result.error) {
+      return { layout, error: result.error };
+    }
+    nextLayout = result.layout;
+    createdIds.push(seat.id);
+  }
+
+  return { layout: nextLayout, elementIds: createdIds };
 }
 
 export function computeBulkRowLayout(
@@ -444,46 +900,12 @@ export function createBulkElements(
   }
 
   if (type === "seat") {
-    const bounds = getContainerBounds(layout, options.parentId);
-    const { itemsPerRow, matrixRows } = computeBulkRowLayout(
+    return createBulkFreeformSeats(layout, {
+      parentId: options.parentId,
+      startX: options.startColumn * BUILDER_CELL_STRIDE,
+      startY: options.startRow * BUILDER_CELL_STRIDE,
       count,
-      1,
-      1,
-      bounds.columns,
-      options.startColumn,
-    );
-    if (options.startRow + matrixRows > bounds.rows) {
-      return { layout, error: "Not enough rows in this area for all seats." };
-    }
-
-    const capCheck = validateContainerCapacity(layout, options.parentId, count);
-    if (!capCheck.ok) {
-      return { layout, error: capCheck.reason };
-    }
-
-    const seats: FloorPlanElement[] = [];
-    for (let index = 0; index < count; index += 1) {
-      const r = Math.floor(index / itemsPerRow);
-      const c = index % itemsPerRow;
-      seats.push(
-        createElement("seat", {
-          parentId: options.parentId,
-          row: options.startRow + r,
-          column: options.startColumn + c,
-          seatId: createSeatId([...layout.elements, ...seats]),
-        }),
-      );
-    }
-
-    let nextLayout = layout;
-    const createdIds: string[] = [];
-    for (const seat of seats) {
-      const result = addElement(nextLayout, seat);
-      if (result.error) return { layout, error: result.error };
-      nextLayout = result.layout;
-      createdIds.push(seat.id);
-    }
-    return { layout: nextLayout, elementIds: createdIds };
+    });
   }
 
   const def = getElementDefinition(type);
@@ -606,6 +1028,177 @@ export function mergeSeats(
   };
 }
 
+export function mergeFreeformSeats(
+  layout: FloorPlanLayoutState,
+  seatElementIds: string[],
+  opts?: {
+    originLocalById?: Record<string, { x: number; y: number }>;
+    /** Seat whose position anchors the merged footprint (defaults to primary). */
+    anchorSeatId?: string;
+  },
+): { layout: FloorPlanLayoutState; error?: string; groupId?: string } {
+  if (seatElementIds.length < 2) {
+    return { layout, error: "Select at least two seats to merge." };
+  }
+
+  const seats = layout.elements.filter(
+    (el) => seatElementIds.includes(el.id) && el.type === "seat" && isFreeformSeat(el),
+  );
+  if (seats.length !== seatElementIds.length) {
+    return { layout, error: "Only freeform seat elements can be merged." };
+  }
+
+  const parentIds = new Set(seats.map((s) => s.parentId));
+  if (parentIds.size > 1) {
+    return { layout, error: "Merged seats must share the same parent." };
+  }
+
+  if (seats.some((s) => !isSingleFreeformSeat(s))) {
+    return { layout, error: "Split merged seats before merging again." };
+  }
+
+  const parentId = seats[0]!.parentId;
+  const blockRects = seats.map((seat) =>
+    getFreeformSeatBlockRect(layout.elements, seat, opts?.originLocalById?.[seat.id]),
+  );
+
+  const primary = [...seats].sort((a, b) =>
+    (a.seatId ?? a.name).localeCompare(b.seatId ?? b.name, undefined, { numeric: true }),
+  )[0]!;
+
+  const primaryIndex = seats.findIndex((seat) => seat.id === primary.id);
+  const anchorIndex = opts?.anchorSeatId
+    ? seats.findIndex((seat) => seat.id === opts.anchorSeatId)
+    : primaryIndex;
+  const mergedBlock =
+    computeMergedFreeformSeatRect(blockRects, anchorIndex >= 0 ? anchorIndex : primaryIndex) ??
+    blockRects.slice(1).reduce(unionRects, blockRects[0]!);
+  const mergedLocal = blockRectToParentLocal(layout.elements, parentId, mergedBlock);
+
+  const merged: FloorPlanElement = withFreeformRect(primary, mergedLocal);
+  const removeIds = new Set(seats.filter((s) => s.id !== primary.id).map((s) => s.id));
+  const withoutOthers = layout.elements.filter((el) => !removeIds.has(el.id));
+  const validation = validatePlacement(
+    { ...layout, elements: withoutOthers.map((el) => (el.id === primary.id ? merged : el)) },
+    merged,
+    primary.id,
+  );
+  if (!validation.ok) {
+    return { layout, error: validation.reason };
+  }
+
+  return {
+    layout: {
+      ...layout,
+      elements: withoutOthers
+        .filter((el) => !removeIds.has(el.id))
+        .map((el) => (el.id === primary.id ? merged : el)),
+    },
+    groupId: primary.id,
+  };
+}
+
+export function mergeFreeformSeatWithRect(
+  layout: FloorPlanLayoutState,
+  primaryId: string,
+  extraRect: FreeformRect,
+): { layout: FloorPlanLayoutState; error?: string; groupId?: string } {
+  const primary = layout.elements.find((el) => el.id === primaryId && el.type === "seat");
+  if (!primary || !isFreeformSeat(primary)) {
+    return { layout, error: "Seat not found." };
+  }
+  if (!isSingleFreeformSeat(primary)) {
+    return { layout, error: "Split merged seats before merging again." };
+  }
+
+  const primaryLocal = getFreeformRect(primary);
+  const mergedLocal =
+    computeMergedFreeformSeatRect([primaryLocal, extraRect], 0) ??
+    unionRects(primaryLocal, extraRect);
+  const merged = withFreeformRect(primary, mergedLocal);
+  const without = layout.elements.filter((el) => el.id !== primaryId);
+  const validation = validatePlacement({ ...layout, elements: [...without, merged] }, merged, primaryId);
+  if (!validation.ok) {
+    return { layout, error: validation.reason };
+  }
+
+  return {
+    layout: {
+      ...layout,
+      elements: layout.elements.map((el) => (el.id === primaryId ? merged : el)),
+    },
+    groupId: primaryId,
+  };
+}
+
+export function splitFreeformMergedSeat(
+  layout: FloorPlanLayoutState,
+  seatElementId: string,
+): { layout: FloorPlanLayoutState; error?: string; newSeatIds?: string[] } {
+  const seat = layout.elements.find((el) => el.id === seatElementId && el.type === "seat");
+  if (!seat || !isFreeformSeat(seat)) {
+    return { layout, error: "Seat not found." };
+  }
+  if (isSingleFreeformSeat(seat)) {
+    return { layout, error: "This seat is not merged." };
+  }
+
+  const rect = getFreeformRect(seat);
+  const horizontal = rect.width >= rect.height;
+  const halfPrimary = horizontal ? Math.round(rect.width / 2) : Math.round(rect.height / 2);
+  const splitRects: FreeformRect[] = horizontal
+    ? [
+        { x: rect.x, y: rect.y, width: halfPrimary, height: rect.height },
+        {
+          x: rect.x + halfPrimary,
+          y: rect.y,
+          width: rect.width - halfPrimary,
+          height: rect.height,
+        },
+      ]
+    : [
+        { x: rect.x, y: rect.y, width: rect.width, height: halfPrimary },
+        {
+          x: rect.x,
+          y: rect.y + halfPrimary,
+          width: rect.width,
+          height: rect.height - halfPrimary,
+        },
+      ];
+
+  const without = layout.elements.filter((el) => el.id !== seat.id);
+  const newSeats: FloorPlanElement[] = [];
+  for (let index = 0; index < splitRects.length; index += 1) {
+    const splitRect = splitRects[index]!;
+    const isPrimary = index === 0;
+    const seatId = isPrimary ? seat.seatId : createSeatId([...without, ...newSeats]);
+    newSeats.push(
+      createElement("seat", {
+        parentId: seat.parentId,
+        seatId,
+        name: isPrimary ? seat.name : seatId,
+        properties: createFreeformSeatProperties(
+          splitRect.x,
+          splitRect.y,
+          splitRect.width,
+          splitRect.height,
+        ),
+      }),
+    );
+  }
+
+  let nextLayout: FloorPlanLayoutState = { ...layout, elements: without };
+  const createdIds: string[] = [];
+  for (const newSeat of newSeats) {
+    const result = addElement(nextLayout, newSeat);
+    if (result.error) return { layout, error: result.error };
+    nextLayout = result.layout;
+    createdIds.push(newSeat.id);
+  }
+
+  return { layout: nextLayout, newSeatIds: createdIds };
+}
+
 export function splitMergedSeat(
   layout: FloorPlanLayoutState,
   seatElementId: string,
@@ -650,6 +1243,9 @@ export function unmergeSeats(
   groupId: string,
 ): FloorPlanLayoutState {
   const seat = layout.elements.find((el) => el.id === groupId && el.type === "seat");
+  if (seat && isFreeformSeat(seat) && isMergedSeat(seat)) {
+    return splitFreeformMergedSeat(layout, groupId).layout;
+  }
   if (seat && (seat.width > 1 || seat.height > 1)) {
     return splitMergedSeat(layout, groupId).layout;
   }
@@ -664,8 +1260,34 @@ export function unmergeSeats(
 export function resizeFloorGrid(
   layout: FloorPlanLayoutState,
   grid: FloorPlanGrid,
+  opts?: { rowOffset?: number; columnOffset?: number },
 ): FloorPlanLayoutState {
-  return { ...layout, grid };
+  const rowOffset = opts?.rowOffset ?? 0;
+  const columnOffset = opts?.columnOffset ?? 0;
+  if (rowOffset === 0 && columnOffset === 0) {
+    return { ...layout, grid };
+  }
+  return {
+    ...layout,
+    grid,
+    elements: layout.elements.map((el) => {
+      if (el.parentId !== null) return el;
+
+      if (isFreeformCanvasElement(el)) {
+        const rect = getFreeformRect(el);
+        return withFreeformRect(el, {
+          x: rect.x + columnOffset * CANVAS_BOUNDS_PX,
+          y: rect.y + rowOffset * CANVAS_BOUNDS_PX,
+        });
+      }
+
+      return {
+        ...el,
+        row: el.row + rowOffset,
+        column: el.column + columnOffset,
+      };
+    }),
+  };
 }
 
 export function resolvePlacementTarget(
@@ -749,8 +1371,198 @@ export function createRoomAt(
 }
 
 export function extractSeatIds(layout: FloorPlanLayoutState): string[] {
-  return layout.elements
-    .filter((el) => el.type === "seat" && el.seatId)
-    .map((el) => el.seatId!)
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const blocks = layout.blocks?.length ? layout.blocks : [{ elements: layout.elements }];
+  const ids = new Set<string>();
+  for (const block of blocks) {
+    for (const el of block.elements) {
+      if (el.type === "seat" && el.seatId) ids.add(el.seatId);
+    }
+  }
+  return [...ids].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+export type LayoutWorldBounds = {
+  minRow: number;
+  minColumn: number;
+  maxRow: number;
+  maxColumn: number;
+  width: number;
+  height: number;
+};
+
+export function getLayoutWorldBounds(elements: FloorPlanElement[]): LayoutWorldBounds | null {
+  if (elements.length === 0) return null;
+
+  let minRow = Infinity;
+  let minColumn = Infinity;
+  let maxRow = 0;
+  let maxColumn = 0;
+
+  for (const element of elements) {
+    const world = getWorldFootprint(elements, element);
+    minRow = Math.min(minRow, world.worldRow);
+    minColumn = Math.min(minColumn, world.worldColumn);
+    maxRow = Math.max(maxRow, world.worldRow + element.height);
+    maxColumn = Math.max(maxColumn, world.worldColumn + element.width);
+  }
+
+  return {
+    minRow,
+    minColumn,
+    maxRow,
+    maxColumn,
+    width: maxColumn - minColumn,
+    height: maxRow - minRow,
+  };
+}
+
+function ensureGridFitsLayoutClone(
+  layout: FloorPlanLayoutState,
+  bounds: LayoutWorldBounds,
+  targetWorldRow: number,
+  targetWorldColumn: number,
+): { layout: FloorPlanLayoutState; offsetRow: number; offsetColumn: number } {
+  const offsetRow = targetWorldRow - bounds.minRow;
+  const offsetColumn = targetWorldColumn - bounds.minColumn;
+  const copyMinRow = bounds.minRow + offsetRow;
+  const copyMinColumn = bounds.minColumn + offsetColumn;
+  const copyMaxRow = bounds.maxRow + offsetRow;
+  const copyMaxColumn = bounds.maxColumn + offsetColumn;
+
+  let rows = layout.grid.rows;
+  let columns = layout.grid.columns;
+  let rowOffset = 0;
+  let columnOffset = 0;
+
+  if (copyMinRow < 0) {
+    rowOffset = -copyMinRow;
+    rows += rowOffset;
+  }
+  if (copyMinColumn < 0) {
+    columnOffset = -copyMinColumn;
+    columns += columnOffset;
+  }
+  if (copyMaxRow + rowOffset > rows) rows = copyMaxRow + rowOffset;
+  if (copyMaxColumn + columnOffset > columns) columns = copyMaxColumn + columnOffset;
+
+  if (
+    rows === layout.grid.rows &&
+    columns === layout.grid.columns &&
+    rowOffset === 0 &&
+    columnOffset === 0
+  ) {
+    return { layout, offsetRow, offsetColumn };
+  }
+
+  const expanded = resizeFloorGrid(layout, { rows, columns }, { rowOffset, columnOffset });
+  const nextBounds = getLayoutWorldBounds(expanded.elements);
+  if (!nextBounds) {
+    return { layout: expanded, offsetRow, offsetColumn };
+  }
+
+  return {
+    layout: expanded,
+    offsetRow: targetWorldRow - nextBounds.minRow,
+    offsetColumn: targetWorldColumn - nextBounds.minColumn,
+  };
+}
+
+export function validateLayoutCloneAt(
+  layout: FloorPlanLayoutState,
+  targetWorldRow: number,
+  targetWorldColumn: number,
+): { ok: boolean; reason?: string; preview?: LayoutWorldBounds & { worldRow: number; worldColumn: number } } {
+  const bounds = getLayoutWorldBounds(layout.elements);
+  if (!bounds) {
+    return { ok: false, reason: "Nothing to duplicate." };
+  }
+
+  const { layout: expandedLayout, offsetRow, offsetColumn } = ensureGridFitsLayoutClone(
+    layout,
+    bounds,
+    targetWorldRow,
+    targetWorldColumn,
+  );
+
+  const roots = expandedLayout.elements.filter((el) => el.parentId === null);
+  let workingLayout = expandedLayout;
+
+  for (const root of roots) {
+    const subtree = [root, ...getDescendants(workingLayout.elements, root.id)];
+    const idMap = new Map<string, string>();
+    for (const el of subtree) {
+      idMap.set(el.id, createElementId(el.type.slice(0, 3)));
+    }
+
+    const clones: FloorPlanElement[] = subtree.map((el) => {
+      const isRoot = el.id === root.id;
+      return {
+        ...el,
+        id: idMap.get(el.id)!,
+        parentId: isRoot ? el.parentId : idMap.get(el.parentId!) ?? el.parentId,
+        row: isRoot ? el.row + offsetRow : el.row,
+        column: isRoot ? el.column + offsetColumn : el.column,
+        seatId: el.type === "seat" ? undefined : el.seatId,
+        mergeGroupId: undefined,
+      };
+    });
+
+    for (const clone of clones) {
+      if (clone.type === "seat") {
+        clone.seatId = createSeatId([...workingLayout.elements, ...clones], "S");
+        clone.name = clone.seatId;
+      }
+      const validation = validatePlacement(workingLayout, clone);
+      if (!validation.ok) {
+        return { ok: false, reason: validation.reason };
+      }
+      workingLayout = {
+        ...workingLayout,
+        elements: [...workingLayout.elements, clone],
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    preview: {
+      ...bounds,
+      worldRow: targetWorldRow,
+      worldColumn: targetWorldColumn,
+    },
+  };
+}
+
+export function duplicateEntireLayoutAt(
+  layout: FloorPlanLayoutState,
+  targetWorldRow: number,
+  targetWorldColumn: number,
+): { layout: FloorPlanLayoutState; error?: string; newRootIds?: string[] } {
+  const validation = validateLayoutCloneAt(layout, targetWorldRow, targetWorldColumn);
+  if (!validation.ok) {
+    return { layout, error: validation.reason ?? "Cannot place layout copy here." };
+  }
+
+  const bounds = getLayoutWorldBounds(layout.elements)!;
+  const { layout: expandedLayout, offsetRow, offsetColumn } = ensureGridFitsLayoutClone(
+    layout,
+    bounds,
+    targetWorldRow,
+    targetWorldColumn,
+  );
+
+  const roots = expandedLayout.elements.filter((el) => el.parentId === null);
+  let nextLayout = expandedLayout;
+  const newRootIds: string[] = [];
+
+  for (const root of roots) {
+    const result = duplicateSubtree(nextLayout, root.id, offsetRow, offsetColumn);
+    if (result.error) {
+      return { layout, error: result.error };
+    }
+    nextLayout = result.layout;
+    if (result.newRootId) newRootIds.push(result.newRootId);
+  }
+
+  return { layout: nextLayout, newRootIds };
 }

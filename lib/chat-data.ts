@@ -5,12 +5,12 @@ import { objectIdsEqual, readObjectIdHex, sortParticipantIdPair } from "@/lib/ob
 import { isWorkspaceChatAdmin } from "@/lib/chat-access";
 import { getRoleDefinition, normalizeAppRole } from "@/lib/permissions";
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
+import { ensureWorkspaceReady } from "@/lib/workspace-ready";
 import {
   COLLECTIONS,
   appUserDocToPublic,
   conversationDocToDTO,
   employeeDocToDTO,
-  ensureColanModelIndexes,
   messageDocToDTO,
   resolveConversationParticipants,
   type AppUserDocument,
@@ -93,7 +93,7 @@ async function findDirectConversationDoc(
 export async function getChatActorByEmail(email: string): Promise<ChatActor | null> {
   const db = await getDb();
   if (!db) return null;
-  await ensureColanModelIndexes(db);
+  await ensureWorkspaceReady(db);
   const doc = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).findOne({
     email: email.toLowerCase().trim(),
   });

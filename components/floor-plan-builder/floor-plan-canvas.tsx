@@ -1,17 +1,52 @@
 "use client";
 
 import * as React from "react";
+import { BuilderGridSeatTile } from "@/components/floor-plan-builder/builder-grid-seat-tile";
 import { getElementDefinition } from "@/lib/floor-plan-builder/element-registry";
 import { getWorldFootprint } from "@/lib/floor-plan-builder/hierarchy";
 import {
   computeResizePatch,
   getBulkBlockFootprint,
-  getSeatDisplayName,
+  getLayoutWorldBounds,
   resolvePlacementTarget,
   snapDropPosition,
   snapFootprintStrict,
   snapRotationDegrees,
+  validateContainerCapacity,
+  validateFreeformPosition,
+  validateLayoutCloneAt,
+  validateNewFreeformElementAt,
 } from "@/lib/floor-plan-builder/layout-engine";
+import { elementPixelSize } from "@/lib/floor-plan-builder/metrics";
+import {
+  applyAlignmentSnap,
+  computeFreeformAlignmentGuides,
+  getElementsInWorldRect,
+  type AlignmentGuideLine,
+} from "@/lib/floor-plan-builder/alignment-guides";
+import {
+  CANVAS_BOUNDS_PX,
+  CANVAS_DOT_SPACING,
+  DEFAULT_SEAT_HEIGHT,
+  DEFAULT_SEAT_WIDTH,
+  computeBulkFreeformSeatPositions,
+  computeFreeformResizePatch,
+  findContainerAtPixel,
+  getContainerPixelBounds,
+  getFreeformRect,
+  getWorldPixelRect,
+  getDefaultElementPixelSize,
+  isFreeformCanvasElement,
+  isFreeformSeat,
+  localPointToBlockPixel,
+  resolveFreeformSeatDrop,
+  MIN_FREEFORM_ELEMENT_SIZE,
+  MIN_SEAT_HEIGHT,
+  MIN_SEAT_WIDTH,
+  usesFreeformCanvas,
+  withFreeformRect,
+  type FreeformRect,
+} from "@/lib/floor-plan-builder/freeform-geometry";
 import type { ResizeEdge } from "@/lib/floor-plan-builder/placement-utils";
 import {
   BUILDER_CELL_GAP,
@@ -21,6 +56,20 @@ import {
   type FloorPlanElementType,
 } from "@/lib/floor-plan-builder/types";
 import { cn } from "@/lib/utils";
+import {
+  getWorkspaceBlockCanvasLayouts,
+  getWorkspaceCanvasGridSize,
+} from "@/lib/floor-plan-builder/workspace-blocks";
+import {
+  AlignmentGuidesOverlay,
+  BUILDER_CHROME,
+  buildCanvasGridStyle,
+  buildInternalGridStyle,
+  DimensionLabel,
+  DropCellHighlight,
+  SelectionBadge,
+  SelectionMarquee,
+} from "./builder-ui";
 import { useFloorPlanBuilder } from "./builder-store";
 
 type DragState = {
@@ -29,6 +78,10 @@ type DragState = {
   startClientY: number;
   originRow: number;
   originColumn: number;
+  freeform?: boolean;
+  originX?: number;
+  originY?: number;
+  originParentId?: string | null;
 };
 
 type ResizeState = {
@@ -40,6 +93,13 @@ type ResizeState = {
 };
 
 type PanState = { startX: number; startY: number; originPan: { x: number; y: number } };
+
+type MarqueeState = {
+  startClientX: number;
+  startClientY: number;
+  currentClientX: number;
+  currentClientY: number;
+};
 
 const FLOOR_INSET = 24;
 
@@ -65,50 +125,52 @@ function findSeatAtWorldCell(
   return found;
 }
 
-function internalGridStyle(color: string) {
-  return {
-    backgroundImage: `
-      linear-gradient(to right, ${color}44 1px, transparent 1px),
-      linear-gradient(to bottom, ${color}44 1px, transparent 1px)
-    `,
-    backgroundSize: `${BUILDER_CELL_STRIDE}px ${BUILDER_CELL_STRIDE}px`,
-  };
-}
-
 function DropPreview({
   worldRow,
   worldColumn,
   width,
   height,
   valid,
+  showCells = true,
 }: {
   worldRow: number;
   worldColumn: number;
   width: number;
   height: number;
   valid: boolean;
+  showCells?: boolean;
 }) {
   return (
-    <div
-      className={cn(
-        "pointer-events-none absolute z-40 rounded-lg border-2 border-dashed transition-colors",
-        valid ? "border-emerald-500 bg-emerald-500/15" : "border-destructive bg-destructive/15",
-      )}
-      style={{
-        left: worldColumn * BUILDER_CELL_STRIDE,
-        top: worldRow * BUILDER_CELL_STRIDE,
-        width: width * BUILDER_CELL_PX + (width - 1) * BUILDER_CELL_GAP,
-        height: height * BUILDER_CELL_PX + (height - 1) * BUILDER_CELL_GAP,
-      }}
-    />
+    <>
+      {showCells ? (
+        <DropCellHighlight
+          worldRow={worldRow}
+          worldColumn={worldColumn}
+          width={width}
+          height={height}
+          valid={valid}
+        />
+      ) : null}
+      <div
+        className={cn(
+          "pointer-events-none absolute z-40 rounded-lg border-2 border-dashed transition-all duration-100",
+          valid
+            ? "border-primary/70 bg-primary/5 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]"
+            : "border-destructive/70 bg-destructive/8 shadow-[0_0_0_1px_rgba(239,68,68,0.15)]",
+        )}
+        style={{
+          left: worldColumn * BUILDER_CELL_STRIDE,
+          top: worldRow * BUILDER_CELL_STRIDE,
+          width: width * BUILDER_CELL_PX + (width - 1) * BUILDER_CELL_GAP,
+          height: height * BUILDER_CELL_PX + (height - 1) * BUILDER_CELL_GAP,
+        }}
+      />
+    </>
   );
 }
 
-function elementPixelSize(element: Pick<FloorPlanElement, "width" | "height">) {
-  return {
-    width: element.width * BUILDER_CELL_PX + (element.width - 1) * BUILDER_CELL_GAP,
-    height: element.height * BUILDER_CELL_PX + (element.height - 1) * BUILDER_CELL_GAP,
-  };
+function elementPixelSizeFromElement(element: Pick<FloorPlanElement, "width" | "height">) {
+  return elementPixelSize(element.width, element.height);
 }
 
 function ElementVisual({
@@ -122,7 +184,20 @@ function ElementVisual({
 }) {
   const def = getElementDefinition(element.type);
   const isSeat = element.type === "seat";
-  const merged = Boolean(element.mergeGroupId);
+  const isRoomOrCabin = element.type === "room" || element.type === "cabin";
+
+  if (isSeat) {
+    return (
+      <div className={cn("relative h-full w-full", selected && "z-20")}>
+        <BuilderGridSeatTile
+          element={element}
+          selected={selected}
+          interactive={false}
+          onPointerDown={onPointerDown}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -130,52 +205,72 @@ function ElementVisual({
       tabIndex={0}
       onPointerDown={onPointerDown}
       className={cn(
-        "relative flex h-full w-full flex-col items-center justify-center border-2 text-center shadow-sm",
-        isSeat ? "rounded-[18px]" : "rounded-2xl",
-        selected ? "overflow-visible ring-2 ring-primary ring-offset-2 ring-offset-white z-20" : "overflow-hidden",
-        isSeat && "bg-gradient-to-b from-white via-white to-slate-50",
-        element.type === "pillar" && "rounded-xl bg-gradient-to-b from-slate-600 to-slate-800 text-white",
-        element.type === "entrance" && "rounded-xl bg-gradient-to-b from-sky-100 to-sky-200 text-sky-900",
-        element.type === "wall" && "rounded-md bg-slate-500 text-white",
-        element.type === "desk" && "rounded-xl bg-slate-100",
-        element.type === "meeting_table" && "rounded-xl bg-violet-100",
+        "relative flex h-full w-full flex-col border text-center transition-shadow duration-150",
+        "rounded-xl",
+        isRoomOrCabin ? "items-stretch justify-start" : "items-center justify-center",
+        selected
+          ? "overflow-visible z-20 border-primary/60 shadow-[0_0_0_2px_rgba(59,130,246,0.25),0_8px_24px_rgba(59,130,246,0.12)]"
+          : "overflow-hidden border-opacity-60 shadow-[0_1px_2px_rgba(15,23,42,0.06),0_4px_12px_rgba(15,23,42,0.04)] hover:shadow-[0_4px_16px_rgba(15,23,42,0.08)]",
+        element.type === "pillar" &&
+          "rounded-lg border-slate-700/80 bg-gradient-to-br from-slate-600 via-slate-700 to-slate-800 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_4px_12px_rgba(15,23,42,0.25)]",
+        element.type === "entrance" &&
+          "rounded-lg border-sky-300/80 bg-gradient-to-b from-sky-50 via-sky-100 to-sky-200 text-sky-900",
+        element.type === "wall" &&
+          "rounded-sm border-slate-600/80 bg-gradient-to-b from-slate-500 to-slate-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]",
+        element.type === "stairs" &&
+          "rounded-lg border-stone-400/70 bg-gradient-to-br from-stone-100 via-stone-200/80 to-stone-300/60 text-stone-700",
+        element.type === "desk" && "rounded-lg border-slate-300/70 bg-gradient-to-b from-slate-50 to-slate-100",
+        element.type === "meeting_table" && "rounded-lg border-violet-300/70 bg-gradient-to-b from-violet-50 to-violet-100",
         def.category === "structure" &&
-          !["pillar", "entrance", "wall"].includes(element.type) &&
-          "bg-white/95 shadow-[0_8px_24px_rgba(15,23,42,0.08)]",
+          !["pillar", "entrance", "wall", "stairs"].includes(element.type) &&
+          !isRoomOrCabin &&
+          "bg-white/98 shadow-[0_1px_0_rgba(255,255,255,0.9)_inset,0_6px_20px_rgba(15,23,42,0.06)]",
       )}
       style={{
-        borderColor: selected ? undefined : def.borderColor,
-        backgroundColor:
-          isSeat || ["pillar", "entrance", "wall", "desk", "meeting_table"].includes(element.type)
+        borderColor: selected
+          ? undefined
+          : ["pillar", "entrance", "wall", "stairs", "desk", "meeting_table"].includes(element.type)
             ? undefined
-            : `${def.color}f0`,
+            : def.borderColor,
+        backgroundColor:
+          ["pillar", "entrance", "wall", "stairs", "desk", "meeting_table"].includes(element.type)
+            ? undefined
+            : `${def.color}ee`,
       }}
     >
       {def.supportsChildren ? (
         <div
-          className="pointer-events-none absolute inset-1 rounded-xl"
-          style={internalGridStyle(def.borderColor)}
+          className="pointer-events-none absolute inset-1.5 rounded-lg opacity-60"
+          style={buildInternalGridStyle(def.borderColor)}
         />
       ) : null}
 
-      {isSeat ? (
-        <>
-          <span className="relative z-10 text-[11px] font-bold text-violet-700">
-            {getSeatDisplayName(element)}
-          </span>
-          <span className="relative z-10 text-[10px] text-muted-foreground">Vacant</span>
-          {merged || element.width > 1 || element.height > 1 ? (
-            <span className="relative z-10 mt-0.5 rounded-full bg-amber-100 px-1.5 text-[9px] font-semibold text-amber-800">
-              Merged
-            </span>
-          ) : null}
-        </>
-      ) : element.type === "pillar" ? (
-        <span className="text-[10px] font-bold uppercase tracking-[0.2em]">Pillar</span>
+      {element.type === "pillar" ? (
+        <span className="text-[9px] font-bold uppercase tracking-[0.18em] opacity-90">Pillar</span>
       ) : element.type === "wall" ? (
-        <span className="text-[9px] font-semibold uppercase">Wall</span>
+        <span className="text-[8px] font-semibold uppercase tracking-wider opacity-90">Wall</span>
+      ) : element.type === "stairs" ? (
+        <div className="relative z-10 flex flex-col items-center gap-0.5">
+          <div className="flex flex-col gap-px">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-px w-6 bg-stone-500/40" />
+            ))}
+          </div>
+          <span className="text-[9px] font-semibold">{element.name}</span>
+        </div>
+      ) : element.type === "entrance" ? (
+        <div className="relative z-10 flex flex-col items-center gap-0.5">
+          <div className="h-3 w-5 rounded-t-full border-2 border-b-0 border-sky-500/50" />
+          <span className="text-[9px] font-semibold">{element.name}</span>
+        </div>
+      ) : isRoomOrCabin ? (
+        <span className="relative z-10 px-2 pt-2 text-[11px] font-bold leading-tight text-foreground/90">
+          {element.name}
+        </span>
       ) : (
-        <span className="relative z-10 px-2 text-xs font-semibold leading-tight">{element.name}</span>
+        <span className="relative z-10 px-2 text-[11px] font-semibold leading-tight text-foreground/90">
+          {element.name}
+        </span>
       )}
     </div>
   );
@@ -203,18 +298,44 @@ const CORNER_RESIZE_HANDLES: {
   { edge: "sw", className: "left-0 bottom-0 -translate-x-1/2 translate-y-1/2", cursor: "cursor-sw-resize" },
 ];
 
-type PendingPlacement = {
-  valid: boolean;
-  type: FloorPlanElementType;
-  quantity: number;
-  parentId: string | null;
-  row: number;
-  column: number;
-  width: number;
-  height: number;
-  previewWidth: number;
-  previewHeight: number;
-};
+type PendingPlacement =
+  | {
+      mode: "element";
+      valid: boolean;
+      type: FloorPlanElementType;
+      quantity: number;
+      parentId: string | null;
+      row: number;
+      column: number;
+      width: number;
+      height: number;
+      previewWidth: number;
+      previewHeight: number;
+    }
+  | {
+      mode: "freeform-canvas";
+      valid: boolean;
+      localX: number;
+      localY: number;
+      elementType: FloorPlanElementType;
+      parentId?: string | null;
+    }
+  | {
+      mode: "freeform-seat";
+      valid: boolean;
+      localX: number;
+      localY: number;
+      quantity?: number;
+      parentId?: string | null;
+    }
+  | {
+      mode: "layout-clone";
+      valid: boolean;
+      worldRow: number;
+      worldColumn: number;
+      previewWidth: number;
+      previewHeight: number;
+    };
 
 type RotateState = {
   elementId: string;
@@ -225,17 +346,22 @@ type RotateState = {
 function RotationHandle({ onRotateStart }: { onRotateStart: (event: React.PointerEvent) => void }) {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-visible">
-      <div className="absolute left-1/2 w-0.5 -translate-x-1/2 bg-primary" style={{ top: -32, height: 24 }} />
       <div
-        className="pointer-events-auto absolute left-1/2 h-5 w-5 -translate-x-1/2 cursor-grab rounded-full border-2 border-primary bg-white shadow-md active:cursor-grabbing"
-        style={{ top: -40 }}
+        className="absolute left-1/2 w-px -translate-x-1/2 bg-violet-500/50"
+        style={{ top: -36, height: 28 }}
+      />
+      <div
+        className="pointer-events-auto absolute left-1/2 flex h-5 w-5 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border-2 border-violet-500 bg-background shadow-md transition-transform hover:scale-110 active:cursor-grabbing"
+        style={{ top: -44 }}
         title="Drag to rotate"
         onPointerDown={(e) => {
           e.stopPropagation();
           e.preventDefault();
           onRotateStart(e);
         }}
-      />
+      >
+        <div className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+      </div>
     </div>
   );
 }
@@ -247,14 +373,17 @@ function ResizeHandles({
   element: FloorPlanElement;
   onResizeStart: (edge: ResizeEdge, event: React.PointerEvent) => void;
 }) {
-  if (!getElementDefinition(element.type).supportsResize) return null;
+  const canResize =
+    isFreeformCanvasElement(element) || getElementDefinition(element.type).supportsResize;
+  if (!canResize) return null;
   return (
     <>
+      <div className="pointer-events-none absolute -inset-px rounded-lg border-2 border-violet-500/90" />
       {EDGE_RESIZE_HANDLES.map(({ edge, className, cursor }) => (
         <div
           key={edge}
           className={cn(
-            "absolute z-50 touch-none rounded-full border-2 border-primary bg-white shadow-md hover:bg-primary/10",
+            "absolute z-50 flex touch-none items-center justify-center",
             className,
             cursor,
           )}
@@ -264,13 +393,15 @@ function ResizeHandles({
             (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
             onResizeStart(edge, e);
           }}
-        />
+        >
+          <div className="h-2 w-5 rounded-full border-2 border-violet-500/80 bg-white shadow-sm transition-transform hover:scale-110" />
+        </div>
       ))}
       {CORNER_RESIZE_HANDLES.map(({ edge, className, cursor }) => (
         <div
           key={edge}
           className={cn(
-            "absolute z-50 h-3.5 w-3.5 touch-none rounded-full border-2 border-primary bg-white shadow-md hover:scale-110",
+            "absolute z-50 flex h-3 w-3 touch-none items-center justify-center",
             className,
             cursor,
           )}
@@ -280,7 +411,9 @@ function ResizeHandles({
             (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
             onResizeStart(edge, e);
           }}
-        />
+        >
+          <div className="h-2.5 w-2.5 rounded-full border-2 border-violet-500 bg-white shadow-sm transition-transform hover:scale-125" />
+        </div>
       ))}
     </>
   );
@@ -299,16 +432,28 @@ export function FloorPlanCanvas() {
     select,
     clearSelection,
     commitPlacementFootprint,
+    commitFreeformSeatAt,
+    commitFreeformElementAt,
+    commitBulkFreeformSeatsAt,
     commitBulkPlacement,
+    commitLayoutCloneAt,
     tryMoveElement,
+    tryMoveElementAtWorld,
+    tryMoveFreeformElement,
+    tryMoveFreeformSeatAt,
     tryResizeElement,
+    tryResizeFreeformElement,
     tryRotateElement,
     mergeSeatsByDrag,
     cancelPlacementDrag,
+    notifyBlockedPlacement,
     setZoom,
     setPan,
     resizeGrid,
     registerFitToView,
+    workspaceBlocks,
+    activeBlockId,
+    switchWorkspaceBlock,
   } = useFloorPlanBuilder();
 
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
@@ -319,26 +464,68 @@ export function FloorPlanCanvas() {
   const [rotatePreview, setRotatePreview] = React.useState<0 | 90 | 180 | 270 | null>(null);
   const [panDrag, setPanDrag] = React.useState<PanState | null>(null);
   const [gridResize, setGridResize] = React.useState<{
-    edge: "rows" | "columns";
+    edge: "rows-bottom" | "rows-top" | "columns-right" | "columns-left";
     startClientX: number;
     startClientY: number;
     originRows: number;
     originColumns: number;
   } | null>(null);
-  const [gridResizePreview, setGridResizePreview] = React.useState<{ rows: number; columns: number } | null>(null);
-  const [dragPreview, setDragPreview] = React.useState<{ row: number; column: number; valid: boolean } | null>(null);
+  const [gridResizePreview, setGridResizePreview] = React.useState<{
+    rows: number;
+    columns: number;
+    rowOffset: number;
+    columnOffset: number;
+  } | null>(null);
+  const [dragPreview, setDragPreview] = React.useState<{
+    row: number;
+    column: number;
+    valid: boolean;
+    parentId?: string | null;
+  } | null>(null);
   const [resizePreview, setResizePreview] = React.useState<Partial<FloorPlanElement> | null>(null);
-  const [placementPreview, setPlacementPreview] = React.useState<{
+  const [freeformResizePreview, setFreeformResizePreview] = React.useState<FreeformRect | null>(null);
+  type PlacementPreviewState = {
     worldRow: number;
     worldColumn: number;
     width: number;
     height: number;
     valid: boolean;
+    pixelMode?: boolean;
+    pixelWidth?: number;
+    pixelHeight?: number;
+    bulkSeats?: { x: number; y: number }[];
+    previewParentId?: string | null;
+  };
+
+  const [placementPreview, setPlacementPreview] = React.useState<PlacementPreviewState | null>(null);
+  const [committedDropPreview, setCommittedDropPreview] =
+    React.useState<PlacementPreviewState | null>(null);
+  const [cursorPos, setCursorPos] = React.useState<{ x: number; y: number } | null>(null);
+  const placementFrozenRef = React.useRef(false);
+  const [pendingMovePreview, setPendingMovePreview] = React.useState<{
+    elementId: string;
+    freeform: boolean;
+    preview: {
+      row: number;
+      column: number;
+      valid: boolean;
+      parentId?: string | null;
+    };
   } | null>(null);
+  const [alignmentGuides, setAlignmentGuides] = React.useState<AlignmentGuideLine[]>([]);
+  const [marquee, setMarquee] = React.useState<MarqueeState | null>(null);
 
   const activeGrid = gridResizePreview ?? layout.grid;
-  const canvasWidth = activeGrid.columns * BUILDER_CELL_STRIDE;
-  const canvasHeight = activeGrid.rows * BUILDER_CELL_STRIDE;
+  const blockLayouts = React.useMemo(
+    () => getWorkspaceBlockCanvasLayouts(workspaceBlocks),
+    [workspaceBlocks],
+  );
+  const canvasGrid = React.useMemo(
+    () => getWorkspaceCanvasGridSize(workspaceBlocks),
+    [workspaceBlocks],
+  );
+  const canvasWidth = canvasGrid.columns * CANVAS_BOUNDS_PX;
+  const canvasHeight = canvasGrid.rows * CANVAS_BOUNDS_PX;
 
   const fitToView = React.useCallback(() => {
     const vp = viewportRef.current;
@@ -366,7 +553,7 @@ export function FloorPlanCanvas() {
 
   React.useEffect(() => {
     fittedForGrid.current = "";
-  }, [activeGrid.rows, activeGrid.columns]);
+  }, [activeGrid.rows, activeGrid.columns, canvasGrid.columns, canvasGrid.rows, workspaceBlocks.length]);
 
   React.useEffect(() => {
     registerFitToView(fitToView);
@@ -376,7 +563,7 @@ export function FloorPlanCanvas() {
   React.useEffect(() => {
     const vp = viewportRef.current;
     if (!vp) return;
-    const gridKey = `${activeGrid.rows}x${activeGrid.columns}`;
+    const gridKey = `${canvasGrid.rows}x${canvasGrid.columns}-${workspaceBlocks.length}`;
 
     const tryFit = () => {
       if (fittedForGrid.current === gridKey) return;
@@ -391,7 +578,7 @@ export function FloorPlanCanvas() {
     const observer = new ResizeObserver(tryFit);
     observer.observe(vp);
     return () => observer.disconnect();
-  }, [activeGrid.columns, activeGrid.rows, fitToView]);
+  }, [canvasGrid.columns, canvasGrid.rows, fitToView, workspaceBlocks.length]);
 
   const panRef = React.useRef(pan);
   const zoomRef = React.useRef(zoom);
@@ -403,30 +590,52 @@ export function FloorPlanCanvas() {
     if (!vp) return;
 
     const onWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      event.preventDefault();
-
       const rect = vp.getBoundingClientRect();
       const pointerX = event.clientX - rect.left;
       const pointerY = event.clientY - rect.top;
 
-      const currentZoom = zoomRef.current;
-      const currentPan = panRef.current;
-      const zoomDelta = event.deltaY > 0 ? -0.08 : 0.08;
-      const nextZoom = Math.min(2, Math.max(0.35, currentZoom + zoomDelta));
-      if (nextZoom === currentZoom) return;
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
 
-      const scale = nextZoom / currentZoom;
+        const currentZoom = zoomRef.current;
+        const currentPan = panRef.current;
+        const zoomDelta = event.deltaY > 0 ? -0.08 : 0.08;
+        const nextZoom = Math.min(2, Math.max(0.35, currentZoom + zoomDelta));
+        if (nextZoom === currentZoom) return;
+
+        const scale = nextZoom / currentZoom;
+        setPan({
+          x: pointerX - (pointerX - currentPan.x) * scale,
+          y: pointerY - (pointerY - currentPan.y) * scale,
+        });
+        setZoom(nextZoom);
+        return;
+      }
+
+      event.preventDefault();
+      const lineScale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 120 : 1;
       setPan({
-        x: pointerX - (pointerX - currentPan.x) * scale,
-        y: pointerY - (pointerY - currentPan.y) * scale,
+        x: panRef.current.x - event.deltaX * lineScale,
+        y: panRef.current.y - event.deltaY * lineScale,
       });
-      setZoom(nextZoom);
     };
 
     vp.addEventListener("wheel", onWheel, { passive: false });
     return () => vp.removeEventListener("wheel", onWheel);
   }, [setPan, setZoom]);
+
+  const clientToCanvasPixels = React.useCallback(
+    (clientX: number, clientY: number) => {
+      const viewport = viewportRef.current;
+      if (!viewport) return { x: 0, y: 0 };
+      const vpRect = viewport.getBoundingClientRect();
+      return {
+        x: (clientX - vpRect.left - pan.x) / zoom - FLOOR_INSET,
+        y: (clientY - vpRect.top - pan.y) / zoom - FLOOR_INSET,
+      };
+    },
+    [pan.x, pan.y, zoom],
+  );
 
   const clientToWorldGrid = React.useCallback(
     (clientX: number, clientY: number) => {
@@ -444,20 +653,201 @@ export function FloorPlanCanvas() {
   );
 
   const pendingPlacementRef = React.useRef<PendingPlacement | null>(null);
+  const dropPendingRef = React.useRef<PendingPlacement | null>(null);
+  const placementPreviewRef = React.useRef<PlacementPreviewState | null>(null);
+  placementPreviewRef.current = placementPreview;
   const placementCommitLock = React.useRef(false);
+  const dragCommitLockRef = React.useRef(false);
   const dragPreviewRef = React.useRef(dragPreview);
   dragPreviewRef.current = dragPreview;
   const resizePreviewRef = React.useRef(resizePreview);
   resizePreviewRef.current = resizePreview;
 
+  const freeformResizePreviewRef = React.useRef(freeformResizePreview);
+  freeformResizePreviewRef.current = freeformResizePreview;
+
+  const getActiveBlockOffset = React.useCallback(() => {
+    const layoutEntry = blockLayouts.find(({ block }) => block.id === activeBlockId);
+    return {
+      x: (layoutEntry?.columnOffset ?? 0) * CANVAS_BOUNDS_PX,
+      y: (layoutEntry?.rowOffset ?? 0) * CANVAS_BOUNDS_PX,
+    };
+  }, [activeBlockId, blockLayouts]);
+
   const updatePlacementPreview = React.useCallback(
     (clientX: number, clientY: number) => {
+      if (placementFrozenRef.current || placementCommitLock.current) return;
+
       if (!placementDrag) {
         pendingPlacementRef.current = null;
         setPlacementPreview(null);
         return;
       }
+
+      const { x: canvasX, y: canvasY } = clientToCanvasPixels(clientX, clientY);
+      const blockOffset = getActiveBlockOffset();
+      const localX = canvasX - blockOffset.x;
+      const localY = canvasY - blockOffset.y;
+
+      if (placementDrag.mode === "element" && placementDrag.type === "seat") {
+        const quantity = Math.max(1, placementDrag.quantity);
+        const dropX = Math.max(0, localX - DEFAULT_SEAT_WIDTH / 2);
+        const dropY = Math.max(0, localY - DEFAULT_SEAT_HEIGHT / 2);
+        const hit = findContainerAtPixel(layout.elements, localX, localY, "seat");
+        const parentId = hit?.container.id ?? null;
+        const startX = hit
+          ? Math.max(0, hit.localX - DEFAULT_SEAT_WIDTH / 2)
+          : dropX;
+        const startY = hit
+          ? Math.max(0, hit.localY - DEFAULT_SEAT_HEIGHT / 2)
+          : dropY;
+        const bounds = getContainerPixelBounds(layout.elements, parentId, layout.grid);
+        const capacityCheck = parentId
+          ? validateContainerCapacity(layout, parentId, quantity)
+          : { ok: true as const };
+
+        if (quantity <= 1) {
+          const placementCheck = validateNewFreeformElementAt(
+            layout,
+            "seat",
+            startX,
+            startY,
+            DEFAULT_SEAT_WIDTH,
+            DEFAULT_SEAT_HEIGHT,
+            parentId,
+          );
+          const valid = placementCheck.ok && capacityCheck.ok;
+          const blockPos = localPointToBlockPixel(layout.elements, parentId, startX, startY);
+          pendingPlacementRef.current = {
+            mode: "freeform-seat",
+            valid,
+            localX: startX,
+            localY: startY,
+            parentId,
+          };
+          setPlacementPreview({
+            worldRow: blockPos.y,
+            worldColumn: blockPos.x,
+            width: 1,
+            height: 1,
+            valid,
+            pixelMode: true,
+            pixelWidth: DEFAULT_SEAT_WIDTH,
+            pixelHeight: DEFAULT_SEAT_HEIGHT,
+            previewParentId: parentId,
+          });
+          return;
+        }
+
+        const { positions, valid: fitsPositions } = computeBulkFreeformSeatPositions(
+          startX,
+          startY,
+          quantity,
+          bounds,
+        );
+        const valid = fitsPositions && capacityCheck.ok;
+        pendingPlacementRef.current = {
+          mode: "freeform-seat",
+          valid,
+          localX: startX,
+          localY: startY,
+          quantity,
+          parentId,
+        };
+        setPlacementPreview({
+          worldRow: startY,
+          worldColumn: startX,
+          width: 1,
+          height: 1,
+          valid,
+          pixelMode: true,
+          pixelWidth: DEFAULT_SEAT_WIDTH,
+          pixelHeight: DEFAULT_SEAT_HEIGHT,
+          bulkSeats: positions,
+          previewParentId: parentId,
+        });
+        return;
+      }
+
+      if (
+        placementDrag.mode === "element" &&
+        usesFreeformCanvas(placementDrag.type) &&
+        placementDrag.type !== "seat"
+      ) {
+        const size = getDefaultElementPixelSize(placementDrag.type);
+        const dropX = Math.max(0, localX - size.width / 2);
+        const dropY = Math.max(0, localY - size.height / 2);
+        const hit = findContainerAtPixel(layout.elements, localX, localY, placementDrag.type);
+        const parentId = hit?.container.id ?? null;
+        const startX = hit
+          ? Math.max(0, hit.localX - size.width / 2)
+          : dropX;
+        const startY = hit
+          ? Math.max(0, hit.localY - size.height / 2)
+          : dropY;
+        const bounds = getContainerPixelBounds(layout.elements, parentId, layout.grid);
+        const placementCheck = validateNewFreeformElementAt(
+          layout,
+          placementDrag.type,
+          startX,
+          startY,
+          size.width,
+          size.height,
+          parentId,
+        );
+        const valid = placementCheck.ok;
+        const blockPos = localPointToBlockPixel(layout.elements, parentId, startX, startY);
+        pendingPlacementRef.current = {
+          mode: "freeform-canvas",
+          valid,
+          localX: startX,
+          localY: startY,
+          parentId,
+          elementType: placementDrag.type,
+        };
+        setPlacementPreview({
+          worldRow: blockPos.y,
+          worldColumn: blockPos.x,
+          width: 1,
+          height: 1,
+          valid,
+          pixelMode: true,
+          pixelWidth: size.width,
+          pixelHeight: size.height,
+          previewParentId: parentId,
+        });
+        return;
+      }
+
       const { row, column } = clientToWorldGrid(clientX, clientY);
+
+      if (placementDrag.mode === "layout-clone") {
+        const bounds = getLayoutWorldBounds(layout.elements);
+        if (!bounds) {
+          pendingPlacementRef.current = null;
+          setPlacementPreview(null);
+          return;
+        }
+
+        const validation = validateLayoutCloneAt(layout, row, column);
+        pendingPlacementRef.current = {
+          mode: "layout-clone",
+          valid: validation.ok,
+          worldRow: row,
+          worldColumn: column,
+          previewWidth: bounds.width,
+          previewHeight: bounds.height,
+        };
+        setPlacementPreview({
+          worldRow: row,
+          worldColumn: column,
+          width: bounds.width,
+          height: bounds.height,
+          valid: validation.ok,
+        });
+        return;
+      }
+
       const def = getElementDefinition(placementDrag.type);
       const quantity = Math.max(1, placementDrag.quantity);
       const target = resolvePlacementTarget(layout, placementDrag.type, row, column, null);
@@ -497,6 +887,7 @@ export function FloorPlanCanvas() {
         previewWidth = footprint.width;
         previewHeight = footprint.height;
         pendingPlacementRef.current = {
+          mode: "element",
           valid: true,
           type: placementDrag.type,
           quantity,
@@ -510,6 +901,7 @@ export function FloorPlanCanvas() {
         };
       } else {
         pendingPlacementRef.current = {
+          mode: "element",
           valid: false,
           type: placementDrag.type,
           quantity,
@@ -530,56 +922,111 @@ export function FloorPlanCanvas() {
         valid: footprint !== null,
       });
     },
-    [clientToWorldGrid, layout, placementDrag],
+    [clientToCanvasPixels, clientToWorldGrid, getActiveBlockOffset, layout, placementDrag],
   );
 
   const commitPendingPlacement = React.useCallback(() => {
     if (placementCommitLock.current) return;
     placementCommitLock.current = true;
 
-    const pending = pendingPlacementRef.current;
-    try {
-      if (!pending || !pending.valid) {
+    const pending = dropPendingRef.current ?? pendingPlacementRef.current;
+
+    void (async () => {
+      try {
+        if (!pending || !pending.valid) {
+          return;
+        }
+        if (pending.mode === "freeform-canvas") {
+          commitFreeformElementAt(
+            pending.elementType,
+            pending.localX,
+            pending.localY,
+            pending.parentId ?? null,
+          );
+          return;
+        }
+        if (pending.mode === "freeform-seat") {
+          if (pending.quantity && pending.quantity > 1) {
+            await commitBulkFreeformSeatsAt(
+              pending.localX,
+              pending.localY,
+              pending.quantity,
+              pending.parentId ?? null,
+            );
+          } else {
+            await commitFreeformSeatAt(
+              pending.localX,
+              pending.localY,
+              pending.parentId ?? null,
+            );
+          }
+          return;
+        }
+        if (pending.mode === "layout-clone") {
+          commitLayoutCloneAt(pending.worldRow, pending.worldColumn);
+          return;
+        }
+        if (pending.quantity > 1) {
+          commitBulkPlacement(pending.type, {
+            parentId: pending.parentId,
+            row: pending.row,
+            column: pending.column,
+            width: pending.previewWidth,
+            height: pending.previewHeight,
+          }, pending.quantity);
+        } else {
+          commitPlacementFootprint(pending.type, {
+            parentId: pending.parentId,
+            row: pending.row,
+            column: pending.column,
+            width: pending.width,
+            height: pending.height,
+          });
+        }
+      } finally {
+        dropPendingRef.current = null;
+        pendingPlacementRef.current = null;
+        setPlacementPreview(null);
+        setCommittedDropPreview(null);
+        placementFrozenRef.current = false;
+        placementCommitLock.current = false;
         cancelPlacementDrag();
-        return;
       }
-      if (pending.quantity > 1) {
-        commitBulkPlacement(pending.type, {
-          parentId: pending.parentId,
-          row: pending.row,
-          column: pending.column,
-          width: pending.previewWidth,
-          height: pending.previewHeight,
-        }, pending.quantity);
-      } else {
-        commitPlacementFootprint(pending.type, {
-          parentId: pending.parentId,
-          row: pending.row,
-          column: pending.column,
-          width: pending.width,
-          height: pending.height,
-        });
-      }
-    } finally {
-      pendingPlacementRef.current = null;
-      setPlacementPreview(null);
-      placementCommitLock.current = false;
-    }
-  }, [cancelPlacementDrag, commitBulkPlacement, commitPlacementFootprint]);
+    })();
+  }, [cancelPlacementDrag, commitBulkFreeformSeatsAt, commitBulkPlacement, commitFreeformElementAt, commitFreeformSeatAt, commitLayoutCloneAt, commitPlacementFootprint]);
 
   React.useEffect(() => {
     if (!placementDrag) {
-      pendingPlacementRef.current = null;
+      setCursorPos(null);
+      if (!placementCommitLock.current) {
+        pendingPlacementRef.current = null;
+        placementFrozenRef.current = false;
+      }
       return;
     }
 
-    placementCommitLock.current = false;
+    if (!placementCommitLock.current) {
+      placementFrozenRef.current = false;
+    }
 
     const onMove = (event: PointerEvent) => {
+      if (placementFrozenRef.current || placementCommitLock.current) return;
+      setCursorPos({ x: event.clientX, y: event.clientY });
       updatePlacementPreview(event.clientX, event.clientY);
     };
 
     const onUp = () => {
+      if (placementCommitLock.current || placementFrozenRef.current) return;
+
+      placementFrozenRef.current = true;
+      setCursorPos(null);
+
+      dropPendingRef.current = pendingPlacementRef.current;
+      if (placementPreviewRef.current) {
+        setCommittedDropPreview(placementPreviewRef.current);
+      }
+
+      cancelPlacementDrag();
       commitPendingPlacement();
     };
 
@@ -626,22 +1073,45 @@ export function FloorPlanCanvas() {
   React.useEffect(() => {
     if (!resize) return;
 
+    const isFreeform = isFreeformCanvasElement(resize.origin);
+
     const onMove = (event: PointerEvent) => {
+      if (isFreeform) {
+        const deltaX = (event.clientX - resize.startClientX) / zoom;
+        const deltaY = (event.clientY - resize.startClientY) / zoom;
+        const originRect = getFreeformRect(resize.origin);
+        const resizeMins =
+          resize.origin.type === "seat"
+            ? { minWidth: MIN_SEAT_WIDTH, minHeight: MIN_SEAT_HEIGHT }
+            : { minWidth: MIN_FREEFORM_ELEMENT_SIZE, minHeight: MIN_FREEFORM_ELEMENT_SIZE };
+        const patch = computeFreeformResizePatch(originRect, resize.edge, deltaX, deltaY, resizeMins);
+        setFreeformResizePreview(patch);
+        setResizePreview(null);
+        return;
+      }
       const deltaCol = Math.round((event.clientX - resize.startClientX) / (BUILDER_CELL_STRIDE * zoom));
       const deltaRow = Math.round((event.clientY - resize.startClientY) / (BUILDER_CELL_STRIDE * zoom));
       const patch = computeResizePatch(resize.origin, resize.edge, deltaRow, deltaCol);
       setResizePreview(patch ?? null);
+      setFreeformResizePreview(null);
     };
 
     const onUp = (event: PointerEvent) => {
-      const preview = resizePreviewRef.current;
-      if (preview) {
-        const deltaCol = Math.round((event.clientX - resize.startClientX) / (BUILDER_CELL_STRIDE * zoom));
-        const deltaRow = Math.round((event.clientY - resize.startClientY) / (BUILDER_CELL_STRIDE * zoom));
-        tryResizeElement(resize.elementId, resize.edge, deltaRow, deltaCol);
+      if (isFreeform) {
+        const deltaX = (event.clientX - resize.startClientX) / zoom;
+        const deltaY = (event.clientY - resize.startClientY) / zoom;
+        tryResizeFreeformElement(resize.elementId, resize.edge, deltaX, deltaY);
+      } else {
+        const preview = resizePreviewRef.current;
+        if (preview) {
+          const deltaCol = Math.round((event.clientX - resize.startClientX) / (BUILDER_CELL_STRIDE * zoom));
+          const deltaRow = Math.round((event.clientY - resize.startClientY) / (BUILDER_CELL_STRIDE * zoom));
+          tryResizeElement(resize.elementId, resize.edge, deltaRow, deltaCol);
+        }
       }
       setResize(null);
       setResizePreview(null);
+      setFreeformResizePreview(null);
     };
 
     document.addEventListener("pointermove", onMove);
@@ -652,19 +1122,124 @@ export function FloorPlanCanvas() {
       document.removeEventListener("pointerup", onUp, { capture: true });
       document.removeEventListener("pointercancel", onUp, { capture: true });
     };
-  }, [resize, tryResizeElement, zoom]);
+  }, [resize, tryResizeElement, tryResizeFreeformElement, zoom]);
 
   React.useEffect(() => {
-    if (!drag) return;
+    if (!drag) {
+      if (!resize) setAlignmentGuides([]);
+      return;
+    }
 
     const onMove = (event: PointerEvent) => {
-      const deltaCol = Math.round((event.clientX - drag.startClientX) / (BUILDER_CELL_STRIDE * zoom));
-      const deltaRow = Math.round((event.clientY - drag.startClientY) / (BUILDER_CELL_STRIDE * zoom));
+      if (dragCommitLockRef.current) return;
+
       const element = layout.elements.find((el) => el.id === drag.elementId);
       if (!element) return;
 
-      const targetRow = drag.originRow + deltaRow;
-      const targetColumn = drag.originColumn + deltaCol;
+      if (drag.freeform) {
+        const deltaX = (event.clientX - drag.startClientX) / zoom;
+        const deltaY = (event.clientY - drag.startClientY) / zoom;
+        const nextX = Math.max(0, (drag.originX ?? 0) + deltaX);
+        const nextY = Math.max(0, (drag.originY ?? 0) + deltaY);
+
+        if (element.type === "seat" && isFreeformSeat(element)) {
+          const drop = resolveFreeformSeatDrop(layout.elements, element, nextX, nextY);
+          const validation = validateFreeformPosition(
+            layout,
+            element.id,
+            drop.localX,
+            drop.localY,
+            drop.parentId,
+          );
+          setAlignmentGuides(
+            computeFreeformAlignmentGuides(
+              layout.elements,
+              { ...element, parentId: drop.parentId },
+              drop.localX,
+              drop.localY,
+            ),
+          );
+          setDragPreview({
+            row: drop.localY,
+            column: drop.localX,
+            parentId: drop.parentId,
+            valid: validation.ok,
+          });
+          return;
+        }
+
+        const validation = validateFreeformPosition(layout, element.id, nextX, nextY);
+        setAlignmentGuides(
+          computeFreeformAlignmentGuides(layout.elements, element, nextX, nextY),
+        );
+        setDragPreview({ row: nextY, column: nextX, valid: validation.ok });
+        return;
+      }
+
+      const deltaCol = Math.round((event.clientX - drag.startClientX) / (BUILDER_CELL_STRIDE * zoom));
+      const deltaRow = Math.round((event.clientY - drag.startClientY) / (BUILDER_CELL_STRIDE * zoom));
+
+      if (element.type === "seat" && !isFreeformSeat(element)) {
+        const originWorld = getWorldFootprint(layout.elements, element);
+        let targetWorldRow = originWorld.worldRow + deltaRow;
+        let targetWorldColumn = originWorld.worldColumn + deltaCol;
+
+        const target = resolvePlacementTarget(
+          layout,
+          element.type,
+          targetWorldRow,
+          targetWorldColumn,
+        );
+        let localRow = target.row;
+        let localColumn = target.column;
+
+        if (snapEnabled) {
+          const aligned = applyAlignmentSnap(
+            layout.elements,
+            { ...element, parentId: target.parentId, row: target.row, column: target.column },
+            target.row,
+            target.column,
+          );
+          localRow = aligned.row;
+          localColumn = aligned.column;
+          setAlignmentGuides(aligned.guides);
+        } else {
+          setAlignmentGuides([]);
+        }
+
+        const snapped = snapFootprintStrict(
+          layout,
+          {
+            parentId: target.parentId,
+            row: localRow,
+            column: localColumn,
+            width: element.width,
+            height: element.height,
+          },
+          { ignoreElementId: element.id, elementType: element.type },
+        );
+
+        setDragPreview({
+          row: snapped?.row ?? localRow,
+          column: snapped?.column ?? localColumn,
+          parentId: target.parentId,
+          valid: snapped !== null,
+        });
+        return;
+      }
+
+      let targetRow = drag.originRow + deltaRow;
+      let targetColumn = drag.originColumn + deltaCol;
+
+      if (snapEnabled) {
+        const aligned = applyAlignmentSnap(layout.elements, element, targetRow, targetColumn);
+        targetRow = aligned.row;
+        targetColumn = aligned.column;
+        setAlignmentGuides(aligned.guides);
+      } else {
+        setAlignmentGuides([]);
+      }
+
       const snapped = snapEnabled
         ? snapDropPosition(
             layout,
@@ -686,25 +1261,81 @@ export function FloorPlanCanvas() {
     };
 
     const onUp = (event: PointerEvent) => {
-      const preview = dragPreviewRef.current;
-      const dragged = layout.elements.find((el) => el.id === drag.elementId);
+      void (async () => {
+        if (dragCommitLockRef.current) return;
 
-      if (dragged?.type === "seat" && dragged.width === 1 && dragged.height === 1) {
-        const { row: worldRow, column: worldColumn } = clientToWorldGrid(event.clientX, event.clientY);
-        const targetSeat = findSeatAtWorldCell(layout.elements, worldRow, worldColumn, dragged.id);
-        if (targetSeat && targetSeat.parentId === dragged.parentId) {
-          mergeSeatsByDrag(dragged.id, targetSeat.id);
-          setDrag(null);
+        setAlignmentGuides([]);
+        const preview = dragPreviewRef.current;
+        const activeDrag = drag;
+        const dragged = layout.elements.find((el) => el.id === activeDrag.elementId);
+
+        dragCommitLockRef.current = true;
+        setDrag(null);
+
+        try {
+          if (activeDrag.freeform) {
+            if (preview?.valid) {
+              if (dragged?.type === "seat" && isFreeformSeat(dragged)) {
+                setPendingMovePreview({
+                  elementId: activeDrag.elementId,
+                  freeform: true,
+                  preview,
+                });
+                await tryMoveFreeformSeatAt(activeDrag.elementId, preview.column, preview.row, {
+                  originX: activeDrag.originX ?? getFreeformRect(dragged).x,
+                  originY: activeDrag.originY ?? getFreeformRect(dragged).y,
+                  originParentId: activeDrag.originParentId ?? dragged.parentId,
+                });
+                setPendingMovePreview(null);
+              } else {
+                tryMoveFreeformElement(activeDrag.elementId, preview.column, preview.row);
+              }
+            } else if (preview) {
+              notifyBlockedPlacement();
+            }
+            setDragPreview(null);
+            return;
+          }
+
+          if (dragged?.type === "seat" && dragged.width === 1 && dragged.height === 1 && !isFreeformSeat(dragged)) {
+            const { row: worldRow, column: worldColumn } = clientToWorldGrid(event.clientX, event.clientY);
+            const targetSeat = findSeatAtWorldCell(layout.elements, worldRow, worldColumn, dragged.id);
+            if (targetSeat && targetSeat.parentId === dragged.parentId) {
+              if (preview) {
+                setPendingMovePreview({
+                  elementId: activeDrag.elementId,
+                  freeform: false,
+                  preview,
+                });
+              }
+              await mergeSeatsByDrag(dragged.id, targetSeat.id);
+              setPendingMovePreview(null);
+              setDragPreview(null);
+              return;
+            }
+          }
+
+          if (preview?.valid) {
+            if (dragged?.type === "seat" && !isFreeformSeat(dragged)) {
+              setPendingMovePreview({
+                elementId: activeDrag.elementId,
+                freeform: false,
+                preview,
+              });
+              const { row: worldRow, column: worldColumn } = clientToWorldGrid(event.clientX, event.clientY);
+              await tryMoveElementAtWorld(activeDrag.elementId, worldRow, worldColumn);
+              setPendingMovePreview(null);
+            } else {
+              tryMoveElement(activeDrag.elementId, preview.row, preview.column);
+            }
+          }
           setDragPreview(null);
-          return;
+        } finally {
+          dragCommitLockRef.current = false;
+          setPendingMovePreview(null);
+          setDragPreview(null);
         }
-      }
-
-      if (preview?.valid) {
-        tryMoveElement(drag.elementId, preview.row, preview.column);
-      }
-      setDrag(null);
-      setDragPreview(null);
+      })();
     };
 
     document.addEventListener("pointermove", onMove);
@@ -715,7 +1346,125 @@ export function FloorPlanCanvas() {
       document.removeEventListener("pointerup", onUp, { capture: true });
       document.removeEventListener("pointercancel", onUp, { capture: true });
     };
-  }, [clientToWorldGrid, drag, layout, mergeSeatsByDrag, snapEnabled, tryMoveElement, zoom]);
+  }, [clientToWorldGrid, drag, layout, mergeSeatsByDrag, notifyBlockedPlacement, snapEnabled, tryMoveElement, tryMoveElementAtWorld, tryMoveFreeformElement, tryMoveFreeformSeatAt, zoom]);
+
+  React.useEffect(() => {
+    if (!marquee) return;
+
+    const onMove = (event: PointerEvent) => {
+      setMarquee((prev) =>
+        prev
+          ? {
+              ...prev,
+              currentClientX: event.clientX,
+              currentClientY: event.clientY,
+            }
+          : null,
+      );
+    };
+
+    const onUp = (event: PointerEvent) => {
+      const start = clientToWorldGrid(marquee.startClientX, marquee.startClientY);
+      const end = clientToWorldGrid(event.clientX, event.clientY);
+      const ids = getElementsInWorldRect(
+        layout.elements,
+        start.row,
+        start.column,
+        end.row,
+        end.column,
+      );
+      if (ids.length) {
+        select(ids, event.shiftKey || event.ctrlKey || event.metaKey);
+      } else if (!event.shiftKey && !event.ctrlKey && !event.metaKey) {
+        clearSelection();
+      }
+      setMarquee(null);
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { capture: true });
+    document.addEventListener("pointercancel", onUp, { capture: true });
+    return () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp, { capture: true });
+      document.removeEventListener("pointercancel", onUp, { capture: true });
+    };
+  }, [clearSelection, clientToWorldGrid, layout.elements, marquee, select]);
+
+  const gridResizePreviewRef = React.useRef(gridResizePreview);
+  gridResizePreviewRef.current = gridResizePreview;
+
+  const applyGridResizePreview = React.useCallback(
+    (clientX: number, clientY: number) => {
+      if (!gridResize) return;
+      const deltaCol = Math.round(
+        (clientX - gridResize.startClientX) / (BUILDER_CELL_STRIDE * zoom),
+      );
+      const deltaRow = Math.round(
+        (clientY - gridResize.startClientY) / (BUILDER_CELL_STRIDE * zoom),
+      );
+
+      let rows = gridResize.originRows;
+      let columns = gridResize.originColumns;
+      let rowOffset = 0;
+      let columnOffset = 0;
+
+      switch (gridResize.edge) {
+        case "rows-bottom":
+          rows = Math.max(4, gridResize.originRows + deltaRow);
+          break;
+        case "rows-top":
+          rows = Math.max(4, gridResize.originRows - deltaRow);
+          rowOffset = rows - gridResize.originRows;
+          break;
+        case "columns-right":
+          columns = Math.max(4, gridResize.originColumns + deltaCol);
+          break;
+        case "columns-left":
+          columns = Math.max(4, gridResize.originColumns - deltaCol);
+          columnOffset = columns - gridResize.originColumns;
+          break;
+      }
+
+      setGridResizePreview({ rows, columns, rowOffset, columnOffset });
+    },
+    [gridResize, zoom],
+  );
+
+  const finishGridResize = React.useCallback(() => {
+    const preview = gridResizePreviewRef.current;
+    if (preview) {
+      resizeGrid(
+        { rows: preview.rows, columns: preview.columns },
+        {
+          rowOffset: preview.rowOffset,
+          columnOffset: preview.columnOffset,
+        },
+      );
+    }
+    setGridResize(null);
+    setGridResizePreview(null);
+  }, [resizeGrid]);
+
+  React.useEffect(() => {
+    if (!gridResize) return;
+
+    const onMove = (event: PointerEvent) => {
+      applyGridResizePreview(event.clientX, event.clientY);
+    };
+    const onUp = () => {
+      finishGridResize();
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { capture: true });
+    document.addEventListener("pointercancel", onUp, { capture: true });
+    return () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp, { capture: true });
+      document.removeEventListener("pointercancel", onUp, { capture: true });
+    };
+  }, [applyGridResizePreview, finishGridResize, gridResize]);
 
   const handlePointerMove = (event: React.PointerEvent) => {
     if (panDrag) {
@@ -727,18 +1476,7 @@ export function FloorPlanCanvas() {
     }
 
     if (gridResize) {
-      const deltaCol = Math.round((event.clientX - gridResize.startClientX) / (BUILDER_CELL_STRIDE * zoom));
-      const deltaRow = Math.round((event.clientY - gridResize.startClientY) / (BUILDER_CELL_STRIDE * zoom));
-      setGridResizePreview({
-        rows:
-          gridResize.edge === "rows"
-            ? Math.max(4, gridResize.originRows + deltaRow)
-            : gridResize.originRows,
-        columns:
-          gridResize.edge === "columns"
-            ? Math.max(4, gridResize.originColumns + deltaCol)
-            : gridResize.originColumns,
-      });
+      applyGridResizePreview(event.clientX, event.clientY);
       return;
     }
 
@@ -755,12 +1493,9 @@ export function FloorPlanCanvas() {
       return;
     }
 
-    if (gridResize && gridResizePreview) {
-      resizeGrid(gridResizePreview);
+    if (gridResize) {
+      return;
     }
-
-    setGridResize(null);
-    setGridResizePreview(null);
   };
 
   const handlePointerLeave = (event: React.PointerEvent) => {
@@ -779,16 +1514,52 @@ export function FloorPlanCanvas() {
       updatePlacementPreview(event.clientX, event.clientY);
       return;
     }
-    if (event.target === event.currentTarget || event.target === floorRef.current) {
+    const isEmptyTarget =
+      event.target === event.currentTarget ||
+      event.target === floorRef.current ||
+      (event.target as HTMLElement).dataset?.blockSheet !== undefined;
+    if (isEmptyTarget && canvasMode === "select") {
+      (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+      setMarquee({
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        currentClientX: event.clientX,
+        currentClientY: event.clientY,
+      });
+      return;
+    }
+    if (isEmptyTarget) {
       clearSelection();
     }
   };
 
-  const handleElementPointerDown = (element: FloorPlanElement, event: React.PointerEvent) => {
+  const handleElementPointerDown = (
+    element: FloorPlanElement,
+    blockId: string,
+    event: React.PointerEvent,
+  ) => {
     if (canvasMode === "pan" || placementDrag) return;
     event.stopPropagation();
+    if (blockId !== activeBlockId) {
+      switchWorkspaceBlock(blockId);
+    }
     select([element.id], event.shiftKey || event.ctrlKey || event.metaKey);
     (event.target as HTMLElement).setPointerCapture(event.pointerId);
+    if (isFreeformCanvasElement(element)) {
+      const rect = getFreeformRect(element);
+      setDrag({
+        elementId: element.id,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        originRow: 0,
+        originColumn: 0,
+        freeform: true,
+        originX: rect.x,
+        originY: rect.y,
+        originParentId: element.parentId,
+      });
+      return;
+    }
     setDrag({
       elementId: element.id,
       startClientX: event.clientX,
@@ -799,8 +1570,49 @@ export function FloorPlanCanvas() {
   };
 
   const displayElements = layout.elements.map((element) => {
-    if (drag?.elementId === element.id && dragPreview) {
-      return { ...element, row: dragPreview.row, column: dragPreview.column };
+    if (drag?.freeform && drag.elementId === element.id && dragPreview) {
+      const base =
+        dragPreview.parentId !== undefined
+          ? { ...element, parentId: dragPreview.parentId }
+          : element;
+      return withFreeformRect(base, { x: dragPreview.column, y: dragPreview.row });
+    }
+    if (
+      pendingMovePreview?.elementId === element.id &&
+      pendingMovePreview.freeform
+    ) {
+      const base =
+        pendingMovePreview.preview.parentId !== undefined
+          ? { ...element, parentId: pendingMovePreview.preview.parentId }
+          : element;
+      return withFreeformRect(base, {
+        x: pendingMovePreview.preview.column,
+        y: pendingMovePreview.preview.row,
+      });
+    }
+    if (drag?.elementId === element.id && dragPreview && !drag.freeform) {
+      return {
+        ...element,
+        row: dragPreview.row,
+        column: dragPreview.column,
+        ...(dragPreview.parentId !== undefined ? { parentId: dragPreview.parentId } : {}),
+      };
+    }
+    if (
+      pendingMovePreview?.elementId === element.id &&
+      !pendingMovePreview.freeform
+    ) {
+      return {
+        ...element,
+        row: pendingMovePreview.preview.row,
+        column: pendingMovePreview.preview.column,
+        ...(pendingMovePreview.preview.parentId !== undefined
+          ? { parentId: pendingMovePreview.preview.parentId }
+          : {}),
+      };
+    }
+    if (resize?.elementId === element.id && freeformResizePreview && isFreeformCanvasElement(element)) {
+      return withFreeformRect(element, freeformResizePreview);
     }
     if (resize?.elementId === element.id && resizePreview) {
       return { ...element, ...resizePreview };
@@ -811,32 +1623,42 @@ export function FloorPlanCanvas() {
     return element;
   });
 
-  const sortedElements = [...displayElements].sort((a, b) => {
-    const depth = (el: FloorPlanElement) => (el.parentId ? 1 : 0);
-    return depth(a) - depth(b);
-  });
+  const previewRowOffset = gridResizePreview?.rowOffset ?? 0;
+  const previewColumnOffset = gridResizePreview?.columnOffset ?? 0;
 
   const draggedElement = drag ? layout.elements.find((e) => e.id === drag.elementId) : null;
   const dragWorld =
     draggedElement && dragPreview
-      ? getWorldFootprint(layout.elements, { ...draggedElement, row: dragPreview.row, column: dragPreview.column })
+      ? getWorldFootprint(layout.elements, {
+          ...draggedElement,
+          row: dragPreview.row,
+          column: dragPreview.column,
+          parentId: dragPreview.parentId ?? draggedElement.parentId,
+        })
       : null;
+  const displayPlacementPreview = committedDropPreview ?? placementPreview;
 
   return (
     <div
       ref={viewportRef}
       className={cn(
-        "relative min-h-0 flex-1 overflow-hidden bg-[#e8ecf4]",
+        "absolute inset-0 overflow-hidden",
+        BUILDER_CHROME.canvasBg,
         canvasMode === "pan" || panDrag ? "cursor-grab active:cursor-grabbing" : "",
         placementDrag ? "cursor-crosshair" : "",
       )}
+      style={{
+        touchAction: "none",
+        backgroundImage: BUILDER_CHROME.canvasPattern,
+        backgroundSize: `${CANVAS_DOT_SPACING}px ${CANVAS_DOT_SPACING}px`,
+      }}
       onPointerDown={handleViewportPointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerLeave}
     >
       <div
-        className="absolute origin-top-left"
+        className="absolute origin-top-left will-change-transform"
         style={{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           left: FLOOR_INSET,
@@ -845,144 +1667,365 @@ export function FloorPlanCanvas() {
       >
         <div
           ref={floorRef}
-          className="relative rounded-[28px] border-2 border-slate-300/90 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.12)]"
+          className="relative"
           style={{ width: canvasWidth, height: canvasHeight }}
         >
-          {gridVisible ? (
-            <div
-              className="pointer-events-none absolute inset-0 rounded-[26px] opacity-40"
-              style={{
-                backgroundImage: `
-                  linear-gradient(to right, rgba(100,116,139,0.35) 1px, transparent 1px),
-                  linear-gradient(to bottom, rgba(100,116,139,0.35) 1px, transparent 1px)
-                `,
-                backgroundSize: `${BUILDER_CELL_STRIDE}px ${BUILDER_CELL_STRIDE}px`,
-              }}
-            />
-          ) : null}
-
-          {sortedElements.map((element) => {
-            const world = getWorldFootprint(layout.elements, element);
-            const isSelected = selection.includes(element.id);
-            const isDraggingInvalid = drag?.elementId === element.id && dragPreview && !dragPreview.valid;
-            const size = elementPixelSize(element);
+          {blockLayouts.map(({ block, columnOffset, rowOffset }) => {
+            const isActive = block.id === activeBlockId;
+            const blockGrid = isActive ? activeGrid : block.grid;
+            const blockElements = isActive ? displayElements : block.elements;
+            const previewColOff = isActive ? previewColumnOffset : 0;
+            const previewRowOff = isActive ? previewRowOffset : 0;
+            const sortedBlockElements = [...blockElements].sort((a, b) => {
+              const depth = (el: FloorPlanElement) => (el.parentId ? 1 : 0);
+              return depth(a) - depth(b);
+            });
 
             return (
               <div
-                key={element.id}
-                data-element-root
-                className={cn("absolute", isDraggingInvalid && "opacity-50")}
+                key={block.id}
+                data-block-sheet
+                className={cn(
+                  "absolute transition-shadow duration-200",
+                  BUILDER_CHROME.floorSheet,
+                  isActive ? cn("z-10", BUILDER_CHROME.floorSheetActive) : "z-0 opacity-90 hover:opacity-100",
+                )}
                 style={{
-                  left: world.worldColumn * BUILDER_CELL_STRIDE,
-                  top: world.worldRow * BUILDER_CELL_STRIDE,
-                  transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
-                  transformOrigin: "center center",
+                  left: columnOffset * CANVAS_BOUNDS_PX,
+                  top: rowOffset * CANVAS_BOUNDS_PX,
+                  width: blockGrid.columns * CANVAS_BOUNDS_PX,
+                  height: blockGrid.rows * CANVAS_BOUNDS_PX,
+                }}
+                onPointerDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (!isActive) switchWorkspaceBlock(block.id);
+                  else if (canvasMode === "select" && !placementDrag) {
+                    event.stopPropagation();
+                    setMarquee({
+                      startClientX: event.clientX,
+                      startClientY: event.clientY,
+                      currentClientX: event.clientX,
+                      currentClientY: event.clientY,
+                    });
+                  } else clearSelection();
                 }}
               >
-                <div className="relative overflow-visible" style={{ width: size.width, height: size.height }}>
-                  <ElementVisual
-                    element={element}
-                    selected={isSelected}
-                    onPointerDown={(event) => handleElementPointerDown(element, event)}
-                  />
-                  {isSelected && selection.length === 1 && canvasMode === "select" ? (
-                    <>
-                      <ResizeHandles
-                        element={element}
-                        onResizeStart={(edge, e) => {
-                          e.stopPropagation();
-                          setResize({
-                            elementId: element.id,
-                            edge,
-                            startClientX: e.clientX,
-                            startClientY: e.clientY,
-                            origin: layout.elements.find((el) => el.id === element.id) ?? element,
-                          });
-                        }}
-                      />
-                      {getElementDefinition(element.type).supportsRotation ? (
-                        <RotationHandle
-                          onRotateStart={(e) => {
-                            const root = (e.currentTarget.closest("[data-element-root]") as HTMLElement | null)?.getBoundingClientRect();
-                            if (!root) return;
-                            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                            setRotate({
-                              elementId: element.id,
-                              centerX: root.left + root.width / 2,
-                              centerY: root.top + root.height / 2,
-                            });
-                            const angle =
-                              Math.atan2(
-                                e.clientY - (root.top + root.height / 2),
-                                e.clientX - (root.left + root.width / 2),
-                              ) *
-                              (180 / Math.PI);
-                            setRotatePreview(snapRotationDegrees(angle + 90));
-                          }}
-                        />
-                      ) : null}
-                    </>
+                <div className="pointer-events-none absolute -top-8 left-4 flex items-center gap-2">
+                  <span className="rounded-md bg-background/90 px-2 py-0.5 text-[11px] font-semibold text-foreground/80 shadow-sm ring-1 ring-border/50 backdrop-blur-sm">
+                    {block.name}
+                  </span>
+                  {!isActive ? (
+                    <span className="text-[10px] font-normal text-muted-foreground">Click to edit</span>
                   ) : null}
                 </div>
+
+                {gridVisible ? (
+                  <div
+                    className="pointer-events-none absolute inset-0 rounded-[19px]"
+                    style={buildCanvasGridStyle(5)}
+                  />
+                ) : null}
+
+                {blockElements.length === 0 ? (
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center rounded-[19px] px-8 text-center">
+                    <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-dashed border-border/60 bg-muted/30">
+                      <svg className="h-6 w-6 text-muted-foreground/50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-semibold text-foreground/70">Start designing your floor</p>
+                    <p className="mt-1.5 max-w-[240px] text-xs leading-relaxed text-muted-foreground">
+                      Drag an element from the library onto the grid
+                    </p>
+                  </div>
+                ) : null}
+
+                {sortedBlockElements.map((element) => {
+                  const isFreeform = isFreeformCanvasElement(element);
+                  const pixelRect = isFreeform ? getWorldPixelRect(blockElements, element) : null;
+                  const world = getWorldFootprint(blockElements, element);
+                  const isSelected = isActive && selection.includes(element.id);
+                  const isDraggingInvalid =
+                    isActive && drag?.elementId === element.id && dragPreview && !dragPreview.valid;
+                  const size = pixelRect
+                    ? { width: pixelRect.width, height: pixelRect.height }
+                    : elementPixelSizeFromElement(element);
+                  const def = getElementDefinition(element.type);
+
+                  return (
+                    <div
+                      key={element.id}
+                      data-element-root
+                      className={cn("absolute", isDraggingInvalid && "opacity-50")}
+                      style={{
+                        left: pixelRect
+                          ? pixelRect.x + previewColOff * CANVAS_BOUNDS_PX
+                          : (world.worldColumn + previewColOff) * BUILDER_CELL_STRIDE,
+                        top: pixelRect
+                          ? pixelRect.y + previewRowOff * CANVAS_BOUNDS_PX
+                          : (world.worldRow + previewRowOff) * BUILDER_CELL_STRIDE,
+                        width: size.width,
+                        height: size.height,
+                      }}
+                    >
+                      <div
+                        className="relative h-full w-full overflow-visible"
+                        style={{
+                          transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+                          transformOrigin: "center center",
+                        }}
+                      >
+                        <ElementVisual
+                          element={element}
+                          selected={isSelected}
+                          onPointerDown={(event) => handleElementPointerDown(element, block.id, event)}
+                        />
+                        {isSelected && selection.length === 1 && canvasMode === "select" ? (
+                          <>
+                            <SelectionBadge
+                              label={def.label}
+                              sublabel={
+                                isFreeformCanvasElement(element)
+                                  ? `${Math.round(getFreeformRect(element).width)}×${Math.round(getFreeformRect(element).height)}`
+                                  : `${element.width}×${element.height}`
+                              }
+                            />
+                            <ResizeHandles
+                              element={element}
+                              onResizeStart={(edge, e) => {
+                                e.stopPropagation();
+                                setResize({
+                                  elementId: element.id,
+                                  edge,
+                                  startClientX: e.clientX,
+                                  startClientY: e.clientY,
+                                  origin: layout.elements.find((el) => el.id === element.id) ?? element,
+                                });
+                              }}
+                            />
+                            {resize?.elementId === element.id && freeformResizePreview ? (
+                              <DimensionLabel
+                                width={Math.round(freeformResizePreview.width)}
+                                height={Math.round(freeformResizePreview.height)}
+                              />
+                            ) : resize?.elementId === element.id && resizePreview ? (
+                              <DimensionLabel
+                                width={resizePreview.width ?? element.width}
+                                height={resizePreview.height ?? element.height}
+                              />
+                            ) : null}
+                            {getElementDefinition(element.type).supportsRotation ? (
+                              <RotationHandle
+                                onRotateStart={(e) => {
+                                  const root = (
+                                    e.currentTarget.closest("[data-element-root]") as HTMLElement | null
+                                  )?.getBoundingClientRect();
+                                  if (!root) return;
+                                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                                  setRotate({
+                                    elementId: element.id,
+                                    centerX: root.left + root.width / 2,
+                                    centerY: root.top + root.height / 2,
+                                  });
+                                  const angle =
+                                    Math.atan2(
+                                      e.clientY - (root.top + root.height / 2),
+                                      e.clientX - (root.left + root.width / 2),
+                                    ) *
+                                    (180 / Math.PI);
+                                  setRotatePreview(snapRotationDegrees(angle + 90));
+                                }}
+                              />
+                            ) : null}
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {isActive && displayPlacementPreview ? (
+                  displayPlacementPreview.pixelMode ? (
+                    displayPlacementPreview.bulkSeats?.length ? (
+                      <>
+                        {displayPlacementPreview.bulkSeats.map((seat, index) => {
+                          const blockPos = localPointToBlockPixel(
+                            blockElements,
+                            displayPlacementPreview.previewParentId ?? null,
+                            seat.x,
+                            seat.y,
+                          );
+                          return (
+                          <div
+                            key={index}
+                            className={cn(
+                              "pointer-events-none absolute z-40 rounded-[10px] border-2 border-dashed transition-all duration-100",
+                              displayPlacementPreview.valid
+                                ? "border-violet-500/70 bg-violet-500/5"
+                                : "border-destructive/70 bg-destructive/8",
+                            )}
+                            style={{
+                              left: blockPos.x,
+                              top: blockPos.y,
+                              width: displayPlacementPreview.pixelWidth ?? DEFAULT_SEAT_WIDTH,
+                              height: displayPlacementPreview.pixelHeight ?? DEFAULT_SEAT_HEIGHT,
+                            }}
+                          />
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <div
+                        className={cn(
+                          "pointer-events-none absolute z-40 rounded-[10px] border-2 border-dashed transition-all duration-100",
+                          displayPlacementPreview.valid
+                            ? "border-violet-500/70 bg-violet-500/5"
+                            : "border-destructive/70 bg-destructive/8",
+                        )}
+                        style={{
+                          left: displayPlacementPreview.worldColumn,
+                          top: displayPlacementPreview.worldRow,
+                          width: displayPlacementPreview.pixelWidth ?? DEFAULT_SEAT_WIDTH,
+                          height: displayPlacementPreview.pixelHeight ?? DEFAULT_SEAT_HEIGHT,
+                        }}
+                      />
+                    )
+                  ) : (
+                    <DropPreview
+                      worldRow={displayPlacementPreview.worldRow}
+                      worldColumn={displayPlacementPreview.worldColumn}
+                      width={displayPlacementPreview.width}
+                      height={displayPlacementPreview.height}
+                      valid={displayPlacementPreview.valid}
+                    />
+                  )
+                ) : null}
+
+                {isActive && dragWorld && draggedElement && dragPreview ? (
+                  <DropPreview
+                    worldRow={dragWorld.worldRow}
+                    worldColumn={dragWorld.worldColumn}
+                    width={draggedElement.width}
+                    height={draggedElement.height}
+                    valid={dragPreview.valid}
+                  />
+                ) : null}
+
+                {isActive && alignmentGuides.length > 0 ? (
+                  <AlignmentGuidesOverlay
+                    guides={alignmentGuides}
+                    columnOffset={previewColOff}
+                    rowOffset={previewRowOff}
+                  />
+                ) : null}
+
+                {isActive ? (
+                  <>
+                    <div
+                      className="absolute -top-1 left-1/2 z-40 h-1.5 w-16 -translate-x-1/2 cursor-n-resize rounded-full bg-primary/30 transition-colors hover:bg-primary/50"
+                      title="Drag to add or remove rows from the top"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        setGridResize({
+                          edge: "rows-top",
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          originRows: layout.grid.rows,
+                          originColumns: layout.grid.columns,
+                        });
+                      }}
+                    />
+                    <div
+                      className="absolute -bottom-1 left-1/2 z-40 h-1.5 w-16 -translate-x-1/2 cursor-s-resize rounded-full bg-primary/30 transition-colors hover:bg-primary/50"
+                      title="Drag to add or remove rows from the bottom"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        setGridResize({
+                          edge: "rows-bottom",
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          originRows: layout.grid.rows,
+                          originColumns: layout.grid.columns,
+                        });
+                      }}
+                    />
+                    <div
+                      className="absolute -left-1 top-1/2 z-40 h-16 w-1.5 -translate-y-1/2 cursor-w-resize rounded-full bg-primary/30 transition-colors hover:bg-primary/50"
+                      title="Drag to add or remove columns from the left"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        setGridResize({
+                          edge: "columns-left",
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          originRows: layout.grid.rows,
+                          originColumns: layout.grid.columns,
+                        });
+                      }}
+                    />
+                    <div
+                      className="absolute -right-1 top-1/2 z-40 h-16 w-1.5 -translate-y-1/2 cursor-e-resize rounded-full bg-primary/30 transition-colors hover:bg-primary/50"
+                      title="Drag to add or remove columns from the right"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        setGridResize({
+                          edge: "columns-right",
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          originRows: layout.grid.rows,
+                          originColumns: layout.grid.columns,
+                        });
+                      }}
+                    />
+                  </>
+                ) : null}
               </div>
             );
           })}
-
-          {placementPreview ? (
-            <DropPreview
-              worldRow={placementPreview.worldRow}
-              worldColumn={placementPreview.worldColumn}
-              width={placementPreview.width}
-              height={placementPreview.height}
-              valid={placementPreview.valid}
-            />
-          ) : null}
-
-          {dragWorld && draggedElement && dragPreview ? (
-            <DropPreview
-              worldRow={dragWorld.worldRow}
-              worldColumn={dragWorld.worldColumn}
-              width={draggedElement.width}
-              height={draggedElement.height}
-              valid={dragPreview.valid}
-            />
-          ) : null}
-
-          <div
-            className="absolute -bottom-1 left-1/2 z-40 h-2 w-20 -translate-x-1/2 cursor-s-resize rounded-full bg-primary/40"
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              (e.target as HTMLElement).setPointerCapture(e.pointerId);
-              setGridResize({
-                edge: "rows",
-                startClientX: e.clientX,
-                startClientY: e.clientY,
-                originRows: layout.grid.rows,
-                originColumns: layout.grid.columns,
-              });
-            }}
-          />
-          <div
-            className="absolute -right-1 top-1/2 z-40 h-20 w-2 -translate-y-1/2 cursor-e-resize rounded-full bg-primary/40"
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              (e.target as HTMLElement).setPointerCapture(e.pointerId);
-              setGridResize({
-                edge: "columns",
-                startClientX: e.clientX,
-                startClientY: e.clientY,
-                originRows: layout.grid.rows,
-                originColumns: layout.grid.columns,
-              });
-            }}
-          />
         </div>
       </div>
 
-      {placementDrag ? (
-        <div className="pointer-events-none absolute bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-background/95 px-4 py-2 text-xs font-medium shadow-lg ring-1 ring-border">
-          Drag to place {placementDrag.quantity}× {getElementDefinition(placementDrag.type).label}. Release on a valid grid area.
+      {placementDrag && cursorPos && placementDrag.mode === "element" ? (
+        <div
+          className="pointer-events-none fixed z-[100] flex items-center gap-2 rounded-lg border border-primary/30 bg-background/95 px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-lg backdrop-blur-sm"
+          style={{
+            left: cursorPos.x + 16,
+            top: cursorPos.y + 16,
+          }}
+        >
+          <div
+            className="h-3 w-3 rounded-sm border"
+            style={{
+              backgroundColor: getElementDefinition(placementDrag.type).color,
+              borderColor: getElementDefinition(placementDrag.type).borderColor,
+            }}
+          />
+          {placementDrag.quantity > 1 ? `${placementDrag.quantity}× ` : ""}
+          {getElementDefinition(placementDrag.type).label}
         </div>
+      ) : null}
+
+      {placementDrag && !committedDropPreview ? (
+        <div className="pointer-events-none absolute bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full border border-border/50 bg-background/95 px-4 py-2 text-xs font-medium text-muted-foreground shadow-lg backdrop-blur-sm">
+          {placementDrag.mode === "layout-clone"
+            ? "Release on an open area to place layout copy"
+            : displayPlacementPreview?.valid
+              ? "Release to place element"
+              : "Invalid placement — move to an open grid area"}
+        </div>
+      ) : null}
+
+      {marquee && viewportRef.current ? (
+        <SelectionMarquee
+          startX={marquee.startClientX - viewportRef.current.getBoundingClientRect().left}
+          startY={marquee.startClientY - viewportRef.current.getBoundingClientRect().top}
+          endX={marquee.currentClientX - viewportRef.current.getBoundingClientRect().left}
+          endY={marquee.currentClientY - viewportRef.current.getBoundingClientRect().top}
+        />
       ) : null}
     </div>
   );

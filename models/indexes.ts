@@ -86,11 +86,7 @@ declare global {
   var __colanIndexesPromise: Map<string, Promise<void>> | undefined;
 }
 
-<<<<<<< HEAD
-const INDEX_SETUP_VERSION = 7;
-=======
 const INDEX_SETUP_VERSION = 8;
->>>>>>> origin/dev-2
 
 function indexesCacheKey(db: Db): string {
   return `${db.databaseName}:v${INDEX_SETUP_VERSION}`;
@@ -158,10 +154,6 @@ async function ensureColanModelIndexesWork(db: Db): Promise<void> {
   await db
     .collection<SeatHistoryDocument>(COLLECTIONS.seatingSeatHistory)
     .createIndex({ companyId: 1, officeSlug: 1, seatId: 1, createdAt: -1 });
-
-  await db
-    .collection<SeatHistoryDocument>(COLLECTIONS.seatingSeatHistory)
-    .createIndex({ officeSlug: 1, seatId: 1, createdAt: -1 });
 
   await db
     .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
