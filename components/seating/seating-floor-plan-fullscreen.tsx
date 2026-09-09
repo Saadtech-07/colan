@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, ZoomIn, ZoomOut } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Pencil, ZoomIn, ZoomOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { BuilderFloorPlanView } from "@/components/floor-plan-builder/builder-floor-plan-view";
 import { SeatingFloorPlan } from "@/components/seating/seating-floor-plan";
@@ -60,6 +61,9 @@ type Props = SharedFloorProps & {
   subtitle: string;
   /** One or more floor blocks (Chennai View shows Block A + Block B). */
   blocks: SeatingFullscreenBlock[];
+  /** Shortcut to open the floor builder / editor canvas. */
+  editHref?: string | null;
+  editLabel?: string;
 };
 
 const MIN_ZOOM = 0.55;
@@ -72,6 +76,8 @@ export function SeatingFloorPlanFullscreen({
   title,
   subtitle,
   blocks,
+  editHref = null,
+  editLabel = "Edit floor design",
   selectedSeat,
   selectedCabinId = null,
   highlightSeats,
@@ -142,30 +148,47 @@ export function SeatingFloorPlanFullscreen({
           </div>
         </div>
 
-        <div className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border/70 bg-muted/30 px-2 py-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-8 w-8 rounded-full border-border/70"
-            onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
-            aria-label="Zoom out"
-          >
-            <ZoomOut className="h-4 w-4" />
-          </Button>
-          <span className="w-12 text-center text-xs font-medium tabular-nums text-muted-foreground">
-            {Math.round(zoom * 100)}%
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            className="h-8 w-8 rounded-full border-border/70"
-            onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
-            aria-label="Zoom in"
-          >
-            <ZoomIn className="h-4 w-4" />
-          </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {editHref && canAssign ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5 rounded-xl px-3 text-xs font-semibold shadow-sm"
+              asChild
+            >
+              <Link href={editHref} prefetch={false}>
+                <Pencil className="h-3.5 w-3.5" />
+                {editLabel}
+              </Link>
+            </Button>
+          ) : null}
+
+          <div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-muted/30 px-2 py-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 rounded-full border-border/70"
+              onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z - ZOOM_STEP))}
+              aria-label="Zoom out"
+            >
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <span className="w-12 text-center text-xs font-medium tabular-nums text-muted-foreground">
+              {Math.round(zoom * 100)}%
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 rounded-full border-border/70"
+              onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z + ZOOM_STEP))}
+              aria-label="Zoom in"
+            >
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </header>
 
