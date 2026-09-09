@@ -5,8 +5,6 @@ import type { EmployeeDocument } from "./employee.model";
 import type { EmployeeDetailsDocument } from "./employee-details.model";
 import type { TeamDocument } from "./team.model";
 import type { CompanyRoleDocument } from "./company-role.model";
-import type { SeatingBayDocument } from "./seating-bay.model";
-import type { SeatingAssignmentDocument } from "./seating-assignment.model";
 import type { SeatingVersionDocument } from "./seating-version.model";
 import type { SeatHistoryDocument } from "./seating-seat-history.model";
 import type { FloorPlanDocument } from "./floor-plan.model";
@@ -84,7 +82,7 @@ declare global {
   var __colanIndexesPromise: Map<string, Promise<void>> | undefined;
 }
 
-const INDEX_SETUP_VERSION = 7;
+const INDEX_SETUP_VERSION = 8;
 
 function indexesCacheKey(db: Db): string {
   return `${db.databaseName}:v${INDEX_SETUP_VERSION}`;
@@ -134,14 +132,6 @@ async function ensureColanModelIndexesWork(db: Db): Promise<void> {
   await db
     .collection<CompanyRoleDocument>(COLLECTIONS.companyRoles)
     .createIndex({ key: 1 }, { unique: true });
-
-  await db
-    .collection<SeatingBayDocument>(COLLECTIONS.seatingBays)
-    .createIndex({ bayId: 1 }, { unique: true });
-
-  await db
-    .collection<SeatingAssignmentDocument>(COLLECTIONS.seatingAssignments)
-    .createIndex({ bayId: 1, assignedAt: -1 });
 
   await db
     .collection<SeatingVersionDocument>(COLLECTIONS.seatingVersions)
