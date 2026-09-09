@@ -26,6 +26,7 @@ function isMissingManifestError(err: unknown) {
 
   if (
     message.includes("required-server-files.json") ||
+    message.includes("[turbopack]_runtime.js") ||
     message.includes("-manifest.json")
   ) {
     return true;
@@ -40,28 +41,21 @@ function isMissingManifestError(err: unknown) {
   );
 }
 
-/** Dev cache under `.next/dev` must not be reused when incomplete or from another bundler. */
+/** Dev output under `.next/dev` must not be reused when incomplete or stale. */
 function resetDevOutput() {
   if (!dev) return;
 
-  const distDir = path.join(process.cwd(), ".next");
-  const devDir = path.join(distDir, "dev");
-
+  const devDir = path.join(process.cwd(), ".next", "dev");
   if (!fs.existsSync(devDir)) return;
 
-  const hasDevManifest =
-    fs.existsSync(path.join(devDir, "routes-manifest.json")) &&
-    fs.existsSync(path.join(devDir, "server", "app-paths-manifest.json"));
+  const hasRoutesManifest = fs.existsSync(path.join(devDir, "routes-manifest.json"));
+  const hasBuildManifest = fs.existsSync(path.join(devDir, "build-manifest.json"));
+  const hasAppPathsManifest = fs.existsSync(
+    path.join(devDir, "server", "app-paths-manifest.json"),
+  );
 
-  if (hasDevManifest) {
-    for (const folder of ["cache"]) {
-      const target = path.join(devDir, folder);
-      if (fs.existsSync(target)) {
-        fs.rmSync(target, { recursive: true, force: true });
-      }
-    }
-    return;
-  }
+  const healthy = hasRoutesManifest && hasBuildManifest && hasAppPathsManifest;
+  if (healthy) return;
 
   console.warn("[dev] Removing incomplete .next/dev output before startup…");
   fs.rmSync(devDir, { recursive: true, force: true });
@@ -103,7 +97,8 @@ async function warmUpDevServer(baseUrl: string) {
 
 resetDevOutput();
 
-const app = next({ dev, hostname, port });
+// Match `next build --webpack` / `dev:next` — Turbopack output is unstable with a custom server.
+const app = next({ dev, hostname, port, webpack: true });
 const handle = app.getRequestHandler();
 
 app
