@@ -79,21 +79,20 @@ export async function saveFloorPlanLayoutDraft(
   };
 
   if (existing) {
-    await col.updateOne({ _id: existing._id }, { $set: payload });
-    const updated = await col.findOne({ _id: existing._id });
+    const updated = await col.findOneAndUpdate(
+      { _id: existing._id },
+      { $set: payload },
+      { returnDocument: "after" },
+    );
     if (!updated) throw new Error("Failed to save draft.");
     await syncFloorPlanDesignMetadata(companyId, slug, layout.name, seatIds, now);
     return floorPlanLayoutDocToDTO(updated);
   }
 
-  const insertResult = await col.insertOne({
-    _id: new ObjectId(),
-    ...payload,
-  });
-  const created = await col.findOne({ _id: insertResult.insertedId });
-  if (!created) throw new Error("Failed to save draft.");
+  const doc: FloorPlanLayoutDocument = { _id: new ObjectId(), ...payload };
+  await col.insertOne(doc);
   await syncFloorPlanDesignMetadata(companyId, slug, layout.name, seatIds, now);
-  return floorPlanLayoutDocToDTO(created);
+  return floorPlanLayoutDocToDTO(doc);
 }
 
 async function syncFloorPlanDesignMetadata(
@@ -219,17 +218,25 @@ export async function createFloorWithBuilderLayout(
       .replace(/^-|-$/g, "")
       .slice(0, 48);
 
-  let slug = baseSlug || "floor";
-  let suffix = 1;
   const planCol = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
-  while (
-    await planCol.findOne({
-      companyId: toCompanyObjectId(companyId),
-      slug,
-    })
-  ) {
-    slug = `${baseSlug}-${suffix}`;
-    suffix += 1;
+  const slugRoot = baseSlug || "floor";
+  const escaped = slugRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const taken = new Set(
+    (
+      await planCol
+        .find({
+          companyId: toCompanyObjectId(companyId),
+          slug: { $regex: `^${escaped}(-\\d+)?$` },
+        })
+        .project({ slug: 1 })
+        .toArray()
+    ).map((row) => row.slug),
+  );
+  let slug = slugRoot;
+  if (taken.has(slug)) {
+    let suffix = 1;
+    while (taken.has(`${slugRoot}-${suffix}`)) suffix += 1;
+    slug = `${slugRoot}-${suffix}`;
   }
 
   const seatIds = extractSeatIds(input.layout);
