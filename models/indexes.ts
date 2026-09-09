@@ -8,20 +8,23 @@ import type { CompanyRoleDocument } from "./company-role.model";
 import type { SeatingVersionDocument } from "./seating-version.model";
 import type { SeatHistoryDocument } from "./seating-seat-history.model";
 import type { FloorPlanDocument } from "./floor-plan.model";
+import type { FloorPlanLayoutDocument } from "./floor-plan-layout.model";
 import type { TeamMemberDocument } from "./team-member.model";
 import type { ProjectDocument } from "./project.model";
 import type { GalleryImageDocument } from "./gallery-image.model";
+import type { CompanyDocument } from "./company.model";
 import { ensureChatConversationIndexes } from "@/lib/chat-indexes";
 import type { MessageDocument } from "./message.model";
 import type { NotificationDocument } from "./notification.model";
 import type { TaskActivityDocument, TaskCommentDocument, TaskDocument } from "./task.model";
 import type { DailyUpdateDocument } from "./daily-update.model";
+import { ensureDefaultCompany } from "@/lib/tenant-migration";
 
-async function removeDuplicateEmployeeIds(db: Db): Promise<void> {
+async function removeDuplicateEmployeeIds(db: Db, companyId: ObjectId): Promise<void> {
   const collection = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const duplicates = await collection
     .aggregate<{ _id: string; ids: ObjectId[] }>([
-      { $match: { employeeId: { $type: "string" } } },
+      { $match: { companyId, employeeId: { $type: "string" } } },
       {
         $group: {
           _id: "$employeeId",
@@ -43,19 +46,20 @@ async function removeDuplicateEmployeeIds(db: Db): Promise<void> {
   }
 }
 
-async function removeInvalidCompanyRoleKeys(db: Db): Promise<void> {
+async function removeInvalidCompanyRoleKeys(db: Db, companyId: ObjectId): Promise<void> {
   const collection = db.collection<CompanyRoleDocument>(COLLECTIONS.companyRoles);
 
   await collection.deleteMany({
+    companyId,
     $or: [
       { key: { $exists: false } },
-      { key: { $type: 10 } }, // BSON null — invalid legacy rows before unique index
+      { key: { $type: 10 } },
     ],
   });
 
   const duplicates = await collection
     .aggregate<{ _id: string; ids: ObjectId[] }>([
-      { $match: { key: { $type: "string" } } },
+      { $match: { companyId, key: { $type: "string" } } },
       {
         $group: {
           _id: "$key",
@@ -82,7 +86,7 @@ declare global {
   var __colanIndexesPromise: Map<string, Promise<void>> | undefined;
 }
 
-const INDEX_SETUP_VERSION = 8;
+const INDEX_SETUP_VERSION = 9;
 
 function indexesCacheKey(db: Db): string {
   return `${db.databaseName}:v${INDEX_SETUP_VERSION}`;
@@ -105,16 +109,23 @@ export async function ensureColanModelIndexes(db: Db): Promise<void> {
 }
 
 async function ensureColanModelIndexesWork(db: Db): Promise<void> {
+  const defaultCompanyId = await ensureDefaultCompany(db);
+
+  await db.collection<CompanyDocument>(COLLECTIONS.companies).createIndex({ slug: 1 }, { unique: true });
+
   await db
     .collection<AppUserDocument>(COLLECTIONS.appUsers)
     .createIndex({ email: 1 }, { unique: true });
+  await db
+    .collection<AppUserDocument>(COLLECTIONS.appUsers)
+    .createIndex({ companyId: 1, email: 1 });
 
-  await removeDuplicateEmployeeIds(db);
+  await removeDuplicateEmployeeIds(db, defaultCompanyId);
   await db
     .collection<EmployeeDocument>(COLLECTIONS.employees)
-    .createIndex({ employeeId: 1 }, { unique: true });
-  await db.collection<EmployeeDocument>(COLLECTIONS.employees).createIndex({ bayNumber: 1 });
-  await db.collection<EmployeeDocument>(COLLECTIONS.employees).createIndex({ team: 1, name: 1 });
+    .createIndex({ companyId: 1, employeeId: 1 }, { unique: true });
+  await db.collection<EmployeeDocument>(COLLECTIONS.employees).createIndex({ companyId: 1, bayNumber: 1 });
+  await db.collection<EmployeeDocument>(COLLECTIONS.employees).createIndex({ companyId: 1, team: 1, name: 1 });
 
   await db
     .collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails)
@@ -128,33 +139,50 @@ async function ensureColanModelIndexesWork(db: Db): Promise<void> {
     .collection<TeamDocument>(COLLECTIONS.teams)
     .createIndex({ code: 1 }, { unique: true, sparse: true });
 
-  await removeInvalidCompanyRoleKeys(db);
+  await removeInvalidCompanyRoleKeys(db, defaultCompanyId);
   await db
     .collection<CompanyRoleDocument>(COLLECTIONS.companyRoles)
-    .createIndex({ key: 1 }, { unique: true });
+    .createIndex({ companyId: 1, key: 1 }, { unique: true });
 
   await db
     .collection<SeatingVersionDocument>(COLLECTIONS.seatingVersions)
-    .createIndex({ officeSlug: 1, version: -1 }, { unique: true });
+    .createIndex({ companyId: 1, officeSlug: 1, version: -1 }, { unique: true });
   await db
     .collection<SeatingVersionDocument>(COLLECTIONS.seatingVersions)
-    .createIndex({ officeSlug: 1, createdAt: -1 });
+    .createIndex({ companyId: 1, officeSlug: 1, createdAt: -1 });
 
   await db
     .collection<SeatHistoryDocument>(COLLECTIONS.seatingSeatHistory)
-    .createIndex({ officeSlug: 1, seatId: 1, createdAt: -1 });
+    .createIndex({ companyId: 1, officeSlug: 1, seatId: 1, createdAt: -1 });
 
   await db
     .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
-    .createIndex({ slug: 1 }, { unique: true });
+    .createIndex({ companyId: 1, slug: 1 }, { unique: true });
   await db
     .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
-    .createIndex({ isActive: 1, sortOrder: 1 });
+    .createIndex({ companyId: 1, isActive: 1, sortOrder: 1 });
+
+  await db
+    .collection<FloorPlanLayoutDocument>(COLLECTIONS.floorPlanLayouts)
+    .createIndex({ companyId: 1, floorPlanSlug: 1, status: 1 });
+  await db
+    .collection<FloorPlanLayoutDocument>(COLLECTIONS.floorPlanLayouts)
+    .createIndex({ companyId: 1, floorPlanSlug: 1, version: -1 });
 
   await db.collection<EmployeeDocument>(COLLECTIONS.employees).createIndex({
+    companyId: 1,
     officeSlug: 1,
     bayNumber: 1,
   });
+  await db.collection<EmployeeDocument>(COLLECTIONS.employees).createIndex({
+    companyId: 1,
+    officeSlug: 1,
+    cabinId: 1,
+  });
+
+  await db
+    .collection(COLLECTIONS.floorPlanSeedSuppressions)
+    .createIndex({ companyId: 1, slug: 1 }, { unique: true });
 
   await db
     .collection<TeamMemberDocument>(COLLECTIONS.teamMembers)

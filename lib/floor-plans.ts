@@ -71,7 +71,6 @@ async function suppressFloorPlanSeed(
   const col = db.collection<FloorPlanSeedSuppressionDocument>(
     COLLECTIONS.floorPlanSeedSuppressions,
   );
-  await col.createIndex({ companyId: 1, slug: 1 }, { unique: true });
   await col.updateOne(
     { companyId: toCompanyObjectId(companyId), slug: normalized },
     {
@@ -313,39 +312,60 @@ export async function getFloorPlanBySlug(
 ): Promise<FloorPlanDTO | null> {
   const normalized = slug.trim().toLowerCase();
   const db = await withDb(companyId);
-  const catalogRows = catalogRowsForSlug(normalized);
   const scope = companyScope<FloorPlanDocument>(companyId);
 
   if (!db) {
     ensureMemorySeeds();
     const row = memoryFloorPlans.find((p) => p.slug === normalized);
     if (!row) return null;
-    const plan = clonePlan(row);
-    if (catalogRows) {
-      plan.rows = structuredClone(catalogRows);
-      plan.seatIds = seatIdsFromRows(catalogRows);
-    }
-    return plan;
+    return applyCatalogRowsToPlan(clonePlan(row), normalized);
   }
 
   const doc = await db
     .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
     .findOne({ ...scope, slug: normalized });
   if (!doc) return null;
-  const plan = floorPlanDocToDTO(doc);
-  const patch: Partial<FloorPlanDocument> = { updatedAt: new Date() };
-  // Preserve runtime cabin swaps — only sync canonical row geometry when needed.
-  if (catalogRows) {
-    plan.rows = structuredClone(catalogRows);
-    plan.seatIds = seatIdsFromRows(catalogRows);
-    patch.rows = catalogRows;
-    patch.seatIds = plan.seatIds;
-    await db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans).updateOne(
-      { _id: doc._id },
-      { $set: patch },
-    );
+  return applyCatalogRowsToPlan(floorPlanDocToDTO(doc), normalized);
+}
+
+function applyCatalogRowsToPlan(plan: FloorPlanDTO, slug: string): FloorPlanDTO {
+  const catalogRows = catalogRowsForSlug(slug);
+  if (!catalogRows) return plan;
+  return {
+    ...plan,
+    rows: structuredClone(catalogRows),
+    seatIds: seatIdsFromRows(catalogRows),
+  };
+}
+
+/** Batch-load floor plans by slug (single query). */
+export async function getFloorPlansBySlugs(
+  companyId: string,
+  slugs: string[],
+): Promise<Map<string, FloorPlanDTO>> {
+  const normalized = [...new Set(slugs.map((s) => s.trim().toLowerCase()).filter(Boolean))];
+  const result = new Map<string, FloorPlanDTO>();
+  if (normalized.length === 0) return result;
+
+  const db = await withDb(companyId);
+  if (!db) {
+    ensureMemorySeeds();
+    for (const slug of normalized) {
+      const row = memoryFloorPlans.find((p) => p.slug === slug);
+      if (row) result.set(slug, applyCatalogRowsToPlan(clonePlan(row), slug));
+    }
+    return result;
   }
-  return plan;
+
+  const docs = await db
+    .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
+    .find({ ...companyScope<FloorPlanDocument>(companyId), slug: { $in: normalized } })
+    .toArray();
+
+  for (const doc of docs) {
+    result.set(doc.slug, applyCatalogRowsToPlan(floorPlanDocToDTO(doc), doc.slug));
+  }
+  return result;
 }
 
 export type CreateFloorPlanInput = {
@@ -549,16 +569,22 @@ export async function importFloorPlans(
 ): Promise<{ created: string[]; updated: string[] }> {
   const created: string[] = [];
   const updated: string[] = [];
+  const normalized = plans.map((plan) => ({
+    ...plan,
+    slug: plan.slug.trim().toLowerCase(),
+  }));
 
-  for (const plan of plans) {
-    const slug = plan.slug.trim().toLowerCase();
-    const existing = await getFloorPlanBySlug(companyId, slug);
-    if (!existing) {
+  const existingSlugs = new Set(
+    [...(await getFloorPlansBySlugs(companyId, normalized.map((p) => p.slug))).keys()],
+  );
+
+  for (const plan of normalized) {
+    if (!existingSlugs.has(plan.slug)) {
       await createFloorPlan(companyId, plan);
-      created.push(slug);
+      created.push(plan.slug);
       continue;
     }
-    await updateFloorPlan(companyId, slug, {
+    await updateFloorPlan(companyId, plan.slug, {
       name: plan.name,
       city: plan.city,
       building: plan.building,
@@ -568,7 +594,7 @@ export async function importFloorPlans(
       isActive: plan.isActive,
       sortOrder: plan.sortOrder,
     });
-    updated.push(slug);
+    updated.push(plan.slug);
   }
 
   return { created, updated };
