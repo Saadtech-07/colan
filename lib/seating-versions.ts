@@ -11,7 +11,11 @@ import {
   setCabinEmployees,
   swapEmployeesBetweenBays,
 } from "@/lib/data-service";
-import { getFloorPlanBySlug, swapFloorPlanCabins } from "@/lib/floor-plans";
+import {
+  getFloorPlansBySlugs,
+  swapFloorPlanCabins,
+} from "@/lib/floor-plans";
+import type { FloorPlanDTO } from "@/models/floor-plan.model";
 import { normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
 import { snapshotFromPlan } from "@/lib/seating-draft";
 import { recordSeatHistoryForChanges } from "@/lib/seating-seat-history";
@@ -129,31 +133,63 @@ export async function getSeatingVersion(
 async function applyChangeOnServer(
   companyId: string,
   change: SeatingPendingChange,
+  plan: FloorPlanDTO,
 ): Promise<void> {
+  const planOpts = { plan };
   switch (change.kind) {
     case "assign-seat":
     case "clear-seat":
       if (!change.seatId) throw new Error("Seat id is required.");
-      await assignEmployeeToBay(companyId, change.seatId, change.employeeId ?? null, change.officeSlug);
+      await assignEmployeeToBay(
+        companyId,
+        change.seatId,
+        change.employeeId ?? null,
+        change.officeSlug,
+        planOpts,
+      );
       return;
     case "move-seat":
       if (!change.toSeatId) throw new Error("Destination seat is required.");
-      await assignEmployeeToBay(companyId, change.toSeatId, change.employeeId ?? null, change.officeSlug);
+      await assignEmployeeToBay(
+        companyId,
+        change.toSeatId,
+        change.employeeId ?? null,
+        change.officeSlug,
+        planOpts,
+      );
       return;
     case "swap-seats":
       if (!change.fromSeatId || !change.toSeatId) {
         throw new Error("Both seats are required to swap.");
       }
-      await swapEmployeesBetweenBays(companyId, change.fromSeatId, change.toSeatId, change.officeSlug);
+      await swapEmployeesBetweenBays(
+        companyId,
+        change.fromSeatId,
+        change.toSeatId,
+        change.officeSlug,
+        planOpts,
+      );
       return;
     case "assign-cabin":
     case "clear-cabin":
       if (!change.cabinId) throw new Error("Cabin id is required.");
-      await assignEmployeeToCabin(companyId, change.cabinId, change.employeeId ?? null, change.officeSlug);
+      await assignEmployeeToCabin(
+        companyId,
+        change.cabinId,
+        change.employeeId ?? null,
+        change.officeSlug,
+        planOpts,
+      );
       return;
     case "set-cabin-members":
       if (!change.cabinId) throw new Error("Cabin id is required.");
-      await setCabinEmployees(companyId, change.cabinId, change.employeeIds ?? [], change.officeSlug);
+      await setCabinEmployees(
+        companyId,
+        change.cabinId,
+        change.employeeIds ?? [],
+        change.officeSlug,
+        planOpts,
+      );
       return;
     case "swap-cabins":
       if (!change.fromCabinId || !change.toCabinId) {
@@ -166,7 +202,10 @@ async function applyChangeOnServer(
   }
 }
 
-async function insertVersion(doc: Omit<SeatingVersionDocument, "_id">): Promise<SeatingVersionDTO> {
+async function insertVersion(
+  companyId: string,
+  doc: Omit<SeatingVersionDocument, "_id">,
+): Promise<SeatingVersionDTO> {
   const db = await getDb();
   if (!db) {
     if (!allowInMemoryFallback()) {
@@ -189,38 +228,49 @@ export async function saveSeatingVersion(input: {
   changes: SeatingPendingChange[];
   actor: SeatingVersionActor;
 }): Promise<{ versions: SeatingVersionDTO[]; employees: Employee[] }> {
+  const companyId = input.companyId;
   const changes = input.changes.filter((change) => change.kind && change.officeSlug);
   if (changes.length === 0) {
     throw new Error("No seating changes to save.");
   }
 
-  let employees = await listEmployees({ companyId: input.companyId });
+  const offices = [...new Set(changes.map((change) => normalizeOfficeSlug(change.officeSlug)))];
+  const planMap = await getFloorPlansBySlugs(companyId, offices);
+  for (const office of offices) {
+    if (!planMap.get(office)?.isActive) {
+      throw new Error(`Unknown office floor plan "${office}".`);
+    }
+  }
+
+  const employeesBefore = await listEmployees({ companyId });
   await recordSeatHistoryForChanges({
-    companyId: input.companyId,
-    employees,
+    companyId,
+    employees: employeesBefore,
     changes,
     actor: input.actor,
   });
 
   for (const change of changes) {
-    await applyChangeOnServer(input.companyId, change);
+    const office = normalizeOfficeSlug(change.officeSlug);
+    const plan = planMap.get(office);
+    if (!plan) continue;
+    await applyChangeOnServer(companyId, change, plan);
   }
 
-  employees = await listEmployees({ companyId: input.companyId });
-  const offices = [...new Set(changes.map((change) => normalizeOfficeSlug(change.officeSlug)))];
+  const employees = await listEmployees({ companyId });
   const versions: SeatingVersionDTO[] = [];
 
   for (const office of offices) {
-    const plan = await getFloorPlanBySlug(input.companyId, office);
+    const plan = planMap.get(office);
     if (!plan) continue;
     const officeChanges = changes.filter(
       (change) => normalizeOfficeSlug(change.officeSlug) === office,
     );
     const snapshot = snapshotFromPlan(employees, plan);
-    const version = await nextVersionNumber(input.companyId, office);
+    const version = await nextVersionNumber(companyId, office);
     versions.push(
-      await insertVersion({
-        companyId: toCompanyObjectId(input.companyId),
+      await insertVersion(companyId, {
+        companyId: toCompanyObjectId(companyId),
         officeSlug: office,
         version,
         createdAt: new Date(),
@@ -231,6 +281,5 @@ export async function saveSeatingVersion(input: {
     );
   }
 
-  employees = await listEmployees({ companyId: input.companyId });
   return { versions, employees };
 }

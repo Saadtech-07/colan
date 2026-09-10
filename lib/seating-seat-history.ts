@@ -4,10 +4,7 @@ import { getDb } from "@/lib/mongodb";
 import { allowInMemoryFallback } from "@/lib/data-backend";
 import { ensureColanModelIndexes } from "@/models/indexes";
 import { COLLECTIONS } from "@/models/collections";
-import {
-  companyScope,
-  toCompanyObjectId,
-} from "@/lib/tenant-scope";
+import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
 import {
   applySeatingChange,
@@ -24,20 +21,9 @@ import type {
 
 import type { Employee } from "@/types";
 
-/**
- * Draft record used before companyId and Mongo _id are added.
- */
-type SeatHistoryDraft = Omit<
-  SeatHistoryDocument,
-  "_id" | "companyId"
->;
+type SeatHistoryDraft = Omit<SeatHistoryDocument, "_id" | "companyId">;
 
-/**
- * In-memory fallback representation.
- */
-type MemoryHistory = SeatHistoryDocument & {
-  id: string;
-};
+type MemoryHistory = SeatHistoryDocument & { id: string };
 
 const memoryHistory: MemoryHistory[] = [];
 
@@ -168,9 +154,7 @@ function memoryToDoc(
 ): SeatHistoryDocument {
   return {
     _id: new ObjectId(row.id),
-
     companyId: row.companyId,
-
     officeSlug: row.officeSlug,
     seatId: row.seatId,
     action: row.action,
@@ -253,11 +237,7 @@ function eventsForChange(
   actor: SeatingVersionActor,
   at: Date,
 ): SeatHistoryDraft[] {
-  const office =
-    normalizeOfficeSlug(
-      change.officeSlug,
-    );
-
+  const office = normalizeOfficeSlug(change.officeSlug);
   const events: SeatHistoryDraft[] = [];
 
   switch (change.kind) {
@@ -659,7 +639,6 @@ export function buildSeatHistoryRecords(
   createdAt = new Date(),
 ): SeatHistoryDraft[] {
   const records: SeatHistoryDraft[] = [];
-
   let working = employees;
 
   for (const change of changes) {
@@ -695,37 +674,23 @@ export async function insertSeatHistory(
     "_id"
   >[],
 ): Promise<void> {
-  if (records.length === 0) {
-    return;
-  }
-
+  if (records.length === 0) return;
   const db = await getDb();
-
-  /**
-   * MongoDB unavailable.
-   * Use in-memory fallback when allowed.
-   */
   if (!db) {
     if (!allowInMemoryFallback()) {
-      throw new Error(
-        "MongoDB is not available.",
-      );
+      throw new Error("MongoDB is not available.");
     }
-
     for (const record of records) {
-      const id = new ObjectId();
-
       memoryHistory.unshift({
         ...record,
-
-        _id: id,
-
-        id: id.toHexString(),
+        _id: new ObjectId(),
+        id: new ObjectId().toHexString(),
       });
     }
-
     return;
   }
+
+  
 
   /**
    * Make sure required indexes exist.
@@ -811,58 +776,26 @@ export async function listSeatHistory(
    * from seeing another company's history.
    */
   const rows = await db
-    .collection<SeatHistoryDocument>(
-      COLLECTIONS.seatingSeatHistory,
-    )
-    .find({
-      ...companyScope<SeatHistoryDocument>(
-        companyId,
-      ),
-
-      officeSlug: office,
-
-      seatId: seat,
-    })
-    .sort({
-      createdAt: -1,
-    })
+    .collection<SeatHistoryDocument>(COLLECTIONS.seatingSeatHistory)
+    .find({ ...companyScope<SeatHistoryDocument>(companyId), officeSlug: office, seatId: seat })
+    .sort({ createdAt: -1 })
     .limit(200)
     .toArray();
 
   return rows.map(toDto);
 }
 
-/**
- * Record seat history for seating changes.
- */
-export async function recordSeatHistoryForChanges(
-  input: {
-    companyId: string;
-
-    employees: Employee[];
-
-    changes: SeatingPendingChange[];
-
-    actor: SeatingVersionActor;
-  },
-): Promise<void> {
-  const records =
-    buildSeatHistoryRecords(
-      input.employees,
-      input.changes,
-      input.actor,
-    ).map(
-      (record) => ({
-        ...record,
-
-        companyId:
-          toCompanyObjectId(
-            input.companyId,
-          ),
-      }),
-    );
-
-  await insertSeatHistory(
-    records,
+export async function recordSeatHistoryForChanges(input: {
+  companyId: string;
+  employees: Employee[];
+  changes: SeatingPendingChange[];
+  actor: SeatingVersionActor;
+}): Promise<void> {
+  const records = buildSeatHistoryRecords(input.employees, input.changes, input.actor).map(
+    (record) => ({
+      ...record,
+      companyId: toCompanyObjectId(input.companyId),
+    }),
   );
+  await insertSeatHistory(records);
 }
