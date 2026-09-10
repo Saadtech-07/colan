@@ -1,4 +1,4 @@
-import { ObjectId, type Db } from "mongodb";
+import { MongoServerError, ObjectId, type Db } from "mongodb";
 import { COLLECTIONS } from "./collections";
 import type { AppUserDocument } from "./app-user.model";
 import type { EmployeeDocument } from "./employee.model";
@@ -86,7 +86,7 @@ declare global {
   var __colanIndexesPromise: Map<string, Promise<void>> | undefined;
 }
 
-const INDEX_SETUP_VERSION = 9;
+const INDEX_SETUP_VERSION = 10;
 
 function indexesCacheKey(db: Db): string {
   return `${db.databaseName}:v${INDEX_SETUP_VERSION}`;
@@ -158,9 +158,16 @@ async function ensureColanModelIndexesWork(db: Db): Promise<void> {
   await db
     .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
     .createIndex({ companyId: 1, slug: 1 }, { unique: true });
-  await db
-    .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
-    .createIndex({ companyId: 1, isActive: 1, sortOrder: 1 });
+  const floorPlans = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
+  try {
+    await floorPlans.dropIndex("companyId_1_isActive_1_sortOrder_1");
+  } catch (error) {
+    if (!(error instanceof MongoServerError) || error.code !== 27) throw error;
+  }
+  await floorPlans.createIndex(
+    { companyId: 1, isActive: 1, sortOrder: 1, name: 1 },
+    { name: "floorPlans_company_active_sort_name" },
+  );
 
   await db
     .collection<FloorPlanLayoutDocument>(COLLECTIONS.floorPlanLayouts)
