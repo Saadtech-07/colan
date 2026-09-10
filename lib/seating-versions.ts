@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { allowInMemoryFallback } from "@/lib/data-backend";
+import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { ensureColanModelIndexes } from "@/models/indexes";
 import { COLLECTIONS } from "@/models/collections";
 import {
@@ -49,6 +50,7 @@ function toDto(doc: SeatingVersionDocument): SeatingVersionDTO {
 function memoryToDoc(row: MemoryVersion): SeatingVersionDocument {
   return {
     _id: new ObjectId(row.id.padEnd(24, "0").slice(0, 24)),
+    companyId: row.companyId,
     officeSlug: row.officeSlug,
     version: row.version,
     createdAt: row.createdAt,
@@ -58,26 +60,29 @@ function memoryToDoc(row: MemoryVersion): SeatingVersionDocument {
   };
 }
 
-async function nextVersionNumber(officeSlug: string): Promise<number> {
+async function nextVersionNumber(companyId: string, officeSlug: string): Promise<number> {
   const office = normalizeOfficeSlug(officeSlug);
   const db = await getDb();
   if (!db) {
     const latest = memoryVersions
-      .filter((row) => row.officeSlug === office)
+      .filter((row) => row.companyId.toHexString() === companyId && row.officeSlug === office)
       .reduce((max, row) => Math.max(max, row.version), 0);
     return latest + 1;
   }
   await ensureColanModelIndexes(db);
   const latest = await db
     .collection<SeatingVersionDocument>(COLLECTIONS.seatingVersions)
-    .find({ officeSlug: office })
+    .find({ ...companyScope<SeatingVersionDocument>(companyId), officeSlug: office })
     .sort({ version: -1 })
     .limit(1)
     .next();
   return (latest?.version ?? 0) + 1;
 }
 
-export async function listSeatingVersions(officeSlug: string): Promise<SeatingVersionSummary[]> {
+export async function listSeatingVersions(
+  companyId: string,
+  officeSlug: string,
+): Promise<SeatingVersionSummary[]> {
   const office = normalizeOfficeSlug(officeSlug);
   const db = await getDb();
   if (!db) {
@@ -85,68 +90,76 @@ export async function listSeatingVersions(officeSlug: string): Promise<SeatingVe
       throw new Error("MongoDB is not available.");
     }
     return memoryVersions
-      .filter((row) => row.officeSlug === office)
+      .filter((row) => row.companyId.toHexString() === companyId && row.officeSlug === office)
       .sort((a, b) => b.version - a.version)
       .map((row) => toSummary(memoryToDoc(row)));
   }
   await ensureColanModelIndexes(db);
   const rows = await db
     .collection<SeatingVersionDocument>(COLLECTIONS.seatingVersions)
-    .find({ officeSlug: office })
+    .find({ ...companyScope<SeatingVersionDocument>(companyId), officeSlug: office })
     .sort({ version: -1, createdAt: -1 })
     .limit(50)
     .toArray();
   return rows.map(toSummary);
 }
 
-export async function getSeatingVersion(id: string): Promise<SeatingVersionDTO | null> {
+export async function getSeatingVersion(
+  companyId: string,
+  id: string,
+): Promise<SeatingVersionDTO | null> {
   const db = await getDb();
   if (!db) {
     if (!allowInMemoryFallback()) {
       throw new Error("MongoDB is not available.");
     }
-    const row = memoryVersions.find((item) => item.id === id);
+    const row = memoryVersions.find(
+      (item) => item.id === id && item.companyId.toHexString() === companyId,
+    );
     return row ? toDto(memoryToDoc(row)) : null;
   }
   if (!ObjectId.isValid(id)) return null;
   await ensureColanModelIndexes(db);
   const doc = await db
     .collection<SeatingVersionDocument>(COLLECTIONS.seatingVersions)
-    .findOne({ _id: new ObjectId(id) });
+    .findOne({ _id: new ObjectId(id), ...companyScope<SeatingVersionDocument>(companyId) });
   return doc ? toDto(doc) : null;
 }
 
-async function applyChangeOnServer(change: SeatingPendingChange): Promise<void> {
+async function applyChangeOnServer(
+  companyId: string,
+  change: SeatingPendingChange,
+): Promise<void> {
   switch (change.kind) {
     case "assign-seat":
     case "clear-seat":
       if (!change.seatId) throw new Error("Seat id is required.");
-      await assignEmployeeToBay(change.seatId, change.employeeId ?? null, change.officeSlug);
+      await assignEmployeeToBay(companyId, change.seatId, change.employeeId ?? null, change.officeSlug);
       return;
     case "move-seat":
       if (!change.toSeatId) throw new Error("Destination seat is required.");
-      await assignEmployeeToBay(change.toSeatId, change.employeeId ?? null, change.officeSlug);
+      await assignEmployeeToBay(companyId, change.toSeatId, change.employeeId ?? null, change.officeSlug);
       return;
     case "swap-seats":
       if (!change.fromSeatId || !change.toSeatId) {
         throw new Error("Both seats are required to swap.");
       }
-      await swapEmployeesBetweenBays(change.fromSeatId, change.toSeatId, change.officeSlug);
+      await swapEmployeesBetweenBays(companyId, change.fromSeatId, change.toSeatId, change.officeSlug);
       return;
     case "assign-cabin":
     case "clear-cabin":
       if (!change.cabinId) throw new Error("Cabin id is required.");
-      await assignEmployeeToCabin(change.cabinId, change.employeeId ?? null, change.officeSlug);
+      await assignEmployeeToCabin(companyId, change.cabinId, change.employeeId ?? null, change.officeSlug);
       return;
     case "set-cabin-members":
       if (!change.cabinId) throw new Error("Cabin id is required.");
-      await setCabinEmployees(change.cabinId, change.employeeIds ?? [], change.officeSlug);
+      await setCabinEmployees(companyId, change.cabinId, change.employeeIds ?? [], change.officeSlug);
       return;
     case "swap-cabins":
       if (!change.fromCabinId || !change.toCabinId) {
         throw new Error("Both cabins are required to swap.");
       }
-      await swapFloorPlanCabins(change.officeSlug, change.fromCabinId, change.toCabinId);
+      await swapFloorPlanCabins(companyId, change.officeSlug, change.fromCabinId, change.toCabinId);
       return;
     default:
       throw new Error("Unknown seating change.");
@@ -171,6 +184,7 @@ async function insertVersion(doc: Omit<SeatingVersionDocument, "_id">): Promise<
 }
 
 export async function saveSeatingVersion(input: {
+  companyId: string;
   officeSlug: string;
   changes: SeatingPendingChange[];
   actor: SeatingVersionActor;
@@ -180,41 +194,33 @@ export async function saveSeatingVersion(input: {
     throw new Error("No seating changes to save.");
   }
 
-<<<<<<<<< Temporary merge branch 1
-  let employees = await listEmployees();
+  let employees = await listEmployees({ companyId: input.companyId });
   await recordSeatHistoryForChanges({
-=========
-  let employees = await listEmployees({ companyId });
-  await recordSeatHistoryForChanges({
-    companyId,
->>>>>>>>> Temporary merge branch 2
+    companyId: input.companyId,
     employees,
     changes,
     actor: input.actor,
   });
 
   for (const change of changes) {
-    await applyChangeOnServer(change);
+    await applyChangeOnServer(input.companyId, change);
   }
 
-<<<<<<<<< Temporary merge branch 1
-  employees = await listEmployees();
-=========
-  employees = await listEmployees({ companyId });
->>>>>>>>> Temporary merge branch 2
+  employees = await listEmployees({ companyId: input.companyId });
   const offices = [...new Set(changes.map((change) => normalizeOfficeSlug(change.officeSlug)))];
   const versions: SeatingVersionDTO[] = [];
 
   for (const office of offices) {
-    const plan = await getFloorPlanBySlug(office);
+    const plan = await getFloorPlanBySlug(input.companyId, office);
     if (!plan) continue;
     const officeChanges = changes.filter(
       (change) => normalizeOfficeSlug(change.officeSlug) === office,
     );
     const snapshot = snapshotFromPlan(employees, plan);
-    const version = await nextVersionNumber(office);
+    const version = await nextVersionNumber(input.companyId, office);
     versions.push(
       await insertVersion({
+        companyId: toCompanyObjectId(input.companyId),
         officeSlug: office,
         version,
         createdAt: new Date(),
@@ -225,6 +231,6 @@ export async function saveSeatingVersion(input: {
     );
   }
 
-  employees = await listEmployees();
+  employees = await listEmployees({ companyId: input.companyId });
   return { versions, employees };
 }

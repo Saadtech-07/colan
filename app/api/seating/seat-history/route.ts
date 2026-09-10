@@ -8,7 +8,10 @@ export async function GET(req: Request) {
   const session = await auth();
 
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 },
+    );
   }
 
   const ctx = await requireTenantContext();
@@ -18,6 +21,7 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
+
   const officeSlug = normalizeOfficeSlug(
     url.searchParams.get("officeSlug"),
   );
@@ -41,8 +45,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ entries });
   } catch (e) {
     const msg =
-      e instanceof Error ? e.message : "Failed to load seat history";
+      e instanceof Error
+        ? e.message
+        : "Failed to load seat history";
 
-    return NextResponse.json({ error: msg }, { status: 503 });
+    return NextResponse.json(
+      { error: msg },
+      { status: 503 },
+    );
   }
 }
