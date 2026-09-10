@@ -8,3 +8,4 @@ export async function GET() {
   const stats = await getPlatformDashboardStats();
   return NextResponse.json(stats);
 }
+

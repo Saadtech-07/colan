@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireTenantContext } from "@/lib/api/tenant-context";
-import { listEmployees } from "@/lib/data-service";
+import { listSeatedEmployeesForOffice } from "@/lib/data-service";
 import { getFloorPlanBySlug, normalizeOfficeSlug } from "@/lib/floor-plans";
 import { employeeEligibleForSeating } from "@/lib/workspace-identity";
 
@@ -19,7 +19,11 @@ export async function GET(_req: Request, { params }: Params) {
       return NextResponse.json({ error: "Floor plan not found" }, { status: 404 });
     }
 
-    const employees = await listEmployees({ companyId: ctx.companyId });
+    const seated = await listSeatedEmployeesForOffice(
+      ctx.companyId,
+      officeSlug,
+      plan.seatIds,
+    );
     const bySeat = new Map<
       string,
       {
@@ -32,12 +36,10 @@ export async function GET(_req: Request, { params }: Params) {
       }
     >();
 
-    for (const emp of employees) {
-      if (!employeeEligibleForSeating(emp)) continue;
-      if (!emp.bayNumber || !plan.seatIds.includes(emp.bayNumber)) continue;
-      const empOffice = normalizeOfficeSlug(emp.officeSlug);
-      if (empOffice !== officeSlug) continue;
-      if (bySeat.has(emp.bayNumber)) continue;
+    for (const emp of seated) {
+      if (!employeeEligibleForSeating(emp) || !emp.bayNumber || bySeat.has(emp.bayNumber)) {
+        continue;
+      }
       bySeat.set(emp.bayNumber, {
         id: emp.id,
         employeeId: emp.employeeId,
