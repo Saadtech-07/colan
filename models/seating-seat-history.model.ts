@@ -19,7 +19,7 @@ export type SeatHistoryDocument = {
   _id: ObjectId;
   companyId: ObjectId;
   officeSlug: string;
-  seatId: string;
+  seatId: string; 
   action: SeatHistoryAction;
   employeeName: string;
   employeeId?: string;

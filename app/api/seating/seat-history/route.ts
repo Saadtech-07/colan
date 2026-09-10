@@ -8,17 +8,32 @@ export async function GET(req: Request) {
   if (ctx instanceof Response) return ctx;
 
   const url = new URL(req.url);
-  const officeSlug = normalizeOfficeSlug(url.searchParams.get("officeSlug"));
+
+  const officeSlug = normalizeOfficeSlug(
+    url.searchParams.get("officeSlug"),
+  );
+
   const seatId = url.searchParams.get("seatId")?.trim() ?? "";
+
   if (!seatId) {
-    return NextResponse.json({ error: "seatId is required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "seatId is required" },
+      { status: 400 },
+    );
   }
 
   try {
     const entries = await listSeatHistory(ctx.companyId, officeSlug, seatId);
     return NextResponse.json({ entries });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Failed to load seat history";
-    return NextResponse.json({ error: msg }, { status: 503 });
+    const msg =
+      e instanceof Error
+        ? e.message
+        : "Failed to load seat history";
+
+    return NextResponse.json(
+      { error: msg },
+      { status: 503 },
+    );
   }
 }

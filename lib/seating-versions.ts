@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { allowInMemoryFallback } from "@/lib/data-backend";
+import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { ensureColanModelIndexes } from "@/models/indexes";
 import { COLLECTIONS } from "@/models/collections";
 import {
@@ -16,7 +17,6 @@ import {
 } from "@/lib/floor-plans";
 import type { FloorPlanDTO } from "@/models/floor-plan.model";
 import { normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
-import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { snapshotFromPlan } from "@/lib/seating-draft";
 import { recordSeatHistoryForChanges } from "@/lib/seating-seat-history";
 import type { SeatingPendingChange } from "@/lib/seating-draft";
@@ -69,7 +69,7 @@ async function nextVersionNumber(companyId: string, officeSlug: string): Promise
   const db = await getDb();
   if (!db) {
     const latest = memoryVersions
-      .filter((row) => row.officeSlug === office)
+      .filter((row) => row.companyId.toHexString() === companyId && row.officeSlug === office)
       .reduce((max, row) => Math.max(max, row.version), 0);
     return latest + 1;
   }
@@ -94,7 +94,7 @@ export async function listSeatingVersions(
       throw new Error("MongoDB is not available.");
     }
     return memoryVersions
-      .filter((row) => row.officeSlug === office)
+      .filter((row) => row.companyId.toHexString() === companyId && row.officeSlug === office)
       .sort((a, b) => b.version - a.version)
       .map((row) => toSummary(memoryToDoc(row)));
   }
@@ -117,7 +117,9 @@ export async function getSeatingVersion(
     if (!allowInMemoryFallback()) {
       throw new Error("MongoDB is not available.");
     }
-    const row = memoryVersions.find((item) => item.id === id);
+    const row = memoryVersions.find(
+      (item) => item.id === id && item.companyId.toHexString() === companyId,
+    );
     return row ? toDto(memoryToDoc(row)) : null;
   }
   if (!ObjectId.isValid(id)) return null;
