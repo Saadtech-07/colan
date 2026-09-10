@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import colanlogo2 from "../image/colanlogo2.png";
+// import colanlogo2 from "../image/colanlogo2.png";
 
 function LoginSuccessBanner() {
   const searchParams = useSearchParams();
@@ -100,9 +100,9 @@ function LoginPageContent() {
         {/* Left Side */}
         <div className="hidden flex-col justify-between bg-gradient-to-br from-primary/20 via-blue-500/10 to-fuchsia-500/10 p-10 text-white lg:flex">
           <div>
-            <div className="-mt-6 mb-4 flex h-25 w-50 items-center justify-center">
+            {/* <div className="-mt-6 mb-4 flex h-25 w-50 items-center justify-center">
               <img src="https://colaninfotech.com/wp-content/uploads/2020/09/colan-logo.png" alt="" />
-            </div>
+            </div> */}
 
 
 
@@ -146,13 +146,13 @@ function LoginPageContent() {
 
               {/* Header */}
               <div className="mb-8 text-center">
-                <div className="mx-auto mb-4 flex h-16 w-50 items-center justify-center ">
+                {/* <div className="mx-auto mb-4 flex h-16 w-50 items-center justify-center ">
                   <img
                     src={colanlogo2.src}
                     alt="Colan Logo"
                     className="h-16 w-16 object-contain"
                   />
-                </div>
+                </div> */}
 
                 <h2 className="text-3xl font-bold tracking-tight">
                   Welcome Back
