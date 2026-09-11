@@ -7,12 +7,7 @@ export class DataBackendError extends Error {
   }
 }
 
-/** When true, empty MongoDB collections may be filled with demo rows from mock-data. */
-export function isDemoSeedEnabled(): boolean {
-  return process.env.ENABLE_DEMO_SEED?.trim().toLowerCase() === "true";
-}
-
-/** In-memory mock data is only used when Atlas is not configured at all. */
+/** In-memory storage is only used when Atlas is not configured at all. */
 export function allowInMemoryFallback(): boolean {
   return !isMongoConfigured();
 }

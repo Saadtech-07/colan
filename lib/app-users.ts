@@ -21,7 +21,7 @@ import { addressesFromDirectory, directoryPatchFromAddresses, employeeDetailsFie
 import { ensureRoleRegistry } from "@/lib/role-registry.server";
 import { getRoleFromRegistry } from "@/lib/role-registry";
 import { resolveDefaultCompanyId } from "@/lib/companies";
-import { DEMO_COMPANY_ID, toCompanyObjectId } from "@/lib/tenant-scope";
+import { toCompanyObjectId } from "@/lib/tenant-scope";
 import { isValidSeatId } from "@/lib/seating-layout";
 import {
   roleEligibleForOfficeSeat,
@@ -39,147 +39,14 @@ export type VerifiedAppUser = {
   appUserId: string;
 };
 
-type SeedUser = {
-  email: string;
-  password: string;
-  name: string;
-  appRole: AppRole;
-  team?: TeamName;
-  employeeId: string;
-  imageUrl: string;
-  isProfileCompleted?: boolean;
-};
-
-const SEED_USERS: SeedUser[] = [
-  {
-    email: "admin@colan.io",
-    password: "admin123",
-    name: "Alex Morgan",
-    appRole: "admin",
-    employeeId: "COL-9001",
-    imageUrl: "",
-    isProfileCompleted: true,
-  },
-  {
-    email: "manager@colan.io",
-    password: "manager123",
-    name: "Sofia Nielsen",
-    appRole: "manager",
-    employeeId: "COL-9002",
-    imageUrl: "",
-    isProfileCompleted: true,
-  },
-  {
-    email: "lead@colan.io",
-    password: "lead123",
-    name: "Priya Sharma",
-    appRole: "lead",
-    team: "React Team",
-    employeeId: "COL-9003",
-    imageUrl: "",
-    isProfileCompleted: true,
-  },
-  {
-    email: "employee@colan.io",
-    password: "employee123",
-    name: "Jamie Chen",
-    appRole: "employee",
-    team: "React Team",
-    employeeId: "COL-9004",
-    imageUrl: "",
-    isProfileCompleted: true,
-  },
-];
-
-const DEV_APP_USERS = SEED_USERS;
-
 function normalizeProfileCompleted(value: boolean | undefined): boolean {
   return value ?? true;
 }
-
-async function isSeedSuppressed(
-  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-  email: string,
-): Promise<boolean> {
-  const suppressed = await db
-    .collection<{ email: string }>(COLLECTIONS.appUserSeedSuppressions)
-    .findOne({ email: email.toLowerCase().trim() });
-  return Boolean(suppressed);
-}
-
-async function suppressSeedUser(
-  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-  email: string,
-): Promise<void> {
-  const normalized = email.toLowerCase().trim();
-  if (!SEED_USERS.some((user) => user.email === normalized)) return;
-
-  const col = db.collection<{ email: string; suppressedAt: Date }>(
-    COLLECTIONS.appUserSeedSuppressions,
-  );
-  await col.createIndex({ email: 1 }, { unique: true });
-  await col.updateOne(
-    { email: normalized },
-    { $set: { email: normalized, suppressedAt: new Date() } },
-    { upsert: true },
-  );
-}
-
-async function upsertSeedUser(
-  col: import("mongodb").Collection<AppUserDocument>,
-  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-  u: SeedUser,
-  rounds: number,
-  companyId: import("mongodb").ObjectId,
-) {
-  const existing = await col.findOne({ email: u.email });
-  if (existing) {
-    if (!existing.companyId) {
-      await col.updateOne({ _id: existing._id }, { $set: { companyId, updatedAt: new Date() } });
-    }
-    if (!existing.employeeId?.trim()) {
-      await col.updateOne(
-        { _id: existing._id },
-        { $set: { employeeId: u.employeeId, updatedAt: new Date() } },
-      );
-    }
-    return;
-  }
-  if (await isSeedSuppressed(db, u.email)) return;
-
-  await col.insertOne({
-    _id: new ObjectId(),
-    companyId,
-    email: u.email,
-    passwordHash: await bcrypt.hash(u.password, rounds),
-    name: u.name,
-    appRole: u.appRole,
-    team: u.team,
-    employeeId: u.employeeId,
-    imageUrl: u.imageUrl,
-    isProfileCompleted: normalizeProfileCompleted(u.isProfileCompleted),
-    updatedProfileAt: new Date(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
-}
-
-/** Seeds demo login accounts into Atlas (idempotent). Safe to call from workspace init. */
-export async function ensureAppUsersSeed(
+export async function ensureAppUserIndexes(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
 ) {
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   await col.createIndex({ email: 1 }, { unique: true });
-  const { ensureDefaultCompany } = await import("@/lib/tenant-migration");
-  const companyId = await ensureDefaultCompany(db);
-  const rounds = 10;
-  for (const u of SEED_USERS) {
-    await upsertSeedUser(col, db, u, rounds, companyId);
-  }
-  await col.updateMany(
-    { isProfileCompleted: { $exists: false } },
-    { $set: { isProfileCompleted: true, updatedProfileAt: new Date() } },
-  );
 }
 
 export type AppUserCreateInput = {
@@ -270,7 +137,7 @@ export type ProfileSetupUpdateInput = {
 export async function listAppUsers(companyId: string): Promise<ReturnType<typeof appUserDocToPublic>[]> {
   const db = await getDb();
   if (!db) throw new Error("MongoDB is not configured.");
-  await ensureAppUsersSeed(db);
+  await ensureAppUserIndexes(db);
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   const docs = await col
     .find({ companyId: toCompanyObjectId(companyId) })
@@ -339,7 +206,7 @@ export async function getAppUserPublicById(
 ): Promise<ReturnType<typeof appUserDocToPublic> | null> {
   const db = await getDb();
   if (!db || !ObjectId.isValid(id)) return null;
-  await ensureAppUsersSeed(db);
+  await ensureAppUserIndexes(db);
   const doc = await db
     .collection<AppUserDocument>(COLLECTIONS.appUsers)
     .findOne({ _id: new ObjectId(id) });
@@ -386,7 +253,7 @@ export async function createAppUser(
 ): Promise<ReturnType<typeof appUserDocToPublic>> {
   const db = await getDb();
   if (!db) throw new Error("MongoDB is not configured.");
-  await ensureAppUsersSeed(db);
+  await ensureAppUserIndexes(db);
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   const email = input.email.toLowerCase().trim();
   const needsEmployeeIdentity = roleNeedsEmployeeIdentity(input.appRole);
@@ -856,7 +723,6 @@ export async function deleteAppUser(id: string) {
   }
 
   await col.deleteOne({ _id: userObjectId });
-  await suppressSeedUser(db, user.email);
 
   if (employeeRefs.length > 0) {
     await detailsCol.deleteMany({ employeeRef: { $in: employeeRefs } });
@@ -875,21 +741,10 @@ export async function verifyAppUserCredentials(
 
   const db = await getDb();
   if (!db) {
-    const u = DEV_APP_USERS.find((x) => x.email === normalized);
-    if (!u || u.password !== password) return null;
-    return {
-      email: u.email,
-      name: u.name,
-      appRole: u.appRole,
-      team: u.team,
-      imageUrl: u.imageUrl,
-      isProfileCompleted: normalizeProfileCompleted(u.isProfileCompleted),
-      companyId: DEMO_COMPANY_ID,
-      appUserId: "dev-user-id",
-    };
+    return null;
   }
 
-  await ensureAppUsersSeed(db);
+  await ensureAppUserIndexes(db);
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   let doc = await col.findOne({ email: normalized });
   if (!doc) {
@@ -916,11 +771,9 @@ export async function verifyAppUserCredentials(
     if (company?.status === "inactive") return null;
   }
   const appRole = normalizeAppRole(doc.appRole);
-  const seedRow = SEED_USERS.find((s) => s.email === normalized);
-  const teamFromSeed = seedRow?.team;
   const team =
-    roleNeedsTeam(appRole) && (doc.team ?? teamFromSeed)
-      ? ((doc.team ?? teamFromSeed) as TeamName)
+    roleNeedsTeam(appRole) && doc.team
+      ? (doc.team as TeamName)
       : undefined;
   return {
     email: doc.email,
@@ -942,20 +795,10 @@ export async function getAppUserSessionRefresh(
 
   const db = await getDb();
   if (!db) {
-    const user = DEV_APP_USERS.find((item) => item.email === normalized);
-    if (!user) return null;
-    return {
-      name: user.name,
-      appRole: user.appRole,
-      team: user.team,
-      imageUrl: user.imageUrl,
-      isProfileCompleted: normalizeProfileCompleted(user.isProfileCompleted),
-      companyId: DEMO_COMPANY_ID,
-      appUserId: "dev-user-id",
-    };
+    return null;
   }
 
-  await ensureAppUsersSeed(db);
+  await ensureAppUserIndexes(db);
   const doc = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).findOne({ email: normalized });
   if (!doc) return null;
 
@@ -996,22 +839,10 @@ export async function getCurrentAppUserProfile(email: string): Promise<AppUserPr
 
   const db = await getDb();
   if (!db) {
-    const user = DEV_APP_USERS.find((item) => item.email === normalized);
-    if (!user) throw new Error("User not found.");
-    return {
-      email: user.email,
-      name: user.name,
-      appRole: user.appRole,
-      team: user.team,
-      employeeId: "DEV-USER",
-      imageUrl: user.imageUrl,
-      isProfileCompleted: normalizeProfileCompleted(user.isProfileCompleted),
-      updatedProfileAt: new Date().toISOString(),
-      workEmail: user.email,
-    };
+    throw new Error("MongoDB is not configured.");
   }
 
-  await ensureAppUsersSeed(db);
+  await ensureAppUserIndexes(db);
   const doc = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).findOne({ email: normalized });
   if (!doc) throw new Error("User not found.");
 
@@ -1126,21 +957,10 @@ export async function getCurrentAppUserProfileMinimal(
 
   const db = await getDb();
   if (!db) {
-    const user = DEV_APP_USERS.find((item) => item.email === normalized);
-    if (!user) throw new Error("User not found.");
-    return {
-      email: user.email,
-      name: user.name,
-      appRole: user.appRole,
-      team: user.team,
-      employeeId: "DEV-USER",
-      imageUrl: user.imageUrl,
-      isProfileCompleted: normalizeProfileCompleted(user.isProfileCompleted),
-      updatedProfileAt: new Date().toISOString(),
-    };
+    throw new Error("MongoDB is not configured.");
   }
 
-  await ensureAppUsersSeed(db);
+  await ensureAppUserIndexes(db);
   const doc = await db.collection<AppUserDocument>(COLLECTIONS.appUsers).findOne({ email: normalized });
   if (!doc) throw new Error("User not found.");
 
@@ -1245,7 +1065,7 @@ export async function completeCurrentAppUserProfile(
   const db = await getDb();
   if (!db) throw new Error("MongoDB is not configured.");
 
-  await ensureAppUsersSeed(db);
+  await ensureAppUserIndexes(db);
   const col = db.collection<AppUserDocument>(COLLECTIONS.appUsers);
   const current = await col.findOne({ email });
   if (!current) throw new Error("User not found.");

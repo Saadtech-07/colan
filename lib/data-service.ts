@@ -1,13 +1,10 @@
 import {
-  MongoBulkWriteError,
-  MongoServerError,
   ObjectId,
   type Db,
 } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import {
   allowInMemoryFallback,
-  isDemoSeedEnabled,
   requireDb,
 } from "@/lib/data-backend";
 import { memoryStore } from "@/lib/memory-store";
@@ -50,16 +47,11 @@ import {
   type TeamDocument,
   type AppUserDocument,
 } from "@/models";
-import { ensureAppUsersSeed, getAppUserPublicById } from "@/lib/app-users";
+import { getAppUserPublicById } from "@/lib/app-users";
 import { collectLinkedEmployeeIds } from "@/lib/employee-app-user-link";
 import { isProjectManagerAppRole } from "@/lib/project-managers";
 import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { ensureWorkspaceReady } from "@/lib/workspace-ready";
-import {
-  MOCK_EMPLOYEES,
-  MOCK_GALLERY,
-  MOCK_PROJECTS,
-} from "@/lib/mock-data";
 
 function resolveMembers(memberIds: string[], all: Employee[]): Employee[] {
   if (memberIds.length === 0) return [];
@@ -81,10 +73,10 @@ function toDetail(project: Project, allEmployees: Employee[]): ProjectDetail {
 
 declare global {
   // eslint-disable-next-line no-var
-  var __colanMongoSeedPromise: Map<string, Promise<void>> | undefined;
+  var __colanMongoReadyPromise: Map<string, Promise<void>> | undefined;
 }
 
-function mongoSeedCacheKey(db: Db): string {
+function mongoReadyCacheKey(db: Db): string {
   return db.databaseName;
 }
 
@@ -187,32 +179,6 @@ async function backfillProjectSlugs(db: Db) {
   }
 }
 
-function isDuplicateKeyError(e: unknown): boolean {
-  if (e instanceof MongoBulkWriteError) {
-    if (e.code === 11000 || e.code === 11001) return true;
-    const we = e.writeErrors;
-    if (Array.isArray(we)) {
-      return we.some((w) => w.code === 11000 || w.code === 11001);
-    }
-    if (we && typeof we === "object" && "code" in we) {
-      const code = (we as { code?: number }).code;
-      return code === 11000 || code === 11001;
-    }
-    return false;
-  }
-  if (e instanceof MongoServerError)
-    return e.code === 11000 || e.code === 11001;
-  return false;
-}
-
-async function safeSeedInsert(run: () => Promise<unknown>): Promise<void> {
-  try {
-    await run();
-  } catch (e) {
-    if (!isDuplicateKeyError(e)) throw e;
-  }
-}
-
 async function backfillEmployeeGender(db: Db) {
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   await col.updateMany(
@@ -238,101 +204,26 @@ async function repairProjectMemberIds(
   }
 }
 
-async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
-  const pr = db.collection<ProjectDocument>(COLLECTIONS.projects);
-  const em = db.collection<EmployeeDocument>(COLLECTIONS.employees);
-
-  const { ensureTeamsSeed } = await import("@/lib/teams-data");
-  const { ensureRolesSeed } = await import("@/lib/roles-data");
-  const { ensureFloorPlanSeeds } = await import("@/lib/floor-plans");
-  const { resolveDefaultCompanyId } = await import("@/lib/companies");
-  const defaultCompanyId = await resolveDefaultCompanyId();
-  await ensureAppUsersSeed(db);
-  await ensureTeamsSeed(db);
-  await ensureRolesSeed(db);
-  await ensureFloorPlanSeeds(db, defaultCompanyId);
-
-  if (isDemoSeedEnabled() && (await em.countDocuments()) === 0) {
-    await safeSeedInsert(() =>
-      em.insertMany(
-        MOCK_EMPLOYEES.map(({ id: _id, ...rest }) => ({
-          ...rest,
-          _id: new ObjectId(),
-        })) as EmployeeDocument[],
-      ),
-    );
-  }
-
-  if (isDemoSeedEnabled() && (await pr.countDocuments()) === 0) {
-    const employees = await em.find({}).toArray();
-    const docs: ProjectDocument[] = MOCK_PROJECTS.map(
-      ({ id: _id, memberIds: _m, teams, ...rest }) => {
-        const teamEmps = employees.filter((e) => teams.includes(e.team));
-        return {
-          ...rest,
-          teams,
-          memberIds: teamEmps.slice(0, 2).map((e) => e._id.toHexString()),
-          _id: new ObjectId(),
-        };
-      },
-    );
-    await safeSeedInsert(() => pr.insertMany(docs));
-  }
-
-  const ga = db.collection<GalleryImageDocument>(COLLECTIONS.gallery);
-  if (isDemoSeedEnabled() && (await ga.countDocuments()) === 0) {
-    await safeSeedInsert(() =>
-      ga.insertMany(
-        MOCK_GALLERY.map(({ id: _id, ...rest }) => ({
-          ...rest,
-          _id: new ObjectId(),
-        })) as GalleryImageDocument[],
-      ),
-    );
-  }
-
+async function ensureMongoReadyWork(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
   await backfillProjectSlugs(db);
   await backfillProjectTeams(db);
   await backfillProjectMetadata(db);
   await repairProjectMemberIds(db);
   await backfillEmployeeGender(db);
 
-  const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
-  if (
-    isDemoSeedEnabled() &&
-    (await det.countDocuments()) === 0 &&
-    (await em.countDocuments()) > 0
-  ) {
-    const everyone = await em.find({}).toArray();
-    await safeSeedInsert(() =>
-      det.insertMany(
-        everyone.map((emp, i) => ({
-          _id: new ObjectId(),
-          employeeRef: emp._id,
-          workEmail: `${emp.employeeId.toLowerCase().replace(/[^a-z0-9]+/g, ".")}@colan.io`,
-          phone: `+1-555-${String(1000 + (i % 9000)).padStart(4, "0")}`,
-          location: ["Chennai HQ", "Remote", "Singapore"][i % 3],
-          joinedDate: `202${3 + (i % 3)}-${String(((i * 3) % 9) + 1).padStart(2, "0")}-15`,
-          notes: "Seeded employee_details row for Atlas demo.",
-          updatedAt: new Date(),
-        })),
-      ),
-    );
-  }
-
   await purgeOrphanEmployeeRecords(db);
 }
 
-/** Seed, backfill, and index setup — once per database per server process. */
-export async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
-  const key = mongoSeedCacheKey(db);
-  if (!globalThis.__colanMongoSeedPromise) {
-    globalThis.__colanMongoSeedPromise = new Map();
+/** Backfill legacy records once per database per server process. */
+export async function ensureMongoReady(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  const key = mongoReadyCacheKey(db);
+  if (!globalThis.__colanMongoReadyPromise) {
+    globalThis.__colanMongoReadyPromise = new Map();
   }
-  let pending = globalThis.__colanMongoSeedPromise.get(key);
+  let pending = globalThis.__colanMongoReadyPromise.get(key);
   if (!pending) {
-    pending = ensureMongoSeedWork(db);
-    globalThis.__colanMongoSeedPromise.set(key, pending);
+    pending = ensureMongoReadyWork(db);
+    globalThis.__colanMongoReadyPromise.set(key, pending);
   }
   return pending;
 }
@@ -605,7 +496,7 @@ async function createEmployeeInDb(
     notes: "Created with this employee record.",
     updatedAt: new Date(),
   };
-  await safeSeedInsert(() => det.insertOne(detailDoc));
+  await det.insertOne(detailDoc);
   return {
     ...employeeDocToDTO(doc),
     directory: detailsToDirectory(employeeDetailsDocToDTO(detailDoc)),
@@ -618,7 +509,7 @@ export async function createEmployee(
 ): Promise<Employee> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
-    await ensureMongoSeed(db);
+    await ensureMongoReady(db);
     return createEmployeeInDb(db, companyId, input);
   }
   const db = await getDb();
@@ -638,7 +529,7 @@ export async function createEmployee(
     list.push(row);
     return row;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   return createEmployeeInDb(db, companyId, input);
 }
 
@@ -732,7 +623,7 @@ export async function updateEmployee(
       if (bay) {
         await assignEmployeeToBay(companyId, bay, normalizedId);
       } else {
-        await ensureMongoSeed(db);
+        await ensureMongoReady(db);
         await db
           .collection<EmployeeDocument>(COLLECTIONS.employees)
           .updateOne(
@@ -813,7 +704,7 @@ export async function updateEmployee(
     throw new Error("Invalid employee id");
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const oid = new ObjectId(normalizedId);
   const scope = companyScope<EmployeeDocument>(companyId);
@@ -989,7 +880,7 @@ export async function assignEmployeeToBay(
     }
     return;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const scope = companyScope<EmployeeDocument>(companyId);
   const now = new Date();
@@ -1058,7 +949,7 @@ export async function swapEmployeesBetweenBays(
     return;
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const scope = companyScope<EmployeeDocument>(companyId);
   const seated = await col
@@ -1137,7 +1028,7 @@ export async function assignEmployeeToCabin(
     }
     return;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const scope = companyScope<EmployeeDocument>(companyId);
   const now = new Date();
@@ -1210,7 +1101,7 @@ export async function setCabinEmployees(
     return;
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const scope = companyScope<EmployeeDocument>(companyId);
   const now = new Date();
@@ -1266,7 +1157,7 @@ export async function listSeatedEmployeesForOffice(
     );
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const rows = await db
     .collection<EmployeeDocument>(COLLECTIONS.employees)
     .find({
@@ -1317,7 +1208,7 @@ async function listProjectsFromDb(
 export async function getProjectBySlug(slug: string): Promise<Project | null> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
-    await ensureMongoSeed(db);
+    await ensureMongoReady(db);
     return getProjectBySlugFromDb(db, slug);
   }
   const db = await getDb();
@@ -1407,7 +1298,7 @@ export async function createProject(
     }
     return row;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<ProjectDocument>(COLLECTIONS.projects);
   const existing = await col.find({}, { projection: { slug: 1 } }).toArray();
   const slug =
@@ -1493,7 +1384,7 @@ export async function updateProjectBySlug(
     }
     return next;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<ProjectDocument>(COLLECTIONS.projects);
   const existing = await col.findOne({ slug });
   if (!existing) return null;
@@ -1527,7 +1418,7 @@ export async function getProjectById(id: string): Promise<Project | null> {
   if (!ObjectId.isValid(id)) return null;
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
-    await ensureMongoSeed(db);
+    await ensureMongoReady(db);
     return getProjectByIdFromDb(db, id);
   }
   const db = await getDb();
@@ -1624,7 +1515,7 @@ export async function setEmployeeProjects(
 export async function listGallery(): Promise<GalleryImage[]> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
-    await ensureMongoSeed(db);
+    await ensureMongoReady(db);
     return listGalleryFromDb(db);
   }
   const db = await getDb();
@@ -1655,7 +1546,7 @@ export async function createGalleryItem(
     memoryStore.gallery.unshift(row);
     return row;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const _id = new ObjectId();
   const doc: GalleryImageDocument = { _id, ...input };
   await db.collection<GalleryImageDocument>(COLLECTIONS.gallery).insertOne(doc);
@@ -1688,7 +1579,7 @@ export async function updateGalleryItem(
     return { ...next };
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   if (!ObjectId.isValid(normalizedId)) throw new Error("Gallery item not found");
 
   const col = db.collection<GalleryImageDocument>(COLLECTIONS.gallery);
@@ -1722,7 +1613,7 @@ export async function deleteGalleryItem(id: string): Promise<void> {
     return;
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   if (!ObjectId.isValid(normalizedId)) throw new Error("Gallery item not found");
 
   const result = await db

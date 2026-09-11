@@ -1,23 +1,14 @@
 import { ObjectId } from "mongodb";
 import { COLLECTIONS, type CompanyDocument } from "@/models";
 
-/** Ensures the legacy default workspace exists and backfills tenant fields on old rows. */
+/** Backfills tenant fields on legacy rows when the default workspace already exists. */
 export async function ensureDefaultCompany(
   db: NonNullable<Awaited<ReturnType<typeof import("@/lib/mongodb").getDb>>>,
 ): Promise<ObjectId> {
   const col = db.collection<CompanyDocument>(COLLECTIONS.companies);
   let doc = await col.findOne({ slug: "colan" });
   if (!doc) {
-    const _id = new ObjectId();
-    const now = new Date();
-    doc = {
-      _id,
-      name: "Colan Infotech",
-      slug: "colan",
-      createdAt: now,
-      updatedAt: now,
-    };
-    await col.insertOne(doc);
+    return new ObjectId("000000000000000000000001");
   }
   await backfillCompanyIds(db, doc._id);
   return doc._id;
