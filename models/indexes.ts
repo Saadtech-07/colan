@@ -188,10 +188,6 @@ async function ensureColanModelIndexesWork(db: Db): Promise<void> {
   });
 
   await db
-    .collection(COLLECTIONS.floorPlanSeedSuppressions)
-    .createIndex({ companyId: 1, slug: 1 }, { unique: true });
-
-  await db
     .collection<TeamMemberDocument>(COLLECTIONS.teamMembers)
     .createIndex({ appUserEmail: 1 }, { unique: true });
   await db.collection<TeamMemberDocument>(COLLECTIONS.teamMembers).createIndex({ employeeRef: 1 });

@@ -1,5 +1,5 @@
 import type { Db } from "mongodb";
-import { ensureMongoSeed } from "@/lib/data-service";
+import { ensureMongoReady } from "@/lib/data-service";
 import { ensureColanModelIndexes } from "@/models";
 
 declare global {
@@ -7,7 +7,7 @@ declare global {
   var __colanWorkspaceReady: Map<string, Promise<void>> | undefined;
 }
 
-/** One-time indexes + demo seed per database per process. Safe on every read path. */
+/** One-time indexes and legacy backfills per database per process. */
 export async function ensureWorkspaceReady(db: Db): Promise<void> {
   const key = db.databaseName;
   if (!globalThis.__colanWorkspaceReady) {
@@ -17,7 +17,7 @@ export async function ensureWorkspaceReady(db: Db): Promise<void> {
   if (!pending) {
     pending = (async () => {
       await ensureColanModelIndexes(db);
-      await ensureMongoSeed(db);
+      await ensureMongoReady(db);
     })();
     globalThis.__colanWorkspaceReady.set(key, pending);
   }

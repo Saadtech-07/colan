@@ -2,7 +2,6 @@ import { MongoServerError, ObjectId, type Db } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { memoryStore } from "@/lib/memory-store";
 import {
-  DEFAULT_TEAM_NAMES,
   normalizeTeamCode,
   normalizeTeamName,
   teamCodeFromName,
@@ -19,33 +18,6 @@ import { ensureWorkspaceReady } from "@/lib/workspace-ready";
 
 function isDuplicateKeyError(e: unknown): boolean {
   return e instanceof MongoServerError && (e.code === 11000 || e.code === 11001);
-}
-
-async function safeSeedInsert(run: () => Promise<unknown>): Promise<void> {
-  try {
-    await run();
-  } catch (e) {
-    if (!isDuplicateKeyError(e)) throw e;
-  }
-}
-
-export async function ensureTeamsSeed(
-  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-): Promise<void> {
-  const col = db.collection<TeamDocument>(COLLECTIONS.teams);
-  if ((await col.countDocuments()) > 0) return;
-
-  const docs: TeamDocument[] = DEFAULT_TEAM_NAMES.map((name, index) => ({
-    _id: new ObjectId(),
-    name,
-    slug: teamSlugFromName(name),
-    code: teamCodeFromName(name),
-    displayOrder: index,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  }));
-
-  await safeSeedInsert(() => col.insertMany(docs));
 }
 
 export async function listTeams(): Promise<TeamDTO[]> {
@@ -148,8 +120,6 @@ export async function createTeam(input: TeamUpsertInput): Promise<TeamDTO> {
   }
 
   await ensureWorkspaceReady(db);
-  await ensureTeamsSeed(db);
-
   const col = db.collection<TeamDocument>(COLLECTIONS.teams);
   const duplicate = await col.findOne({
     $or: [{ name }, { slug }, { code }],
@@ -200,8 +170,6 @@ export async function getTeamById(id: string): Promise<TeamDTO | null> {
   if (!ObjectId.isValid(id)) return null;
 
   await ensureWorkspaceReady(db);
-  await ensureTeamsSeed(db);
-
   const doc = await db
     .collection<TeamDocument>(COLLECTIONS.teams)
     .findOne({ _id: new ObjectId(id) });
@@ -290,8 +258,6 @@ export async function updateTeam(id: string, input: TeamUpsertInput): Promise<Te
   if (!ObjectId.isValid(id)) return null;
 
   await ensureWorkspaceReady(db);
-  await ensureTeamsSeed(db);
-
   const col = db.collection<TeamDocument>(COLLECTIONS.teams);
   const current = await col.findOne({ _id: new ObjectId(id) });
   if (!current) return null;
@@ -377,8 +343,6 @@ export async function deleteTeam(id: string): Promise<boolean> {
   if (!ObjectId.isValid(id)) return false;
 
   await ensureWorkspaceReady(db);
-  await ensureTeamsSeed(db);
-
   const col = db.collection<TeamDocument>(COLLECTIONS.teams);
   const current = await col.findOne({ _id: new ObjectId(id) });
   if (!current) return false;

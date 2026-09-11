@@ -1,4 +1,4 @@
-/** Pre-connect MongoDB and run one-time index/seed setup before the first API request. */
+/** Pre-connect MongoDB and run one-time setup before the first API request. */
 export async function warmWorkspaceOnStartup(): Promise<void> {
   try {
     const { getDb } = await import("@/lib/mongodb");

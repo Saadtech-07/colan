@@ -4,7 +4,7 @@ import type { DataLayerSummary } from "@/types/data-layer";
 
 /**
  * Fast connectivity + document counts for the dashboard.
- * Does not run index setup, seeding, or full collection scans.
+ * Does not run index setup or full collection scans.
  */
 export async function getDataLayerSummary(): Promise<DataLayerSummary> {
   if (!isMongoConfigured()) {
