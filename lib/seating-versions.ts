@@ -1,6 +1,7 @@
 import { ObjectId } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import { allowInMemoryFallback } from "@/lib/data-backend";
+import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { ensureColanModelIndexes } from "@/models/indexes";
 import { COLLECTIONS } from "@/models/collections";
 import {
@@ -10,9 +11,12 @@ import {
   setCabinEmployees,
   swapEmployeesBetweenBays,
 } from "@/lib/data-service";
-import { getFloorPlanBySlug, swapFloorPlanCabins } from "@/lib/floor-plans";
+import {
+  getFloorPlansBySlugs,
+  swapFloorPlanCabins,
+} from "@/lib/floor-plans";
+import type { FloorPlanDTO } from "@/models/floor-plan.model";
 import { normalizeOfficeSlug } from "@/lib/floor-plan-layouts";
-import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { snapshotFromPlan } from "@/lib/seating-draft";
 import { recordSeatHistoryForChanges } from "@/lib/seating-seat-history";
 import type { SeatingPendingChange } from "@/lib/seating-draft";
@@ -65,7 +69,7 @@ async function nextVersionNumber(companyId: string, officeSlug: string): Promise
   const db = await getDb();
   if (!db) {
     const latest = memoryVersions
-      .filter((row) => row.officeSlug === office)
+      .filter((row) => row.companyId.toHexString() === companyId && row.officeSlug === office)
       .reduce((max, row) => Math.max(max, row.version), 0);
     return latest + 1;
   }
@@ -90,7 +94,7 @@ export async function listSeatingVersions(
       throw new Error("MongoDB is not available.");
     }
     return memoryVersions
-      .filter((row) => row.officeSlug === office)
+      .filter((row) => row.companyId.toHexString() === companyId && row.officeSlug === office)
       .sort((a, b) => b.version - a.version)
       .map((row) => toSummary(memoryToDoc(row)));
   }
@@ -113,7 +117,9 @@ export async function getSeatingVersion(
     if (!allowInMemoryFallback()) {
       throw new Error("MongoDB is not available.");
     }
-    const row = memoryVersions.find((item) => item.id === id);
+    const row = memoryVersions.find(
+      (item) => item.id === id && item.companyId.toHexString() === companyId,
+    );
     return row ? toDto(memoryToDoc(row)) : null;
   }
   if (!ObjectId.isValid(id)) return null;
@@ -124,16 +130,33 @@ export async function getSeatingVersion(
   return doc ? toDto(doc) : null;
 }
 
-async function applyChangeOnServer(companyId: string, change: SeatingPendingChange): Promise<void> {
+async function applyChangeOnServer(
+  companyId: string,
+  change: SeatingPendingChange,
+  plan: FloorPlanDTO,
+): Promise<void> {
+  const planOpts = { plan };
   switch (change.kind) {
     case "assign-seat":
     case "clear-seat":
       if (!change.seatId) throw new Error("Seat id is required.");
-      await assignEmployeeToBay(companyId, change.seatId, change.employeeId ?? null, change.officeSlug);
+      await assignEmployeeToBay(
+        companyId,
+        change.seatId,
+        change.employeeId ?? null,
+        change.officeSlug,
+        planOpts,
+      );
       return;
     case "move-seat":
       if (!change.toSeatId) throw new Error("Destination seat is required.");
-      await assignEmployeeToBay(companyId, change.toSeatId, change.employeeId ?? null, change.officeSlug);
+      await assignEmployeeToBay(
+        companyId,
+        change.toSeatId,
+        change.employeeId ?? null,
+        change.officeSlug,
+        planOpts,
+      );
       return;
     case "swap-seats":
       if (!change.fromSeatId || !change.toSeatId) {
@@ -144,16 +167,29 @@ async function applyChangeOnServer(companyId: string, change: SeatingPendingChan
         change.fromSeatId,
         change.toSeatId,
         change.officeSlug,
+        planOpts,
       );
       return;
     case "assign-cabin":
     case "clear-cabin":
       if (!change.cabinId) throw new Error("Cabin id is required.");
-      await assignEmployeeToCabin(companyId, change.cabinId, change.employeeId ?? null, change.officeSlug);
+      await assignEmployeeToCabin(
+        companyId,
+        change.cabinId,
+        change.employeeId ?? null,
+        change.officeSlug,
+        planOpts,
+      );
       return;
     case "set-cabin-members":
       if (!change.cabinId) throw new Error("Cabin id is required.");
-      await setCabinEmployees(companyId, change.cabinId, change.employeeIds ?? [], change.officeSlug);
+      await setCabinEmployees(
+        companyId,
+        change.cabinId,
+        change.employeeIds ?? [],
+        change.officeSlug,
+        planOpts,
+      );
       return;
     case "swap-cabins":
       if (!change.fromCabinId || !change.toCabinId) {
@@ -198,24 +234,34 @@ export async function saveSeatingVersion(input: {
     throw new Error("No seating changes to save.");
   }
 
-  let employees = await listEmployees({ companyId });
+  const offices = [...new Set(changes.map((change) => normalizeOfficeSlug(change.officeSlug)))];
+  const planMap = await getFloorPlansBySlugs(companyId, offices);
+  for (const office of offices) {
+    if (!planMap.get(office)?.isActive) {
+      throw new Error(`Unknown office floor plan "${office}".`);
+    }
+  }
+
+  const employeesBefore = await listEmployees({ companyId });
   await recordSeatHistoryForChanges({
     companyId,
-    employees,
+    employees: employeesBefore,
     changes,
     actor: input.actor,
   });
 
   for (const change of changes) {
-    await applyChangeOnServer(companyId, change);
+    const office = normalizeOfficeSlug(change.officeSlug);
+    const plan = planMap.get(office);
+    if (!plan) continue;
+    await applyChangeOnServer(companyId, change, plan);
   }
 
-  employees = await listEmployees({ companyId });
-  const offices = [...new Set(changes.map((change) => normalizeOfficeSlug(change.officeSlug)))];
+  const employees = await listEmployees({ companyId });
   const versions: SeatingVersionDTO[] = [];
 
   for (const office of offices) {
-    const plan = await getFloorPlanBySlug(companyId, office);
+    const plan = planMap.get(office);
     if (!plan) continue;
     const officeChanges = changes.filter(
       (change) => normalizeOfficeSlug(change.officeSlug) === office,
@@ -235,6 +281,5 @@ export async function saveSeatingVersion(input: {
     );
   }
 
-  employees = await listEmployees({ companyId });
   return { versions, employees };
 }

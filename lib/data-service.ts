@@ -1,13 +1,10 @@
 import {
-  MongoBulkWriteError,
-  MongoServerError,
   ObjectId,
   type Db,
 } from "mongodb";
 import { getDb } from "@/lib/mongodb";
 import {
   allowInMemoryFallback,
-  isDemoSeedEnabled,
   requireDb,
 } from "@/lib/data-backend";
 import { memoryStore } from "@/lib/memory-store";
@@ -50,16 +47,11 @@ import {
   type TeamDocument,
   type AppUserDocument,
 } from "@/models";
-import { ensureAppUsersSeed, getAppUserPublicById } from "@/lib/app-users";
+import { getAppUserPublicById } from "@/lib/app-users";
 import { collectLinkedEmployeeIds } from "@/lib/employee-app-user-link";
 import { isProjectManagerAppRole } from "@/lib/project-managers";
 import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { ensureWorkspaceReady } from "@/lib/workspace-ready";
-import {
-  MOCK_EMPLOYEES,
-  MOCK_GALLERY,
-  MOCK_PROJECTS,
-} from "@/lib/mock-data";
 
 function resolveMembers(memberIds: string[], all: Employee[]): Employee[] {
   if (memberIds.length === 0) return [];
@@ -81,10 +73,10 @@ function toDetail(project: Project, allEmployees: Employee[]): ProjectDetail {
 
 declare global {
   // eslint-disable-next-line no-var
-  var __colanMongoSeedPromise: Map<string, Promise<void>> | undefined;
+  var __colanMongoReadyPromise: Map<string, Promise<void>> | undefined;
 }
 
-function mongoSeedCacheKey(db: Db): string {
+function mongoReadyCacheKey(db: Db): string {
   return db.databaseName;
 }
 
@@ -187,32 +179,6 @@ async function backfillProjectSlugs(db: Db) {
   }
 }
 
-function isDuplicateKeyError(e: unknown): boolean {
-  if (e instanceof MongoBulkWriteError) {
-    if (e.code === 11000 || e.code === 11001) return true;
-    const we = e.writeErrors;
-    if (Array.isArray(we)) {
-      return we.some((w) => w.code === 11000 || w.code === 11001);
-    }
-    if (we && typeof we === "object" && "code" in we) {
-      const code = (we as { code?: number }).code;
-      return code === 11000 || code === 11001;
-    }
-    return false;
-  }
-  if (e instanceof MongoServerError)
-    return e.code === 11000 || e.code === 11001;
-  return false;
-}
-
-async function safeSeedInsert(run: () => Promise<unknown>): Promise<void> {
-  try {
-    await run();
-  } catch (e) {
-    if (!isDuplicateKeyError(e)) throw e;
-  }
-}
-
 async function backfillEmployeeGender(db: Db) {
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   await col.updateMany(
@@ -238,101 +204,26 @@ async function repairProjectMemberIds(
   }
 }
 
-async function ensureMongoSeedWork(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
-  const pr = db.collection<ProjectDocument>(COLLECTIONS.projects);
-  const em = db.collection<EmployeeDocument>(COLLECTIONS.employees);
-
-  const { ensureTeamsSeed } = await import("@/lib/teams-data");
-  const { ensureRolesSeed } = await import("@/lib/roles-data");
-  const { ensureFloorPlanSeeds } = await import("@/lib/floor-plans");
-  const { resolveDefaultCompanyId } = await import("@/lib/companies");
-  const defaultCompanyId = await resolveDefaultCompanyId();
-  await ensureAppUsersSeed(db);
-  await ensureTeamsSeed(db);
-  await ensureRolesSeed(db);
-  await ensureFloorPlanSeeds(db, defaultCompanyId);
-
-  if (isDemoSeedEnabled() && (await em.countDocuments()) === 0) {
-    await safeSeedInsert(() =>
-      em.insertMany(
-        MOCK_EMPLOYEES.map(({ id: _id, ...rest }) => ({
-          ...rest,
-          _id: new ObjectId(),
-        })) as EmployeeDocument[],
-      ),
-    );
-  }
-
-  if (isDemoSeedEnabled() && (await pr.countDocuments()) === 0) {
-    const employees = await em.find({}).toArray();
-    const docs: ProjectDocument[] = MOCK_PROJECTS.map(
-      ({ id: _id, memberIds: _m, teams, ...rest }) => {
-        const teamEmps = employees.filter((e) => teams.includes(e.team));
-        return {
-          ...rest,
-          teams,
-          memberIds: teamEmps.slice(0, 2).map((e) => e._id.toHexString()),
-          _id: new ObjectId(),
-        };
-      },
-    );
-    await safeSeedInsert(() => pr.insertMany(docs));
-  }
-
-  const ga = db.collection<GalleryImageDocument>(COLLECTIONS.gallery);
-  if (isDemoSeedEnabled() && (await ga.countDocuments()) === 0) {
-    await safeSeedInsert(() =>
-      ga.insertMany(
-        MOCK_GALLERY.map(({ id: _id, ...rest }) => ({
-          ...rest,
-          _id: new ObjectId(),
-        })) as GalleryImageDocument[],
-      ),
-    );
-  }
-
+async function ensureMongoReadyWork(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
   await backfillProjectSlugs(db);
   await backfillProjectTeams(db);
   await backfillProjectMetadata(db);
   await repairProjectMemberIds(db);
   await backfillEmployeeGender(db);
 
-  const det = db.collection<EmployeeDetailsDocument>(COLLECTIONS.employeeDetails);
-  if (
-    isDemoSeedEnabled() &&
-    (await det.countDocuments()) === 0 &&
-    (await em.countDocuments()) > 0
-  ) {
-    const everyone = await em.find({}).toArray();
-    await safeSeedInsert(() =>
-      det.insertMany(
-        everyone.map((emp, i) => ({
-          _id: new ObjectId(),
-          employeeRef: emp._id,
-          workEmail: `${emp.employeeId.toLowerCase().replace(/[^a-z0-9]+/g, ".")}@colan.io`,
-          phone: `+1-555-${String(1000 + (i % 9000)).padStart(4, "0")}`,
-          location: ["Chennai HQ", "Remote", "Singapore"][i % 3],
-          joinedDate: `202${3 + (i % 3)}-${String(((i * 3) % 9) + 1).padStart(2, "0")}-15`,
-          notes: "Seeded employee_details row for Atlas demo.",
-          updatedAt: new Date(),
-        })),
-      ),
-    );
-  }
-
   await purgeOrphanEmployeeRecords(db);
 }
 
-/** Seed, backfill, and index setup — once per database per server process. */
-export async function ensureMongoSeed(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
-  const key = mongoSeedCacheKey(db);
-  if (!globalThis.__colanMongoSeedPromise) {
-    globalThis.__colanMongoSeedPromise = new Map();
+/** Backfill legacy records once per database per server process. */
+export async function ensureMongoReady(db: NonNullable<Awaited<ReturnType<typeof getDb>>>) {
+  const key = mongoReadyCacheKey(db);
+  if (!globalThis.__colanMongoReadyPromise) {
+    globalThis.__colanMongoReadyPromise = new Map();
   }
-  let pending = globalThis.__colanMongoSeedPromise.get(key);
+  let pending = globalThis.__colanMongoReadyPromise.get(key);
   if (!pending) {
-    pending = ensureMongoSeedWork(db);
-    globalThis.__colanMongoSeedPromise.set(key, pending);
+    pending = ensureMongoReadyWork(db);
+    globalThis.__colanMongoReadyPromise.set(key, pending);
   }
   return pending;
 }
@@ -605,7 +496,7 @@ async function createEmployeeInDb(
     notes: "Created with this employee record.",
     updatedAt: new Date(),
   };
-  await safeSeedInsert(() => det.insertOne(detailDoc));
+  await det.insertOne(detailDoc);
   return {
     ...employeeDocToDTO(doc),
     directory: detailsToDirectory(employeeDetailsDocToDTO(detailDoc)),
@@ -618,7 +509,7 @@ export async function createEmployee(
 ): Promise<Employee> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
-    await ensureMongoSeed(db);
+    await ensureMongoReady(db);
     return createEmployeeInDb(db, companyId, input);
   }
   const db = await getDb();
@@ -638,7 +529,7 @@ export async function createEmployee(
     list.push(row);
     return row;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   return createEmployeeInDb(db, companyId, input);
 }
 
@@ -732,7 +623,7 @@ export async function updateEmployee(
       if (bay) {
         await assignEmployeeToBay(companyId, bay, normalizedId);
       } else {
-        await ensureMongoSeed(db);
+        await ensureMongoReady(db);
         await db
           .collection<EmployeeDocument>(COLLECTIONS.employees)
           .updateOne(
@@ -813,7 +704,7 @@ export async function updateEmployee(
     throw new Error("Invalid employee id");
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const oid = new ObjectId(normalizedId);
   const scope = companyScope<EmployeeDocument>(companyId);
@@ -933,27 +824,39 @@ export async function deleteEmployee(id: string): Promise<void> {
   await col.deleteOne({ _id: oid });
 }
 
+type SeatingAssignOpts = {
+  /** Pre-loaded floor plan — skips a DB round-trip when batching changes. */
+  plan?: import("@/models/floor-plan.model").FloorPlanDTO | null;
+};
+
+async function requireActiveFloorPlan(
+  companyId: string,
+  office: string,
+  plan?: import("@/models/floor-plan.model").FloorPlanDTO | null,
+) {
+  const { getFloorPlanBySlug } = await import("@/lib/floor-plans");
+  const resolved = plan ?? (await getFloorPlanBySlug(companyId, office));
+  if (!resolved?.isActive) {
+    throw new Error(`Unknown office floor plan "${office}".`);
+  }
+  return resolved;
+}
+
 export async function assignEmployeeToBay(
   companyId: string,
   bayId: string,
   employeeId: string | null,
   officeSlug?: string | null,
-): Promise<Employee[]> {
-  const { getFloorPlanBySlug, isSeatOnPlan, normalizeOfficeSlug } = await import(
-    "@/lib/floor-plans"
-  );
+  opts?: SeatingAssignOpts,
+): Promise<void> {
+  const { isSeatOnPlan, normalizeOfficeSlug } = await import("@/lib/floor-plans");
   const office = normalizeOfficeSlug(officeSlug);
-  const plan = await getFloorPlanBySlug(companyId, office);
-  if (!plan || !plan.isActive) {
-    throw new Error(`Unknown office floor plan "${office}".`);
-  }
+  const plan = await requireActiveFloorPlan(companyId, office, opts?.plan);
   if (!isSeatOnPlan(bayId, plan)) {
     throw new Error(
       `Invalid seat "${bayId}" for ${plan.name}. Pick a seat from that office floor plan.`,
     );
   }
-
-  const matchesOffice = (slug?: string | null) => normalizeOfficeSlug(slug) === office;
 
   const db = await getDb();
   if (!db) {
@@ -962,7 +865,7 @@ export async function assignEmployeeToBay(
     }
     const list = memoryStore.employees;
     for (const e of list) {
-      if (e.bayNumber === bayId && matchesOffice(e.officeSlug)) {
+      if (e.bayNumber === bayId && normalizeOfficeSlug(e.officeSlug) === office) {
         e.bayNumber = "";
         e.officeSlug = undefined;
       }
@@ -975,25 +878,17 @@ export async function assignEmployeeToBay(
         emp.cabinId = undefined;
       }
     }
-    return list.map((e) => ({ ...e }));
+    return;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const scope = companyScope<EmployeeDocument>(companyId);
+  const now = new Date();
 
-  const occupants = await col
-    .find({ ...scope, bayNumber: bayId })
-    .project({ _id: 1, officeSlug: 1 })
-    .toArray();
-  const clearIds = occupants
-    .filter((row) => matchesOffice(row.officeSlug))
-    .map((row) => row._id);
-  if (clearIds.length > 0) {
-    await col.updateMany(
-      { _id: { $in: clearIds } },
-      { $set: { bayNumber: "", officeSlug: null, cabinId: null, updatedAt: new Date() } },
-    );
-  }
+  await col.updateMany(
+    { ...scope, officeSlug: office, bayNumber: bayId },
+    { $set: { bayNumber: "", officeSlug: null, cabinId: null, updatedAt: now } },
+  );
 
   if (employeeId) {
     if (!ObjectId.isValid(employeeId)) {
@@ -1001,17 +896,9 @@ export async function assignEmployeeToBay(
     }
     await col.updateOne(
       { _id: new ObjectId(employeeId), ...scope },
-      {
-        $set: {
-          bayNumber: bayId,
-          officeSlug: office,
-          cabinId: null,
-          updatedAt: new Date(),
-        },
-      },
+      { $set: { bayNumber: bayId, officeSlug: office, cabinId: null, updatedAt: now } },
     );
   }
-  return listEmployees({ companyId });
 }
 
 /** Swap (or move) seating between two bays on the same office floor plan. */
@@ -1020,27 +907,21 @@ export async function swapEmployeesBetweenBays(
   fromBayId: string,
   toBayId: string,
   officeSlug?: string | null,
-): Promise<Employee[]> {
+  opts?: SeatingAssignOpts,
+): Promise<void> {
   const from = fromBayId.trim();
   const to = toBayId.trim();
   if (!from || !to) throw new Error("Both seats are required to swap.");
-  if (from === to) return listEmployees({ companyId });
+  if (from === to) return;
 
-  const { getFloorPlanBySlug, isSeatOnPlan, normalizeOfficeSlug } = await import(
-    "@/lib/floor-plans"
-  );
+  const { isSeatOnPlan, normalizeOfficeSlug } = await import("@/lib/floor-plans");
   const office = normalizeOfficeSlug(officeSlug);
-  const plan = await getFloorPlanBySlug(companyId, office);
-  if (!plan || !plan.isActive) {
-    throw new Error(`Unknown office floor plan "${office}".`);
-  }
+  const plan = await requireActiveFloorPlan(companyId, office, opts?.plan);
   if (!isSeatOnPlan(from, plan) || !isSeatOnPlan(to, plan)) {
     throw new Error(
       `Invalid seat for ${plan.name}. Pick seats from that office floor plan.`,
     );
   }
-
-  const matchesOffice = (slug?: string | null) => normalizeOfficeSlug(slug) === office;
 
   const db = await getDb();
   if (!db) {
@@ -1049,13 +930,13 @@ export async function swapEmployeesBetweenBays(
     }
     const list = memoryStore.employees;
     const fromEmp = list.find(
-      (e) => e.bayNumber === from && matchesOffice(e.officeSlug),
+      (e) => e.bayNumber === from && normalizeOfficeSlug(e.officeSlug) === office,
     );
     if (!fromEmp) {
       throw new Error(`No employee is seated at ${from}.`);
     }
     const toEmp = list.find(
-      (e) => e.bayNumber === to && matchesOffice(e.officeSlug),
+      (e) => e.bayNumber === to && normalizeOfficeSlug(e.officeSlug) === office,
     );
     fromEmp.bayNumber = to;
     fromEmp.officeSlug = office;
@@ -1065,76 +946,46 @@ export async function swapEmployeesBetweenBays(
       toEmp.officeSlug = office;
       toEmp.cabinId = undefined;
     }
-    return list.map((e) => ({ ...e }));
+    return;
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const scope = companyScope<EmployeeDocument>(companyId);
   const seated = await col
-    .find({ ...scope, bayNumber: { $in: [from, to] } })
-    .project({ _id: 1, bayNumber: 1, officeSlug: 1 })
+    .find({ ...scope, officeSlug: office, bayNumber: { $in: [from, to] } })
+    .project({ _id: 1, bayNumber: 1 })
     .toArray();
 
-  const fromRows = seated.filter(
-    (row) => row.bayNumber === from && matchesOffice(row.officeSlug),
-  );
-  const toRows = seated.filter(
-    (row) => row.bayNumber === to && matchesOffice(row.officeSlug),
-  );
-  if (fromRows.length === 0) {
+  const fromRow = seated.find((row) => row.bayNumber === from);
+  const toRow = seated.find((row) => row.bayNumber === to);
+  if (!fromRow) {
     throw new Error(`No employee is seated at ${from}.`);
   }
 
-  const fromId = fromRows[0]._id;
-  const toId = toRows[0]?._id;
   const now = new Date();
-
-  if (!toId) {
-    // Move into vacant seat.
+  if (!toRow) {
     await col.updateOne(
-      { _id: fromId },
-      {
-        $set: {
-          bayNumber: to,
-          officeSlug: office,
-          cabinId: null,
-          updatedAt: now,
-        },
-      },
+      { _id: fromRow._id },
+      { $set: { bayNumber: to, officeSlug: office, cabinId: null, updatedAt: now } },
     );
-  } else {
-    await col.bulkWrite([
-      {
-        updateOne: {
-          filter: { _id: fromId },
-          update: {
-            $set: {
-              bayNumber: to,
-              officeSlug: office,
-              cabinId: null,
-              updatedAt: now,
-            },
-          },
-        },
-      },
-      {
-        updateOne: {
-          filter: { _id: toId },
-          update: {
-            $set: {
-              bayNumber: from,
-              officeSlug: office,
-              cabinId: null,
-              updatedAt: now,
-            },
-          },
-        },
-      },
-    ]);
+    return;
   }
 
-  return listEmployees({ companyId });
+  await col.bulkWrite([
+    {
+      updateOne: {
+        filter: { _id: fromRow._id },
+        update: { $set: { bayNumber: to, officeSlug: office, cabinId: null, updatedAt: now } },
+      },
+    },
+    {
+      updateOne: {
+        filter: { _id: toRow._id },
+        update: { $set: { bayNumber: from, officeSlug: office, cabinId: null, updatedAt: now } },
+      },
+    },
+  ]);
 }
 
 export async function assignEmployeeToCabin(
@@ -1142,23 +993,19 @@ export async function assignEmployeeToCabin(
   cabinId: string,
   employeeId: string | null,
   officeSlug?: string | null,
-): Promise<Employee[]> {
-  const { getFloorPlanBySlug, normalizeOfficeSlug } = await import("@/lib/floor-plans");
+  opts?: SeatingAssignOpts,
+): Promise<void> {
+  const { normalizeOfficeSlug } = await import("@/lib/floor-plans");
   const { isCabinOnPlan } = await import("@/lib/cabin-utils");
   const office = normalizeOfficeSlug(officeSlug);
-  const plan = await getFloorPlanBySlug(companyId, office);
-  if (!plan || !plan.isActive) {
-    throw new Error(`Unknown office floor plan "${office}".`);
-  }
+  const plan = await requireActiveFloorPlan(companyId, office, opts?.plan);
   if (!isCabinOnPlan(cabinId, plan)) {
     throw new Error(
       `Invalid cabin "${cabinId}" for ${plan.name}. Pick a cabin from that office floor plan.`,
     );
   }
 
-  const matchesOffice = (slug?: string | null) => normalizeOfficeSlug(slug) === office;
   const cabin = cabinId.trim();
-
   const db = await getDb();
   if (!db) {
     if (!allowInMemoryFallback()) {
@@ -1166,7 +1013,7 @@ export async function assignEmployeeToCabin(
     }
     const list = memoryStore.employees;
     for (const e of list) {
-      if (e.cabinId === cabin && matchesOffice(e.officeSlug)) {
+      if (e.cabinId === cabin && normalizeOfficeSlug(e.officeSlug) === office) {
         e.cabinId = undefined;
         e.officeSlug = undefined;
       }
@@ -1179,25 +1026,17 @@ export async function assignEmployeeToCabin(
         emp.bayNumber = "";
       }
     }
-    return list.map((e) => ({ ...e }));
+    return;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const scope = companyScope<EmployeeDocument>(companyId);
+  const now = new Date();
 
-  const occupants = await col
-    .find({ ...scope, cabinId: cabin })
-    .project({ _id: 1, officeSlug: 1 })
-    .toArray();
-  const clearIds = occupants
-    .filter((row) => matchesOffice(row.officeSlug))
-    .map((row) => row._id);
-  if (clearIds.length > 0) {
-    await col.updateMany(
-      { _id: { $in: clearIds } },
-      { $set: { cabinId: null, officeSlug: null, updatedAt: new Date() } },
-    );
-  }
+  await col.updateMany(
+    { ...scope, officeSlug: office, cabinId: cabin },
+    { $set: { cabinId: null, officeSlug: null, updatedAt: now } },
+  );
 
   if (employeeId) {
     if (!ObjectId.isValid(employeeId)) {
@@ -1205,17 +1044,9 @@ export async function assignEmployeeToCabin(
     }
     await col.updateOne(
       { _id: new ObjectId(employeeId), ...scope },
-      {
-        $set: {
-          cabinId: cabin,
-          officeSlug: office,
-          bayNumber: "",
-          updatedAt: new Date(),
-        },
-      },
+      { $set: { cabinId: cabin, officeSlug: office, bayNumber: "", updatedAt: now } },
     );
   }
-  return listEmployees({ companyId });
 }
 
 /** Set exact membership for a cabin (team cabins / clear-all with []). */
@@ -1224,21 +1055,18 @@ export async function setCabinEmployees(
   cabinId: string,
   employeeIds: string[],
   officeSlug?: string | null,
-): Promise<Employee[]> {
-  const { getFloorPlanBySlug, normalizeOfficeSlug } = await import("@/lib/floor-plans");
+  opts?: SeatingAssignOpts,
+): Promise<void> {
+  const { normalizeOfficeSlug } = await import("@/lib/floor-plans");
   const { isCabinOnPlan } = await import("@/lib/cabin-utils");
   const office = normalizeOfficeSlug(officeSlug);
-  const plan = await getFloorPlanBySlug(companyId, office);
-  if (!plan || !plan.isActive) {
-    throw new Error(`Unknown office floor plan "${office}".`);
-  }
+  const plan = await requireActiveFloorPlan(companyId, office, opts?.plan);
   if (!isCabinOnPlan(cabinId, plan)) {
     throw new Error(
       `Invalid cabin "${cabinId}" for ${plan.name}. Pick a cabin from that office floor plan.`,
     );
   }
 
-  const matchesOffice = (slug?: string | null) => normalizeOfficeSlug(slug) === office;
   const cabin = cabinId.trim();
   const uniqueIds = [...new Set(employeeIds.map((id) => id.trim()).filter(Boolean))];
   for (const id of uniqueIds) {
@@ -1253,7 +1081,11 @@ export async function setCabinEmployees(
     }
     const list = memoryStore.employees;
     for (const e of list) {
-      if (e.cabinId === cabin && matchesOffice(e.officeSlug) && !selected.has(e.id)) {
+      if (
+        e.cabinId === cabin &&
+        normalizeOfficeSlug(e.officeSlug) === office &&
+        !selected.has(e.id)
+      ) {
         e.cabinId = undefined;
         e.officeSlug = undefined;
       }
@@ -1266,39 +1098,76 @@ export async function setCabinEmployees(
         emp.bayNumber = "";
       }
     }
-    return list.map((e) => ({ ...e }));
+    return;
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<EmployeeDocument>(COLLECTIONS.employees);
   const scope = companyScope<EmployeeDocument>(companyId);
+  const now = new Date();
   const occupants = await col
-    .find({ ...scope, cabinId: cabin })
-    .project({ _id: 1, officeSlug: 1 })
+    .find({ ...scope, officeSlug: office, cabinId: cabin })
+    .project({ _id: 1 })
     .toArray();
   const clearIds = occupants
-    .filter((row) => matchesOffice(row.officeSlug) && !selected.has(String(row._id)))
+    .filter((row) => !selected.has(String(row._id)))
     .map((row) => row._id);
   if (clearIds.length > 0) {
     await col.updateMany(
       { _id: { $in: clearIds } },
-      { $set: { cabinId: null, officeSlug: null, updatedAt: new Date() } },
+      { $set: { cabinId: null, officeSlug: null, updatedAt: now } },
     );
   }
   if (uniqueIds.length > 0) {
     await col.updateMany(
       { _id: { $in: uniqueIds.map((id) => new ObjectId(id)) }, ...scope },
-      {
-        $set: {
-          cabinId: cabin,
-          officeSlug: office,
-          bayNumber: "",
-          updatedAt: new Date(),
-        },
-      },
+      { $set: { cabinId: cabin, officeSlug: office, bayNumber: "", updatedAt: now } },
     );
   }
-  return listEmployees({ companyId });
+}
+
+const SEAT_OCCUPANT_PROJECTION = {
+  employeeId: 1,
+  name: 1,
+  team: 1,
+  role: 1,
+  imageUrl: 1,
+  bayNumber: 1,
+  officeSlug: 1,
+} as const;
+
+/** Load only employees seated on specific seats in one office (indexed query). */
+export async function listSeatedEmployeesForOffice(
+  companyId: string,
+  officeSlug: string,
+  seatIds: string[],
+): Promise<Employee[]> {
+  if (seatIds.length === 0) return [];
+  const { normalizeOfficeSlug } = await import("@/lib/floor-plans");
+  const office = normalizeOfficeSlug(officeSlug);
+
+  const db = await getDb();
+  if (!db) {
+    if (!allowInMemoryFallback()) return [];
+    return memoryStore.employees.filter(
+      (e) =>
+        normalizeOfficeSlug(e.officeSlug) === office &&
+        e.bayNumber &&
+        seatIds.includes(e.bayNumber),
+    );
+  }
+
+  await ensureMongoReady(db);
+  const rows = await db
+    .collection<EmployeeDocument>(COLLECTIONS.employees)
+    .find({
+      ...companyScope<EmployeeDocument>(companyId),
+      officeSlug: office,
+      bayNumber: { $in: seatIds },
+    })
+    .project<EmployeeDocument>(SEAT_OCCUPANT_PROJECTION)
+    .toArray();
+  return rows.map(employeeDocToDTO);
 }
 
 export async function listProjects(): Promise<Project[]> {
@@ -1339,7 +1208,7 @@ async function listProjectsFromDb(
 export async function getProjectBySlug(slug: string): Promise<Project | null> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
-    await ensureMongoSeed(db);
+    await ensureMongoReady(db);
     return getProjectBySlugFromDb(db, slug);
   }
   const db = await getDb();
@@ -1429,7 +1298,7 @@ export async function createProject(
     }
     return row;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<ProjectDocument>(COLLECTIONS.projects);
   const existing = await col.find({}, { projection: { slug: 1 } }).toArray();
   const slug =
@@ -1515,7 +1384,7 @@ export async function updateProjectBySlug(
     }
     return next;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const col = db.collection<ProjectDocument>(COLLECTIONS.projects);
   const existing = await col.findOne({ slug });
   if (!existing) return null;
@@ -1549,7 +1418,7 @@ export async function getProjectById(id: string): Promise<Project | null> {
   if (!ObjectId.isValid(id)) return null;
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
-    await ensureMongoSeed(db);
+    await ensureMongoReady(db);
     return getProjectByIdFromDb(db, id);
   }
   const db = await getDb();
@@ -1646,7 +1515,7 @@ export async function setEmployeeProjects(
 export async function listGallery(): Promise<GalleryImage[]> {
   if (!allowInMemoryFallback()) {
     const db = await requireDb();
-    await ensureMongoSeed(db);
+    await ensureMongoReady(db);
     return listGalleryFromDb(db);
   }
   const db = await getDb();
@@ -1677,7 +1546,7 @@ export async function createGalleryItem(
     memoryStore.gallery.unshift(row);
     return row;
   }
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   const _id = new ObjectId();
   const doc: GalleryImageDocument = { _id, ...input };
   await db.collection<GalleryImageDocument>(COLLECTIONS.gallery).insertOne(doc);
@@ -1710,7 +1579,7 @@ export async function updateGalleryItem(
     return { ...next };
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   if (!ObjectId.isValid(normalizedId)) throw new Error("Gallery item not found");
 
   const col = db.collection<GalleryImageDocument>(COLLECTIONS.gallery);
@@ -1744,7 +1613,7 @@ export async function deleteGalleryItem(id: string): Promise<void> {
     return;
   }
 
-  await ensureMongoSeed(db);
+  await ensureMongoReady(db);
   if (!ObjectId.isValid(normalizedId)) throw new Error("Gallery item not found");
 
   const result = await db

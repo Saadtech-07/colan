@@ -1,10 +1,7 @@
-import { MongoServerError, ObjectId, type Db } from "mongodb";
+import { ObjectId, type Db } from "mongodb";
 import { allowInMemoryFallback } from "@/lib/data-backend";
 import { swapCabinIdentitiesInLayout } from "@/lib/cabin-utils";
 import {
-  buildFloorPlanSeeds,
-  catalogCabinsForSlug,
-  catalogRowsForSlug,
   CHENNAI_BLOCK_A_SLUG,
   CHENNAI_BLOCK_B_SLUG,
   DEFAULT_OFFICE_SLUG,
@@ -16,7 +13,6 @@ import { getDb } from "@/lib/mongodb";
 import { deleteFloorPlanDesigns } from "@/lib/floor-plan-layouts.server";
 import { companyScope, toCompanyObjectId } from "@/lib/tenant-scope";
 import { COLLECTIONS } from "@/models/collections";
-import type { CompanyDocument } from "@/models/company.model";
 import {
   floorPlanDocToDTO,
   floorPlanDocToSummary,
@@ -32,244 +28,18 @@ type MemoryFloorPlan = FloorPlanDTO & {
 };
 
 const memoryFloorPlans: MemoryFloorPlan[] = [];
-const memorySuppressedSeedSlugs = new Set<string>();
-
-function catalogSeedSlugs(): Set<string> {
-  return new Set(buildFloorPlanSeeds().map((seed) => seed.slug));
-}
-
-function isCatalogSeedSlug(slug: string): boolean {
-  return catalogSeedSlugs().has(slug.trim().toLowerCase());
-}
-
-type FloorPlanSeedSuppressionDocument = {
-  companyId: ObjectId;
-  slug: string;
-  suppressedAt: Date;
-};
-
-async function getSuppressedFloorPlanSeedSlugs(
-  db: Db,
-  companyId: string,
-): Promise<Set<string>> {
-  const rows = await db
-    .collection<FloorPlanSeedSuppressionDocument>(COLLECTIONS.floorPlanSeedSuppressions)
-    .find({ companyId: toCompanyObjectId(companyId) })
-    .project({ slug: 1 })
-    .toArray();
-  return new Set(rows.map((row) => row.slug));
-}
-
-async function suppressFloorPlanSeed(
-  db: Db,
-  companyId: string,
-  slug: string,
-): Promise<void> {
-  const normalized = slug.trim().toLowerCase();
-  if (!normalized || !isCatalogSeedSlug(normalized)) return;
-
-  const col = db.collection<FloorPlanSeedSuppressionDocument>(
-    COLLECTIONS.floorPlanSeedSuppressions,
-  );
-  await col.createIndex({ companyId: 1, slug: 1 }, { unique: true });
-  await col.updateOne(
-    { companyId: toCompanyObjectId(companyId), slug: normalized },
-    {
-      $set: {
-        companyId: toCompanyObjectId(companyId),
-        slug: normalized,
-        suppressedAt: new Date(),
-      },
-    },
-    { upsert: true },
-  );
-}
-
-async function unsuppressFloorPlanSeed(
-  db: Db,
-  companyId: string,
-  slug: string,
-): Promise<void> {
-  const normalized = slug.trim().toLowerCase();
-  if (!normalized) return;
-  await db
-    .collection<FloorPlanSeedSuppressionDocument>(COLLECTIONS.floorPlanSeedSuppressions)
-    .deleteOne({ companyId: toCompanyObjectId(companyId), slug: normalized });
-}
 
 function clonePlan(plan: FloorPlanDTO): FloorPlanDTO {
   return structuredClone(plan);
 }
 
-function seedToDto(seed: ReturnType<typeof buildFloorPlanSeeds>[number]): FloorPlanDTO {
-  return {
-    slug: seed.slug,
-    name: seed.name,
-    city: seed.city,
-    building: seed.building,
-    floors: seed.floors,
-    rows: seed.rows,
-    seatIds: seed.seatIds,
-    cabins: seed.cabins,
-    isActive: seed.isActive,
-    sortOrder: seed.sortOrder,
-    source: seed.source,
-  };
-}
-
-/** Keep side-cabin height rules (equalHeights / spans) in sync without wiping label/id swaps. */
-function mergeCatalogSideCabinHeights(
-  current: FloorPlanDTO["cabins"] | FloorPlanDocument["cabins"] | undefined,
-  catalog: FloorPlanDTO["cabins"] | FloorPlanDocument["cabins"] | null | undefined,
-): FloorPlanDTO["cabins"] | FloorPlanDocument["cabins"] | undefined {
-  if (!current) return catalog ? structuredClone(catalog) : undefined;
-  const catalogSide = catalog?.sideCabins;
-  if (!catalogSide || !current.sideCabins) return current;
-  return {
-    ...current,
-    sideCabins: {
-      ...current.sideCabins,
-      equalHeights: catalogSide.equalHeights,
-      spans: catalogSide.spans
-        ? { ...catalogSide.spans }
-        : current.sideCabins.spans,
-    },
-  };
-}
-
-function ensureMemorySeeds() {
-  const seeds = buildFloorPlanSeeds();
-  for (const seed of seeds) {
-    if (memorySuppressedSeedSlugs.has(seed.slug)) continue;
-    const idx = memoryFloorPlans.findIndex((p) => p.slug === seed.slug);
-    const catalogCabins = catalogCabinsForSlug(seed.slug);
-    const catalogRows = catalogRowsForSlug(seed.slug);
-    const dto = {
-      ...seedToDto(seed),
-      createdAt: seed.createdAt,
-      updatedAt: seed.updatedAt,
-    };
-    if (catalogCabins) dto.cabins = structuredClone(catalogCabins);
-    if (catalogRows) {
-      dto.rows = structuredClone(catalogRows);
-      dto.seatIds = seatIdsFromRows(catalogRows);
-    }
-    if (idx === -1) {
-      memoryFloorPlans.push(dto);
-      continue;
-    }
-    // Align catalog labels/geometry for seeded offices.
-    const current = memoryFloorPlans[idx];
-    const preservedCabins = current.cabins ?? catalogCabins ?? seed.cabins;
-    memoryFloorPlans[idx] = {
-      ...current,
-      name: seed.name,
-      city: seed.city,
-      building: seed.building,
-      floors: seed.floors,
-      sortOrder: seed.sortOrder,
-      isActive: seed.isActive,
-      // Preserve runtime cabin swaps; sync side height rules from catalog.
-      cabins: mergeCatalogSideCabinHeights(preservedCabins, catalogCabins),
-      rows: catalogRows ?? (current.rows?.length ? current.rows : seed.rows),
-      seatIds: catalogRows
-        ? seatIdsFromRows(catalogRows)
-        : current.seatIds?.length
-          ? current.seatIds
-          : seed.seatIds,
-    };
-  }
-}
-
-function isDuplicateKeyError(e: unknown): boolean {
-  return e instanceof MongoServerError && (e.code === 11000 || e.code === 11001);
-}
-
-/** Demo Chennai/Bangalore layouts belong only on the legacy Colan workspace. */
-async function isDefaultColanCompany(db: Db, companyId: string): Promise<boolean> {
-  if (!ObjectId.isValid(companyId)) return false;
-  const doc = await db
-    .collection<CompanyDocument>(COLLECTIONS.companies)
-    .findOne({ _id: new ObjectId(companyId) }, { projection: { slug: 1 } });
-  return doc?.slug === "colan";
-}
-
-export async function ensureFloorPlanSeeds(db: Db, companyId: string): Promise<void> {
-  const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
-  const scope = companyScope<FloorPlanDocument>(companyId);
-  const suppressed = await getSuppressedFloorPlanSeedSlugs(db, companyId);
-  for (const seed of buildFloorPlanSeeds()) {
-    if (suppressed.has(seed.slug)) continue;
-    const existing = await col.findOne({ ...scope, slug: seed.slug });
-    if (!existing) {
-      try {
-        await col.insertOne({
-          _id: new ObjectId(),
-          companyId: toCompanyObjectId(companyId),
-          ...seed,
-        });
-      } catch (e) {
-        if (!isDuplicateKeyError(e)) throw e;
-      }
-      continue;
-    }
-
-    // Keep catalog labels in sync (Block A / Block B naming) for seeded offices.
-    // Do not overwrite custom Excel/manual row geometry unless the doc has no rows
-    // or this slug has a canonical catalog row layout (e.g. Bangalore entrance).
-    // Do not overwrite cabins — admins may swap cabin places at runtime.
-    const isCatalogSeed = !existing.source || existing.source === "seed";
-    if (!isCatalogSeed) continue;
-
-    const catalogRows = catalogRowsForSlug(seed.slug);
-    const catalogCabins = catalogCabinsForSlug(seed.slug);
-    const shouldSyncRows = Boolean(catalogRows) || !existing.rows?.length;
-    const mergedCabins = mergeCatalogSideCabinHeights(
-      existing.cabins,
-      catalogCabins ?? seed.cabins,
-    );
-
-    await col.updateOne(
-      { _id: existing._id },
-      {
-        $set: {
-          name: seed.name,
-          city: seed.city,
-          building: seed.building,
-          floors: seed.floors,
-          sortOrder: seed.sortOrder,
-          isActive: seed.isActive,
-          updatedAt: new Date(),
-          ...(mergedCabins ? { cabins: mergedCabins } : {}),
-          ...(shouldSyncRows
-            ? {
-                rows: catalogRows ?? seed.rows,
-                seatIds: catalogRows
-                  ? seatIdsFromRows(catalogRows)
-                  : seed.seatIds,
-                source: seed.source,
-              }
-            : {}),
-        },
-      },
-    );
-  }
-}
-
-async function withDb(companyId: string): Promise<Db | null> {
+async function withDb(): Promise<Db | null> {
   const db = await getDb();
   if (!db) {
     if (!allowInMemoryFallback()) {
       throw new Error("MongoDB is not available.");
     }
     return null;
-  }
-  if (await isDefaultColanCompany(db, companyId)) {
-    try {
-      await ensureFloorPlanSeeds(db, companyId);
-    } catch (e) {
-      console.error("[floor-plans] seed failed for default company:", e);
-    }
   }
   return db;
 }
@@ -279,9 +49,8 @@ export async function listFloorPlans(
   opts?: {
   includeInactive?: boolean;
 }): Promise<FloorPlanSummary[]> {
-  const db = await withDb(companyId);
+  const db = await withDb();
   if (!db) {
-    ensureMemorySeeds();
     return memoryFloorPlans
       .filter((p) => opts?.includeInactive || p.isActive)
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
@@ -302,6 +71,17 @@ export async function listFloorPlans(
   const rows = await db
     .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
     .find(filter)
+    .project<FloorPlanDocument>({
+      slug: 1,
+      name: 1,
+      city: 1,
+      building: 1,
+      isActive: 1,
+      sortOrder: 1,
+      seatIds: 1,
+      migrationStatus: 1,
+      updatedAt: 1,
+    })
     .sort({ sortOrder: 1, name: 1 })
     .toArray();
   return rows.map(floorPlanDocToSummary);
@@ -312,40 +92,49 @@ export async function getFloorPlanBySlug(
   slug: string,
 ): Promise<FloorPlanDTO | null> {
   const normalized = slug.trim().toLowerCase();
-  const db = await withDb(companyId);
-  const catalogRows = catalogRowsForSlug(normalized);
+  const db = await withDb();
   const scope = companyScope<FloorPlanDocument>(companyId);
 
   if (!db) {
-    ensureMemorySeeds();
     const row = memoryFloorPlans.find((p) => p.slug === normalized);
     if (!row) return null;
-    const plan = clonePlan(row);
-    if (catalogRows) {
-      plan.rows = structuredClone(catalogRows);
-      plan.seatIds = seatIdsFromRows(catalogRows);
-    }
-    return plan;
+    return clonePlan(row);
   }
 
   const doc = await db
     .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
     .findOne({ ...scope, slug: normalized });
   if (!doc) return null;
-  const plan = floorPlanDocToDTO(doc);
-  const patch: Partial<FloorPlanDocument> = { updatedAt: new Date() };
-  // Preserve runtime cabin swaps — only sync canonical row geometry when needed.
-  if (catalogRows) {
-    plan.rows = structuredClone(catalogRows);
-    plan.seatIds = seatIdsFromRows(catalogRows);
-    patch.rows = catalogRows;
-    patch.seatIds = plan.seatIds;
-    await db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans).updateOne(
-      { _id: doc._id },
-      { $set: patch },
-    );
+  return floorPlanDocToDTO(doc);
+}
+
+/** Batch-load floor plans by slug (single query). */
+export async function getFloorPlansBySlugs(
+  companyId: string,
+  slugs: string[],
+): Promise<Map<string, FloorPlanDTO>> {
+  const normalized = [...new Set(slugs.map((s) => s.trim().toLowerCase()).filter(Boolean))];
+  const result = new Map<string, FloorPlanDTO>();
+  if (normalized.length === 0) return result;
+
+  const db = await withDb();
+  if (!db) {
+    for (const slug of normalized) {
+      const row = memoryFloorPlans.find((p) => p.slug === slug);
+      if (row) result.set(slug, clonePlan(row));
+    }
+    return result;
   }
-  return plan;
+
+  const docs = await db
+    .collection<FloorPlanDocument>(COLLECTIONS.floorPlans)
+    .find({ ...companyScope<FloorPlanDocument>(companyId), slug: { $in: normalized } })
+    .toArray();
+
+  for (const doc of docs) {
+    result.set(doc.slug, floorPlanDocToDTO(doc));
+  }
+  return result;
 }
 
 export type CreateFloorPlanInput = {
@@ -386,13 +175,11 @@ export async function createFloorPlan(
     source: "manual",
   };
 
-  const db = await withDb(companyId);
+  const db = await withDb();
   if (!db) {
-    ensureMemorySeeds();
     if (memoryFloorPlans.some((p) => p.slug === slug)) {
       throw new Error(`Floor plan "${slug}" already exists`);
     }
-    memorySuppressedSeedSlugs.delete(slug);
     memoryFloorPlans.push({ ...payload, createdAt: new Date(), updatedAt: new Date() });
     return clonePlan(payload);
   }
@@ -417,7 +204,6 @@ export async function createFloorPlan(
     createdAt: now,
     updatedAt: now,
   });
-  await unsuppressFloorPlanSeed(db, companyId, slug);
   return payload;
 }
 
@@ -431,12 +217,15 @@ export async function updateFloorPlan(
   patch: UpdateFloorPlanInput,
 ): Promise<FloorPlanDTO> {
   const normalized = slug.trim().toLowerCase();
-  const db = await withDb(companyId);
+  const db = await withDb();
   const scope = companyScope<FloorPlanDocument>(companyId);
 
-  const applyPatch = (current: FloorPlanDTO): FloorPlanDTO => {
+  if (!db) {
+    const idx = memoryFloorPlans.findIndex((p) => p.slug === normalized);
+    if (idx < 0) throw new Error("Floor plan not found");
+    const current = memoryFloorPlans[idx];
     const rows = patch.rows ?? current.rows;
-    return {
+    const next: FloorPlanDTO = {
       ...current,
       name: patch.name?.trim() || current.name,
       city: patch.city !== undefined ? patch.city.trim() || undefined : current.city,
@@ -449,71 +238,51 @@ export async function updateFloorPlan(
       isActive: patch.isActive ?? current.isActive,
       sortOrder: patch.sortOrder ?? current.sortOrder,
     };
-  };
-
-  if (!db) {
-    ensureMemorySeeds();
-    const idx = memoryFloorPlans.findIndex((p) => p.slug === normalized);
-    if (idx < 0) throw new Error("Floor plan not found");
-    const next = applyPatch(memoryFloorPlans[idx]);
     memoryFloorPlans[idx] = { ...next, updatedAt: new Date() };
     return clonePlan(next);
   }
 
   const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
-  const existing = await col.findOne({ ...scope, slug: normalized });
-  if (!existing) throw new Error("Floor plan not found");
+  const updates: Partial<FloorPlanDocument> = { updatedAt: new Date() };
+  if (patch.name?.trim()) updates.name = patch.name.trim();
+  if (patch.city !== undefined) updates.city = patch.city.trim() || undefined;
+  if (patch.building !== undefined) updates.building = patch.building.trim() || undefined;
+  if (patch.floors !== undefined) updates.floors = patch.floors;
+  if (patch.rows !== undefined) {
+    updates.rows = patch.rows;
+    updates.seatIds = seatIdsFromRows(patch.rows);
+  }
+  if (patch.cabins !== undefined) updates.cabins = patch.cabins;
+  if (patch.isActive !== undefined) updates.isActive = patch.isActive;
+  if (patch.sortOrder !== undefined) updates.sortOrder = patch.sortOrder;
 
-  const next = applyPatch(floorPlanDocToDTO(existing));
-  await col.updateOne(
+  const updated = await col.findOneAndUpdate(
     { ...scope, slug: normalized },
-    {
-      $set: {
-        name: next.name,
-        city: next.city,
-        building: next.building,
-        floors: next.floors,
-        rows: next.rows,
-        seatIds: next.seatIds,
-        cabins: next.cabins,
-        isActive: next.isActive,
-        sortOrder: next.sortOrder,
-        updatedAt: new Date(),
-      },
-    },
+    { $set: updates },
+    { returnDocument: "after" },
   );
-  return next;
+  if (!updated) throw new Error("Floor plan not found");
+  return floorPlanDocToDTO(updated);
 }
 
 export async function deleteFloorPlan(companyId: string, slug: string): Promise<FloorPlanDTO> {
   const normalized = slug.trim().toLowerCase();
   if (!normalized) throw new Error("slug is required");
 
-  const db = await withDb(companyId);
+  const db = await withDb();
   const scope = companyScope<FloorPlanDocument>(companyId);
   if (!db) {
-    ensureMemorySeeds();
     const idx = memoryFloorPlans.findIndex((p) => p.slug === normalized);
     if (idx < 0) throw new Error("Floor plan not found");
     const [removed] = memoryFloorPlans.splice(idx, 1);
-    if (isCatalogSeedSlug(normalized) || removed.source === "seed") {
-      memorySuppressedSeedSlugs.add(normalized);
-    }
     return clonePlan(removed);
   }
 
   const col = db.collection<FloorPlanDocument>(COLLECTIONS.floorPlans);
-  const existing = await col.findOne({ ...scope, slug: normalized });
-  if (!existing) throw new Error("Floor plan not found");
+  const deleted = await col.findOneAndDelete({ ...scope, slug: normalized });
+  if (!deleted) throw new Error("Floor plan not found");
 
-  const dto = floorPlanDocToDTO(existing);
-  const result = await col.deleteOne({ ...scope, slug: normalized });
-  if (result.deletedCount < 1) {
-    throw new Error("Floor plan not found");
-  }
-  if (isCatalogSeedSlug(normalized) || existing.source === "seed") {
-    await suppressFloorPlanSeed(db, companyId, normalized);
-  }
+  const dto = floorPlanDocToDTO(deleted);
   await deleteFloorPlanDesigns(companyId, normalized);
   return dto;
 }
@@ -549,16 +318,22 @@ export async function importFloorPlans(
 ): Promise<{ created: string[]; updated: string[] }> {
   const created: string[] = [];
   const updated: string[] = [];
+  const normalized = plans.map((plan) => ({
+    ...plan,
+    slug: plan.slug.trim().toLowerCase(),
+  }));
 
-  for (const plan of plans) {
-    const slug = plan.slug.trim().toLowerCase();
-    const existing = await getFloorPlanBySlug(companyId, slug);
-    if (!existing) {
+  const existingSlugs = new Set(
+    [...(await getFloorPlansBySlugs(companyId, normalized.map((p) => p.slug))).keys()],
+  );
+
+  for (const plan of normalized) {
+    if (!existingSlugs.has(plan.slug)) {
       await createFloorPlan(companyId, plan);
-      created.push(slug);
+      created.push(plan.slug);
       continue;
     }
-    await updateFloorPlan(companyId, slug, {
+    await updateFloorPlan(companyId, plan.slug, {
       name: plan.name,
       city: plan.city,
       building: plan.building,
@@ -568,7 +343,7 @@ export async function importFloorPlans(
       isActive: plan.isActive,
       sortOrder: plan.sortOrder,
     });
-    updated.push(slug);
+    updated.push(plan.slug);
   }
 
   return { created, updated };

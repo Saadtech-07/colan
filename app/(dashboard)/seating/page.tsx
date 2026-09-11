@@ -315,6 +315,13 @@ export default function SeatingPage() {
 
   const colanFrozen = !layoutMode && colanOccupancySnapshot !== null;
   const promptLayoutActive = !layoutMode && promptRows !== null;
+  const floorEditHref =
+    activePlan && !planLoading && !layoutMode && !promptLayoutActive
+      ? isBuilderFloor
+        ? `/seating/floors/${encodeURIComponent(officeSlug)}/builder?returnTo=${encodeURIComponent(`/seating?office=${officeSlug}`)}`
+        : `/seating/floors/${encodeURIComponent(officeSlug)}/edit`
+      : null;
+  const floorEditLabel = isBuilderFloor ? "Edit in Builder" : "Edit floor design";
   const activeRows = promptRows ?? activePlan?.rows ?? SEATING_ROWS;
   const activeCabinsBeforeA =
     promptCabinsBeforeA ??
@@ -1415,23 +1422,48 @@ export default function SeatingPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex min-w-0 flex-col gap-2">
-          {listMode ? (
-            <>
+      {listMode ? (
+        <>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 flex-col gap-2">
               <h2 className="text-base font-semibold text-foreground sm:text-lg">
                 Seating arrangement
               </h2>
               <p className="text-xs text-muted-foreground sm:text-sm">
                 Review occupancy by branch, then open a floor plan to assign seats.
               </p>
-            </>
-          ) : (
-            <>
-              {floorSectionTitle ? (
-                <p className="text-sm font-semibold text-muted-foreground">{floorSectionTitle}</p>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-2">
+            </div>
+            {canAssign ? (
+              <div className="flex flex-wrap items-center justify-end gap-2 lg:pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+                  disabled={plansLoading}
+                  asChild
+                >
+                  <Link href="/seating/floors/new" prefetch={false}>
+                    <Plus className="h-3.5 w-3.5" />
+                    Create floor
+                  </Link>
+                </Button>
+              </div>
+            ) : null}
+          </div>
+          <SeatingAnalyticsOverview
+            stats={headerStats}
+            variant="dashboard"
+            hideUtilization
+          />
+        </>
+      ) : (
+        <>
+          <SeatingAnalyticsOverview stats={headerStats} variant="dashboard" />
+
+          <section className="overflow-hidden rounded-2xl border border-border/70 bg-gradient-to-br from-card via-card to-muted/15 shadow-sm">
+            <div className="flex flex-col gap-4 border-b border-border/60 bg-muted/25 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="secondary"
@@ -1442,114 +1474,107 @@ export default function SeatingPage() {
                   <ArrowLeft className="h-3.5 w-3.5" />
                   All branches
                 </Button>
+                {floorSectionTitle ? (
+                  <span className="rounded-full border border-border/70 bg-background px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                    {floorSectionTitle}
+                  </span>
+                ) : null}
               </div>
+
+              {canAssign ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {promptLayoutActive ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
+                      onClick={resetPromptLayout}
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      Back to office
+                    </Button>
+                  ) : null}
+                  {layoutMode ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
+                      onClick={clearAiLayout}
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" />
+                      Back to office
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+                    disabled={planLoading || layoutMode || promptLayoutActive || plansLoading}
+                    asChild
+                  >
+                    <Link href="/seating/floors/new" prefetch={false}>
+                      <Plus className="h-3.5 w-3.5" />
+                      Create floor
+                    </Link>
+                  </Button>
+                  {floorEditHref ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+                      asChild
+                    >
+                      <Link href={floorEditHref} prefetch={false}>
+                        <Pencil className="h-3.5 w-3.5" />
+                        {floorEditLabel}
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
+                      disabled
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit floor
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    size="sm"
+                    className={cn(
+                      "h-9 shrink-0 gap-1.5 rounded-lg border-0 px-3.5 text-xs font-semibold shadow-sm transition-colors",
+                      "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md",
+                      "focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2",
+                      "dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500",
+                      aiPanelOpen && "bg-blue-700 hover:bg-blue-800 dark:bg-blue-700 dark:hover:bg-blue-600",
+                    )}
+                    onClick={() => setAiPanelOpen((open) => !open)}
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-white" />
+                    {aiPanelOpen ? "Close AI" : "AI generator"}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="px-4 py-4 sm:px-5 sm:py-5">
               <SeatingOfficeSelect
                 plans={officePlans}
                 value={officeSlug}
                 onChange={selectOfficeSlug}
                 disabled={planLoading || layoutMode || promptLayoutActive || viewingHistory}
               />
-            </>
-          )}
-        </div>
-
-        {canAssign && (
-          <div className="flex flex-wrap items-center justify-end gap-2 lg:pt-1">
-            {!listMode && promptLayoutActive && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
-                onClick={resetPromptLayout}
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back to office
-              </Button>
-            )}
-            {!listMode && layoutMode && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-9 gap-1.5 rounded-lg px-2.5 text-xs"
-                onClick={clearAiLayout}
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back to office
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
-              disabled={(!listMode && (planLoading || layoutMode || promptLayoutActive)) || plansLoading}
-              asChild
-            >
-              <Link href="/seating/floors/new" prefetch={false}>
-                <Plus className="h-3.5 w-3.5" />
-                Create floor
-              </Link>
-            </Button>
-            {!listMode && activePlan && !planLoading && !layoutMode && !promptLayoutActive ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
-                asChild
-              >
-                <Link
-                  href={
-                    isBuilderFloor
-                      ? `/seating/floors/${encodeURIComponent(officeSlug)}/builder?returnTo=${encodeURIComponent(`/seating?office=${officeSlug}`)}`
-                      : `/seating/floors/${encodeURIComponent(officeSlug)}/edit`
-                  }
-                  prefetch={false}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  {isBuilderFloor ? "Edit in Builder" : "Edit floor"}
-                </Link>
-              </Button>
-            ) : !listMode ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm"
-                disabled
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Edit floor
-              </Button>
-            ) : null}
-            {!listMode ? (
-              <Button
-                type="button"
-                size="sm"
-                className={cn(
-                  "h-9 shrink-0 gap-1.5 rounded-lg border-0 px-3.5 text-xs font-semibold shadow-sm transition-colors",
-                  "bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md",
-                  "focus-visible:ring-2 focus-visible:ring-blue-500/60 focus-visible:ring-offset-2",
-                  "dark:bg-blue-600 dark:text-white dark:hover:bg-blue-500",
-                  aiPanelOpen && "bg-blue-700 hover:bg-blue-800 dark:bg-blue-700 dark:hover:bg-blue-600",
-                )}
-                onClick={() => setAiPanelOpen((open) => !open)}
-              >
-                <Sparkles className="h-3.5 w-3.5 text-white" />
-                {aiPanelOpen ? "Close AI" : "AI generator"}
-              </Button>
-            ) : null}
-          </div>
-        )}
-      </div>
-
-      <SeatingAnalyticsOverview
-        stats={headerStats}
-        variant="dashboard"
-        hideUtilization={listMode}
-      />
+            </div>
+          </section>
+        </>
+      )}
 
       {!listMode && canAssign ? (
         <SeatingPendingBar
@@ -1798,6 +1823,8 @@ export default function SeatingPage() {
       <SeatingFloorPlanFullscreen
         open={!listMode && fullscreenOpen}
         onClose={() => setFullscreenOpen(false)}
+        editHref={canAssign ? floorEditHref : null}
+        editLabel={floorEditLabel}
         title={
           layoutMode
             ? "New layout canvas"
